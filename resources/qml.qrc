@@ -1,5 +1,8 @@
 <RCC>
     <qresource prefix="/">
         <file>qml/main.qml</file>
+        <file>qml/style/Themes.qml</file>
+        <file>qml/components/GlassPanel.qml</file>
+        <file>qml/components/qmldir</file>
     </qresource>
 </RCC>
