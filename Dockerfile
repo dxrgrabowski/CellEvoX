@@ -1,6 +1,5 @@
-FROM stateoftheartio/qt6:6.8-gcc-aqt
+FROM ubuntu:24.10
 
-# Dodajemy tylko nasze dodatkowe zależności
 RUN sudo apt-get update && sudo apt-get install -y \
     libboost-all-dev \
     libtbb-dev \
@@ -11,3 +10,4 @@ RUN sudo apt-get update && sudo apt-get install -y \
     && sudo rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
+COPY . /workspace

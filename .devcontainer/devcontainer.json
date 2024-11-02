@@ -1,0 +1,23 @@
+{
+    "name": "CellEvoX Qt Development Container",
+    "build": {
+        "dockerfile": "../Dockerfile"
+    },
+    "workspaceFolder": "/workspace",
+    "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash"
+    },
+    "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "mhutchie.git-graph",
+        "eamodio.gitlens",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cpptools-themes",
+        "ms-vscode-remote.remote-containers",
+        "ms-azuretools.vscode-docker",
+        "bbenoist.QML"
+    ],
+    "postCreateCommand": "cmake -S . -B build && cmake --build build",
+    "remoteUser": "root"
+}
