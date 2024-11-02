@@ -9,7 +9,9 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/include/CellEvoX/ecs/environment.hpp
 )
 
-add_executable(CellEvoX
+qt_add_resources(QML_RESOURCES ../resources/qml.qrc)
+
+qt_add_executable(CellEvoX
     ${SOURCES}
     ${HEADERS}
 )
@@ -18,6 +20,8 @@ target_include_directories(CellEvoX
     PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
+
+target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
 
 target_link_libraries(CellEvoX
     PRIVATE

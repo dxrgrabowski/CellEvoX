@@ -16,10 +16,6 @@
 *.dylib
 *.dll
 
-# Fortran module files
-*.mod
-*.smod
-
 # Compiled Static libraries
 *.lai
 *.la
@@ -33,3 +29,7 @@
 
 # Directories
 build/
+
+# Other
+CMakeLists.txt.user
+.vscode/c_cpp_properties.json

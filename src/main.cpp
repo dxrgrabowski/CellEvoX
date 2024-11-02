@@ -1,14 +1,14 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include "cancer_sim/core/application.hpp"
+#include "CellEvoX/core/application.hpp"
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     QQmlApplicationEngine engine;
 
-    cancer_sim::Application cancerSim;
+    CellEvoX::core::Application cancerSim;
     
-    engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+    engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     
     return app.exec();
 }

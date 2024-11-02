@@ -1,9 +1,9 @@
 #pragma once
 
 #include <memory>
-#include "cancer_sim/ecs/world.hpp"
+#include "CellEvoX/ecs/environment.hpp"
 
-namespace cancer_sim {
+namespace CellEvoX::core {
 
 class Application {
 public:
@@ -12,9 +12,10 @@ public:
 
     void initialize();
     void update();
+    float calculateDeltaTime();
 
 private:
-    std::unique_ptr<ecs::World> m_world;
+    std::unique_ptr<ecs::Environment> m_environment;
 };
 
 }

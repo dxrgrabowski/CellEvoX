@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tsl/robin_map.h>
+//#include <tsl/robin_map.h>
 #include <memory>
 #include <vector>
 
@@ -18,8 +18,8 @@ public:
     void initialize();
 
 private:
-    std::unique_ptr<EntityManager> m_entityManager;
-    std::vector<std::unique_ptr<System>> m_systems;
+// std::unique_ptr<EntityManager> m_entityManager;
+// std::vector<std::unique_ptr<System>> m_systems;
 };
 
 }
