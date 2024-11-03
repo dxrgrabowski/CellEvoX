@@ -12,7 +12,7 @@ High-performance cellular evolution simulator capable of handling hundreds of mi
 - Performance-optimized data structures
 
 ## Tech Stack
-- C++20
+- C++23
 - Qt 6
 - Boost: Asio Pool
 - CMake
