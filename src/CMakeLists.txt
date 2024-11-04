@@ -27,6 +27,9 @@ target_link_libraries(CellEvoX
     PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Qml
+    Qt6::Core
+    Qt6::Gui
     Boost::boost
     protobuf::libprotobuf
     RocksDB::rocksdb

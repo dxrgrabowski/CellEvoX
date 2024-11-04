@@ -30,6 +30,12 @@
 # Directories
 build/
 
+# Keys
+*.gpg
+*.asc
+*.pub
+CellEvoX
+
 # Other
 CMakeLists.txt.user
 .vscode/c_cpp_properties.json

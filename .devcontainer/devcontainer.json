@@ -5,7 +5,7 @@
     },
     "workspaceFolder": "/workspace",
     "settings": {
-        "terminal.integrated.shell.linux": "/bin/bash"
+        "terminal.integrated.shell.linux": "/bin/zsh"
     },
     "extensions": [
         "ms-vscode.cpptools",
@@ -18,6 +18,23 @@
         "ms-azuretools.vscode-docker",
         "bbenoist.QML"
     ],
-    "postCreateCommand": "cmake -S . -B build && cmake --build build",
-    "remoteUser": "root"
+    "runArgs": [
+        "--net=host",
+        "--env", "SSH_AUTH_SOCK=/ssh-agent",
+        "--volume", "${env:SSH_AUTH_SOCK}:/ssh-agent",
+        "-e"," QT_QPA_PLATFORM=wayland",
+        "-e", "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "-e"," XDG_RUNTIME_DIR=/tmp",
+        "-e", "QML2_IMPORT_PATH=/usr/lib/x86_64-linux-gnu/qt6/qml/"
+    ],
+    "mounts": [
+        "source=/run/user/1000/bus,target=/run/user/1000/bus,type=bind",
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+        //"source=/run/user/1000/wayland-0,target=/run/user/1000/wayland-0,type=bind",
+        "source=/dev/dri,target=/dev/dri,type=bind",
+
+    ],
+   // "postCreateCommand": "git clone git@github.com:dxrgrabowski/CellEvoX.git",
+    "remoteUser": "vscode"
 }
