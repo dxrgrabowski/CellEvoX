@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find required packages
-find_package(Qt6 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
+find_package(Qt6 6.6.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
 find_package(Boost REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(RocksDB REQUIRED)

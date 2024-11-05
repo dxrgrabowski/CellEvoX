@@ -2,15 +2,13 @@ FROM ubuntu:24.10
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
-    gnupg2 
 
-    # Create vscode user with sudo access
-RUN useradd -m -s /bin/bash vscode && \
-echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-COPY .devcontainer/CellEvoX /vscode/.ssh/CellEvoX
-COPY .devcontainer/CellEvoX.pub /vscode/.ssh/CellEvoX.pub
+RUN apt-get update && apt-get install -y sudo 
+RUN useradd -m -s /bin/bash dxr && \
+    echo "dxr ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    
+# COPY .devcontainer/CellEvoX /dxr/.ssh/CellEvoX
+# COPY .devcontainer/CellEvoX.pub /dxr/.ssh/CellEvoX.pub
 
 # Update packages and install basic tools
 RUN apt-get update && apt-get install -y \
@@ -37,29 +35,25 @@ RUN apt-get update && apt-get install -y \
     qt6-quick3d-dev \
     qt6-declarative-dev \
     qt6-wayland \
-    qt6-svg-dev \
-    qt6-webengine-dev \
-    qt6-multimedia-dev \
-    qt6-networkauth-dev \
-    qt6-lottie-dev 
-
-    
+    qml6-module-qtquick \
+    qml6-module-qtquick-controls \
+    qml6-module-qtquick-window \
+    qml6-module-qtquick-dialogs \
+    qml6-module-qtquick-layouts \
+    qml6-module-qtquick-particles \
+    qml6-module-qtqml-workerscript \
+    qml6-module-qtquick-templates \
+    qml6-module-qtqml \
+    qml6-module-qt5compat-graphicaleffects \
+    qt6-5compat-dev 
 
 RUN mkdir -p /run/user/1000 \
-    && chown vscode:vscode /run/user/1000 \
+    && chown dxr:dxr /run/user/1000 \
     && chmod 700 /run/user/1000
 
 ENV XDG_RUNTIME_DIR=/run/user/1000
 
-WORKDIR /workspace
+# RUN chmod 600 /dxr/.ssh/CellEvoX && \
+#     chmod 644 /dxr/.ssh/CellEvoX.pub 
 
-COPY . /workspace
-
-RUN chmod -R 777 /workspace
-
-RUN chmod 600 /vscode/.ssh/CellEvoX && \
-chmod 644 /vscode/.ssh/CellEvoX.pub 
-RUN usermod -a -G video vscode
-
-# Set default user
-USER vscode
+RUN usermod -a -G video dxr

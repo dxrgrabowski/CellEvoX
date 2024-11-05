@@ -1,6 +1,6 @@
 import QtQuick 2.15
-import QtQuick.Controls
-import QtQuick.Effects 
+import QtQuick.Controls 1.10
+import QtQuick.Effects 1.0
 
 Rectangle {
     color: Theme.secondary
@@ -8,7 +8,7 @@ Rectangle {
     radius: Theme.radius
     
     layer.enabled: true
-    layer.effect: MultiEffect {
+    MultiEffect {
         blur: 1.0
         blurMax: 32
         brightness: 0.1
