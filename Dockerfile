@@ -51,12 +51,15 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qtquick-window \
     qml6-module-qtquick-dialogs \
     qml6-module-qtquick-layouts \
+    qml6-module-qtquick-effects \
     qml6-module-qtquick-particles \
     qml6-module-qtqml-workerscript \
     qml6-module-qtquick-templates \
     qml6-module-qtqml \
     qml6-module-qt5compat-graphicaleffects \
-    qt6-5compat-dev 
+    qt6-5compat-dev \
+    qml6-module-qt-labs-platform \
+    qml6-module-qt-labs-folderlistmodel
 
 
 ENV XDG_RUNTIME_DIR=/run/user/1000
