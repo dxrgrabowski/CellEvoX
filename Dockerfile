@@ -1,22 +1,22 @@
 FROM ubuntu:24.10
 
-ARG USERNAME=defaultuser
+ARG USER=defaultuser
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y sudo
 
-RUN useradd -m -s /bin/bash ${USERNAME} && \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+RUN useradd -m -s /bin/bash ${USER} && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tworzenie folderu /run/user/1000 i przypisanie praw na podstawie zmiennej USERNAME
+# Tworzenie folderu /run/user/1000 i przypisanie praw na podstawie zmiennej USER
 RUN mkdir -p /run/user/1000 \
-    && chown ${USERNAME}:${USERNAME} /run/user/1000 \
+    && chown ${USER}:${USER} /run/user/1000 \
     && chmod 700 /run/user/1000
 
 # Dodanie użytkownika do grupy video
-RUN usermod -a -G video ${USERNAME}
+RUN usermod -a -G video ${USER}
 
 # COPY .devcontainer/CellEvoX /dxr/.ssh/CellEvoX
 # COPY .devcontainer/CellEvoX.pub /dxr/.ssh/CellEvoX.pub
@@ -62,4 +62,4 @@ RUN apt-get update && apt-get install -y \
 ENV XDG_RUNTIME_DIR=/run/user/1000
 
 # Domyślny użytkownik w kontenerze
-USER ${USERNAME}
+USER ${USER}
