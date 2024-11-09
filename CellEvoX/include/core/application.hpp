@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include "ecs/environment.hpp"
 
 namespace CellEvoX::core {
 
@@ -15,7 +14,7 @@ public:
     float calculateDeltaTime();
 
 private:
-    std::unique_ptr<ecs::Environment> m_environment;
+
 };
 
 }

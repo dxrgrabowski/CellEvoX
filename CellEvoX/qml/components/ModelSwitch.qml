@@ -2,109 +2,68 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
 
-Switch {
-    id: control
-    
-    property color activeColor: "#1DB954"
-    property color inactiveColor: "#ffffff30"
-    
-    indicator: Rectangle {
-        id: backgroundRect
-        implicitWidth: 56
-        implicitHeight: 28
-        x: control.leftPadding
-        y: parent.height / 2 - height / 2
+
+Rectangle {
+    id: root
+    height: 60
+    color: "#333333"
+    radius: 10
+
+    property bool isStochastic: false
+
+    MultiEffect {
+        source: parent
+        blur: 0.3
+        brightness: 0.05
+    }
+
+    Rectangle {
+        id: switchTrack
+        width: 120
+        height: 40
         radius: height / 2
-        color: control.checked ? activeColor : inactiveColor
-        
-        // Glass effect
-        MultiEffect {
-            source: backgroundRect
-            blur: 0.5
-            brightness: 0.1
-            contrast: 0.1
-        }
+        anchors.centerIn: parent
+        color: isStochastic ? "#404080" : "#804040"
 
         Rectangle {
             id: thumb
-            x: control.checked ? parent.width - width - 4 : 4
-            y: 4
             width: parent.height - 8
             height: width
             radius: width / 2
+            x: isStochastic ? parent.width - width - 4 : 4
+            anchors.verticalCenter: parent.verticalCenter
             color: "#ffffff"
-            
-            // Shadow effect
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: "#80000000"
-                shadowHorizontalOffset: 1
-                shadowVerticalOffset: 1
-                shadowBlur: 4.0
-            }
 
-            // Smooth transition animation
             Behavior on x {
-                NumberAnimation {
-                    duration: 200
-                    easing.type: Easing.InOutQuad
-                }
+                NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
             }
         }
 
-        // Hover effect
-        Rectangle {
+        Row {
             anchors.fill: parent
-            radius: parent.radius
-            color: "#ffffff"
-            opacity: control.hovered ? 0.1 : 0
-
-            Behavior on opacity {
-                NumberAnimation { duration: 200 }
+            Text {
+                width: parent.width / 2
+                height: parent.height
+                text: "RK4"
+                color: "white"
+                font.pixelSize: 14
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            Text {
+                width: parent.width / 2
+                height: parent.height
+                text: "Stochastic"
+                color: "white"
+                font.pixelSize: 14
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
         }
     }
 
-    // Label styling
-    contentItem: Text {
-        text: control.text
-        font.pixelSize: 14
-        color: "#ffffff"
-        verticalAlignment: Text.AlignVCenter
-        leftPadding: control.indicator.width + control.spacing
+    MouseArea {
+        anchors.fill: parent
+        onClicked: isStochastic = !isStochastic
     }
-
-    // State transitions
-    states: [
-        State {
-            name: "pressed"
-            when: control.pressed
-            PropertyChanges {
-                target: thumb
-                scale: 0.9
-            }
-        }
-    ]
-
-    transitions: [
-        Transition {
-            from: "*"
-            to: "pressed"
-            NumberAnimation {
-                properties: "scale"
-                duration: 100
-                easing.type: Easing.InOutQuad
-            }
-        },
-        Transition {
-            from: "pressed"
-            to: "*"
-            NumberAnimation {
-                properties: "scale"
-                duration: 100
-                easing.type: Easing.InOutQuad
-            }
-        }
-    ]
 }

@@ -2,16 +2,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Copy QML files to build directory
 file(COPY qml DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
+set(HEADERS
+    include/core/application.hpp
+    include/systems/SimulationEngine.hpp
+   # include/core/DatabaseManager.hpp
+    include/ecs/Cell.hpp
+)
+
 set(SOURCES
     src/main.cpp
     src/core/application.cpp
-    src/ecs/environment.cpp
+    src/systems/SimulationEngine.cpp
+    #src/core/DatabaseManager.cpp
+    src/ecs/Cell.cpp
 )
 
-set(HEADERS
-    include/core/application.hpp
-    include/ecs/environment.hpp
-)
 
 set(QML_FILES
     qml/main.qml
@@ -22,6 +27,7 @@ set(QML_FILES
     qml/components/ModelSwitch.qml
     qml/components/ProgressBar.qml
     qml/components/GlassPanel.qml
+    qml/components/GraphGenerator.qml
     qml/style/Themes.qml
 )
 
@@ -57,7 +63,6 @@ target_link_libraries(CellEvoX_GUI
     protobuf::libprotobuf
     RocksDB::rocksdb
     spdlog::spdlog
-    fmt::fmt
     Eigen3::Eigen
     TBB::tbb
 )

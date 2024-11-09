@@ -2,62 +2,66 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Controls.Material
+import QtQuick.Effects
 
 Rectangle {
     id: root
-    height: 80
+    color: "transparent"
     radius: 10
-    color: Qt.rgba(255, 255, 255, 0.03)
-
-    property string label: ""
-    property string placeholder: ""
-    property var validator: null
-    property string tooltip: ""
-    property alias value: input.text
+    
+    property var parameters: [
+        {label: "N", value: "0", tooltip: "Population size"},
+        {label: "Nc", value: "0", tooltip: "Critical population"},
+        {label: "Effect", value: "0", tooltip: "Effect strength"},
+        {label: "Prob", value: "0", tooltip: "Probability"},
+        {label: "TauStep", value: "0", tooltip: "Time step"},
+        {label: "nP", value: "0", tooltip: "Parameter n"},
+        {label: "nT", value: "0", tooltip: "Parameter t"}
+    ]
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 4
+        spacing: 10
 
-        Text {
-            text: label
-            color: "white"
-            font.pixelSize: 14
-            font.weight: Font.Medium
-        }
+        Repeater {
+            model: parameters
+            delegate: Rectangle {
+                Layout.fillWidth: true
+                height: 60
+                color: "#333333"
+                radius: 8
 
-        TextField {
-            id: input
-            Layout.fillWidth: true
-            placeholderText: placeholder
-            validator: root.validator
-            color: "white"
-            font.pixelSize: 16
-            
-            background: Rectangle {
-                color: "transparent"
-                border.color: parent.activeFocus ? Material.accent : Qt.rgba(255, 255, 255, 0.1)
-                border.width: 2
-                radius: 6
+                MultiEffect {
+                    source: parent
+                    blur: 0.3
+                    brightness: 0.05
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 10
+
+                    Text {
+                        text: modelData.label
+                        color: "#ffffff"
+                        font.pixelSize: 16
+                    }
+
+                    TextField {
+                        Layout.fillWidth: true
+                        text: modelData.value
+                        color: "#ffffff"
+                        background: Rectangle {
+                            color: "#404040"
+                            radius: 4
+                        }
+                        
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.tooltip
+                    }
+                }
             }
-
-            ToolTip.visible: hovered
-            ToolTip.text: tooltip
-        }
-    }
-
-    // Validation state
-    Rectangle {
-        width: 8
-        height: 8
-        radius: 4
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 12
-        color: {
-            if (input.text === "") return "transparent"
-            return input.acceptableInput ? "#5c5c5c" : "#F44336"
         }
     }
 }

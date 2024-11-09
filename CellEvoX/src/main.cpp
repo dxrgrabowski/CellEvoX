@@ -7,9 +7,6 @@ int main(int argc, char *argv[]) {
     QQmlApplicationEngine engine;
 
     CellEvoX::core::Application cancerSim;
-    
-    //engine.addImportPath("/home/dxr/qtcreator-14.0.2/lib/Qt/qml");
-
 
     engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
     
