@@ -34,7 +34,6 @@ build/
 *.gpg
 *.asc
 *.pub
-CellEvoX
 
 # Other
 CMakeLists.txt.user

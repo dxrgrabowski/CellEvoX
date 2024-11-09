@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "CellEvoX/ecs/environment.hpp"
+#include "ecs/environment.hpp"
 
 namespace CellEvoX::core {
 

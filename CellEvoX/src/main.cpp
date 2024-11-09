@@ -1,6 +1,6 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include "CellEvoX/core/application.hpp"
+#include "core/application.hpp"
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
     //engine.addImportPath("/home/dxr/qtcreator-14.0.2/lib/Qt/qml");
 
 
-    engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
+    engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
     
     return app.exec();
 }

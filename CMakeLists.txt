@@ -20,7 +20,7 @@ find_package(TBB CONFIG REQUIRED)
 # fmt included in C++23
 
 # Add subdirectories
-add_subdirectory(src)
+add_subdirectory(CellEvoX)
 
 # Create resources file
 

@@ -1,4 +1,4 @@
-#include "CellEvoX/ecs/environment.hpp"
+#include "ecs/environment.hpp"
 #include <spdlog/spdlog.h>
 #include <tbb/parallel_for_each.h>
 

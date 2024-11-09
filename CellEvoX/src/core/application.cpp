@@ -1,4 +1,4 @@
-#include "CellEvoX/core/application.hpp"
+#include "core/application.hpp"
 #include <spdlog/spdlog.h>
 #include <fmt/format.h>
 
