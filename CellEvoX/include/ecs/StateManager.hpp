@@ -1,7 +1,7 @@
 #pragma once
 #include <rocksdb/db.h>
 #include <memory>
-#include "ecs/Cell.hpp"
+#include "Cell.hpp"
 
 class StateManager {
 public:

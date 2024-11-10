@@ -1,13 +1,15 @@
 #include "core/application.hpp"
 #include <spdlog/spdlog.h>
-#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+#include <fstream>
 #include "systems/SimulationEngine.hpp"
+#include "utils/SimulationConfig.hpp"
 //#include "core/DatabaseManager.hpp"
 namespace CellEvoX::core {
 
 float calculateDeltaTime();
 
-Application::Application()
+Application::Application(po::variables_map& vm) : vm(vm)
 {
     initialize();
 }
@@ -18,7 +20,16 @@ void Application::initialize() {
     spdlog::info("CellEvoX Application starting...");
     
     // Initialize the simulation engine
-    SimulationEngine sim(SimulationEngine::SimulationType::STOCHASTIC_TAU_LEAP, 0.1, 1000);
+    if (vm.count("config")) {
+        std::ifstream config_file(vm["config"].as<std::string>());
+        nlohmann::json config;
+        config_file >> config;
+        sim_engine = std::make_unique<SimulationEngine>(utils::fromJson(config));
+    }
+
+    // Gui Supplemented
+    // SimulationEngine sim(SimulationEngine::SimulationConfig{});
+
 
     // Initialize the database manager
     // DatabaseManager db;

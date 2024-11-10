@@ -29,6 +29,7 @@
 
 # Directories
 build/
+.vscode
 
 # Keys
 *.gpg
@@ -37,4 +38,3 @@ build/
 
 # Other
 CMakeLists.txt.user
-.vscode/c_cpp_properties.json

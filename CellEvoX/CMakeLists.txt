@@ -7,6 +7,8 @@ set(HEADERS
     include/systems/SimulationEngine.hpp
    # include/core/DatabaseManager.hpp
     include/ecs/Cell.hpp
+    include/utils/MathUtils.hpp
+    include/utils/SimulationConfig.hpp
 )
 
 set(SOURCES
@@ -60,11 +62,13 @@ target_link_libraries(CellEvoX_GUI
     Qt6::Core
     Qt6::Gui
     Boost::boost
+    Boost::program_options
     protobuf::libprotobuf
     RocksDB::rocksdb
     spdlog::spdlog
     Eigen3::Eigen
     TBB::tbb
+    nlohmann_json::nlohmann_json
 )
 
 install(TARGETS CellEvoX_GUI
