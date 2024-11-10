@@ -22,19 +22,24 @@ public:
     uint64_t parent_id{0};
     uint64_t id{0};
     double fitness{1.0};
-    
+    double birth_time{0.0};
     enum class State {
         ALIVE,
         DEAD,
-        ALIVE_SPLITTING
     };
     State state{State::ALIVE};
     
     std::vector<Mutation> mutations; // Test later with boost::container::small_vector
 
     explicit Cell(uint64_t cellId) : id(cellId) {}
-    explicit Cell(uint64_t parentId, uint64_t cellId, double cellFitness) : 
-        parent_id(parentId), id(cellId), fitness(cellFitness)  {}
-    explicit Cell(const Cell& parent, uint64_t cellId) : 
-        parent_id(parent.id), id(cellId), fitness(parent.fitness), state(State::ALIVE), mutations(parent.mutations) {}
+
+    explicit Cell(const Cell& parent, uint64_t cellId, double cellFitness, double birthTime) : 
+        parent_id(parent.id), 
+        id(cellId), 
+        fitness(cellFitness), 
+        mutations(parent.mutations),
+        birth_time(birthTime) {}
 };
+
+// Czy przy podziale nowa komórka może dostać więcej niż jedną mutację? 
+// Dlaczego, w ten sposób zaburzamy dane nam prawdopodobieństo mutacji i staje się to zależne od kolejności ifów

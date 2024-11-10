@@ -64,13 +64,13 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
 inline void printConfig(const SimulationConfig& config) {
     spdlog::info("Simulation configuration:");
     spdlog::info("Simulation type: {}", toString(config.sim_type));
-    spdlog::info("Tau step: {:.2f}", config.tau_step);
+    spdlog::info("Tau step: {:.3f}", config.tau_step);
     spdlog::info("Initial population: {}", config.initial_population);
     spdlog::info("Environment capacity: {}", config.env_capacity);
     spdlog::info("Number of steps: {}", config.steps);
     spdlog::info("Mutations:");
     for (const auto& mut : config.mutations) {
-        spdlog::info("{} mutation with id: {}, effect: {:.2f}, probability: {:.2f}", 
+        spdlog::info("{} mutation with id: {}, effect: {:.2f}, probability: {:.3f}", 
             toString(mut.type), mut.id, mut.effect, mut.probability);
     }
 }

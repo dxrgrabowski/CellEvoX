@@ -23,14 +23,15 @@ public:
     
     void step();
     void run(size_t steps);
+    void stop();
     
 private:
     void stochasticStep();
     void deterministicStep();
-    
+    //void rk4DeterministicStep(double deltaTime);
     tbb::concurrent_vector<Cell, Cell::CellAllocator> cells;
-    tbb::concurrent_vector<Mutation> available_mutations;
-    size_t env_capacity;
-    SimulationType sim_type;
+    std::vector<Mutation> available_mutations; // try tbb?
     double tau;
+    double total_mutation_probability;
+    SimulationConfig config;
 };

@@ -18,17 +18,15 @@ Application::~Application() = default;
 
 void Application::initialize() {
     spdlog::info("CellEvoX Application starting...");
-    
+    spdlog::set_level(spdlog::level::trace);
     // Initialize the simulation engine
     if (vm.count("config")) {
         std::ifstream config_file(vm["config"].as<std::string>());
         nlohmann::json config;
         config_file >> config;
         sim_engine = std::make_unique<SimulationEngine>(utils::fromJson(config));
+        sim_engine->run(10000);
     }
-
-    // Gui Supplemented
-    // SimulationEngine sim(SimulationEngine::SimulationConfig{});
 
 
     // Initialize the database manager

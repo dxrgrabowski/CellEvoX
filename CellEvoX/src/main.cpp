@@ -25,12 +25,12 @@ int main(int argc, char *argv[])
         return 1;
     }
     CellEvoX::core::Application cancerSim(vm);
-
-    QGuiApplication app(argc, argv);
-    QQmlApplicationEngine engine;
-
-
-    engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
     
-    return app.exec();
+    // QGuiApplication app(argc, argv);
+    // QQmlApplicationEngine engine;
+
+
+    // engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
+    
+    return 0 ;//app.exec();
 }
