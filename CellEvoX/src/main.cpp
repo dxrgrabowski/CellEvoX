@@ -1,3 +1,4 @@
+#include <execution>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include "core/application.hpp"

@@ -16,13 +16,14 @@ find_package(spdlog REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(TBB CONFIG REQUIRED)
 find_package(nlohmann_json 3 REQUIRED)
+find_package(GTest)
 
 # range-v3 included in C++23
 # fmt included in C++23
 
 # Add subdirectories
 add_subdirectory(CellEvoX)
-
+#add_subdirectory(tests)
 # Create resources file
 
 

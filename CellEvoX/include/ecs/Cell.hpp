@@ -18,7 +18,7 @@ struct Mutation {
 
 class Cell {
 public:
-    using CellAllocator = boost::pool_allocator<Cell>;
+    //using CellAllocator = boost::pool_allocator<Cell>;
     uint64_t parent_id{0};
     uint64_t id{0};
     double fitness{1.0};

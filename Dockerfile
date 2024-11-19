@@ -60,7 +60,9 @@ RUN apt-get update && apt-get install -y \
     qt6-5compat-dev \
     qml6-module-qt-labs-platform \
     qml6-module-qt-labs-folderlistmodel \
-    nlohmann-json3-dev 
+    nlohmann-json3-dev \
+    libgtest-dev \
+    gdb
 
 
 ENV XDG_RUNTIME_DIR=/run/user/1000

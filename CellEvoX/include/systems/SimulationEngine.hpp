@@ -1,5 +1,6 @@
 #pragma once
 #include <tbb/concurrent_vector.h>
+//#include <tbb/concurrent_hash_map.h>
 #include "ecs/Cell.hpp"
 
 enum class SimulationType {
@@ -29,8 +30,10 @@ private:
     void stochasticStep();
     void deterministicStep();
     //void rk4DeterministicStep(double deltaTime);
-    tbb::concurrent_vector<Cell, Cell::CellAllocator> cells;
+    tbb::concurrent_vector<Cell> cells;
     std::vector<Mutation> available_mutations; // try tbb?
+    size_t actual_population;
+    size_t actual_deaths;
     double tau;
     double total_mutation_probability;
     SimulationConfig config;

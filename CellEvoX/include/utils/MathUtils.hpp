@@ -6,7 +6,7 @@
 namespace utils {
     class FitnessCalculator {
     public:
-        static Eigen::VectorXd getCellsFitnessVector(const tbb::concurrent_vector<Cell, Cell::CellAllocator>& cells) {
+        static Eigen::VectorXd getCellsFitnessVector(const tbb::concurrent_vector<Cell>& cells) {
             Eigen::VectorXd fitnessVector(cells.size());
             
             tbb::parallel_for(size_t(0), cells.size(), [&](size_t i) {

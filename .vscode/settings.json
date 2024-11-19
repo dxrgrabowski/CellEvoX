@@ -80,6 +80,7 @@
         "ranges": "cpp",
         "typeindex": "cpp",
         "valarray": "cpp",
-        "core": "cpp"
+        "core": "cpp",
+        "dense": "cpp"
     }
 }

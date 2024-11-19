@@ -3,13 +3,17 @@
 #include "utils/SimulationConfig.hpp"
 #include <random>
 #include <tbb/parallel_for_each.h>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/parallel_pipeline.h>
 #include <Eigen/Dense>
-
+#include <unordered_set>
 using namespace utils;
 
 SimulationEngine::SimulationEngine(SimulationConfig config) :
     tau(0.0), 
-    config(config)
+    config(config), 
+    actual_population(config.initial_population),
+    actual_deaths(0)
 {
     utils::printConfig(config);
     cells.reserve(config.initial_population);
@@ -30,7 +34,6 @@ SimulationEngine::SimulationEngine(SimulationConfig config) :
 }
 
 void SimulationEngine::step() {
-    spdlog::debug("Simulation step {}", tau);
     switch (config.sim_type) {
         case SimulationType::STOCHASTIC_TAU_LEAP:
             stochasticStep();
@@ -116,17 +119,16 @@ void SimulationEngine::stop() {
 
 void SimulationEngine::stochasticStep() {
     tau += config.tau_step;
-    
+    // Wyfiltrować wektor z martwych komórek, wartości mają być referencją, poprzez ustawianie stanu na DEAD będą one aplikować to w bazowym wektorze
     const size_t N = cells.size();
     const size_t Nc = config.env_capacity;
     
     Eigen::VectorXd death_probs = Eigen::VectorXd::Zero(N);
     Eigen::VectorXd birth_probs = Eigen::VectorXd::Zero(N);
 
-    // Try it later with batch version
+    // OPTIMIZE: Try it later with batch version
     // Eigen::VectorXd fitness_vector = Eigen::VectorXd::Zero(N);
     // FitnessCalculator::updateFitnessVector(cells, fitness_vector);
-    spdlog::debug("Calculating probabilities for {} cells", N);
     // Fast vectorized random generation
     death_probs = -death_probs.setRandom().array().log();  // Exponential distribution
     birth_probs = -birth_probs.setRandom().array().log();  // Exponential distribution
@@ -135,18 +137,23 @@ void SimulationEngine::stochasticStep() {
     death_probs = death_probs.array() / (N/Nc);
     birth_probs = birth_probs.array() / FitnessCalculator::getCellsFitnessVector(cells).array();
 
-    tbb::concurrent_vector<Cell, Cell::CellAllocator> new_cells;
+    tbb::concurrent_vector<Cell> new_cells;
     new_cells.reserve(cells.size() * 1.5);
     int new_cells_count = 0;
+    int death_count = 0;
+
+    // auto alive_cells_range = tbb::filter([](const tbb::concurrent_hash_map<uint64_t, Cell>::value_type& kv) {
+    //     return kv.second.state == Cell::State::ALIVE;
+    // });
 
     tbb::parallel_for(size_t(0), cells.size(), [&](size_t i) {
         if (death_probs(i) <= tau) {
             cells[i].state = Cell::State::DEAD;
-            //spdlog::trace("Cell {} died", cells[i].id);
+            death_count++;
+                //spdlog::trace("Cell {} died", cells[i].id);
         } 
         else if (birth_probs(i) <= tau) {
             new_cells_count++;
-            cells[i].state = Cell::State::ALIVE;
 
             double rand_val = (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0 * total_mutation_probability;
             double prob_sum = 0.0;
@@ -154,18 +161,18 @@ void SimulationEngine::stochasticStep() {
             for (const auto& mut : available_mutations) {
                 prob_sum += mut.probability;
                 if (rand_val < prob_sum) {
-
+                    
                     Cell daughter_cell = Cell(
-                        cells[i], 
-                        new_cells_count,
-                        cells[i].fitness * (1.0 + mut.effect),
+                    cells[i], 
+                    new_cells_count,
+                    cells[i].fitness * (1.0 + mut.effect),
                         tau
                     );
-                    
+                
                     daughter_cell.mutations.push_back(mut);
                     new_cells.push_back(daughter_cell);
                     //spdlog::trace("Cell {} -> {} mutated with {} : {}", cells[i].id, daughter_cell.id,toString(mut.type), mut.effect);
-
+                    
                     if (daughter_cell.parent_id != cells[i].id) {
                         spdlog::error("Parent id mismatch: {} != {}", daughter_cell.parent_id, cells[i].id);
                     }
@@ -175,9 +182,71 @@ void SimulationEngine::stochasticStep() {
         }
     });
 
-    for (const auto& cell : new_cells) {
-        cells.push_back(cell);
+    // for (const auto& cell : new_cells) {
+        
+    //     cells.push_back(cell);
+    // }
+
+    size_t starting_id = cells.size();
+    size_t new_cells_size = new_cells.size();
+
+
+    tbb::parallel_for(size_t(0), new_cells_size, [&](size_t i) {
+        new_cells[i].id = starting_id + i;  // Każda komórka otrzymuje unikalny ID
+        cells.push_back(new_cells[i]);
+    });
+
+    
+    actual_deaths += death_count;
+    actual_population += new_cells_count;
+    spdlog::debug("Step {:.3f} for {} cells | New cells: {} | Dead cells: {}\n",tau, N, new_cells_count, death_count);
+
+    // Sprawdzenie liczby martwych komórek
+size_t dead_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
+    return cell.state == Cell::State::DEAD;
+});
+
+if (dead_cells_count != actual_deaths) {
+    spdlog::error("Mismatch in dead cells count: expected {}, found {}", actual_deaths, dead_cells_count);
+}
+
+// Sprawdzenie liczby narodzin
+size_t alive_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
+    return cell.state == Cell::State::ALIVE;
+});
+
+if (alive_cells_count != actual_population) {
+    spdlog::error("Mismatch in alive cells count: expected {}, found {}", actual_population, alive_cells_count);
+}
+
+// Sprawdzenie duplikatów ID
+std::unordered_set<uint64_t> cell_ids;
+bool duplicate_found = false;
+for (const auto& cell : cells) {
+    if (!cell_ids.insert(cell.id).second) {
+        spdlog::error("Duplicate cell ID found: {}", cell.id);
+        duplicate_found = true;
     }
+}
+
+if (!duplicate_found) {
+    spdlog::debug("No duplicate cell IDs found.");
+}
+
+// Sprawdzenie, czy ID odpowiadają liczbie komórek
+uint64_t max_id = 0;
+for (const auto& cell : cells) {
+    if (cell.id > max_id) {
+        max_id = cell.id;
+    }
+}
+
+if (max_id + 1 != cells.size()) {
+    spdlog::error("Mismatch in cell count and max ID: max ID {}, cell count {}", max_id, cells.size());
+} else {
+    spdlog::info("Cell count matches max ID.");
+}
+
 }
 
 // void SimulationEngine::rk4DeterministicStep(double deltaTime) {
@@ -235,50 +304,50 @@ void SimulationEngine::stochasticStep() {
 
 // Nice to have feature for the future
 void SimulationEngine::deterministicStep() {
-    const double k1 = 0.1; // Growth rate
-    const double k2 = 0.05; // Death rate
+    // const double k1 = 0.1; // Growth rate
+    // const double k2 = 0.05; // Death rate
 
-    tbb::parallel_for_each(cells.begin(), cells.end(),
-        [&](Cell& cell) {
-            // RK4 implementation for population dynamics
-            double y = 1.0; // Initial population unit
-            double t = 0.0;
+    // tbb::parallel_for_each(cells.begin(), cells.end(),
+    //     [&](Cell& cell) {
+    //         // RK4 implementation for population dynamics
+    //         double y = 1.0; // Initial population unit
+    //         double t = 0.0;
 
-            auto f = [k1, k2](double t, double y) {
-                return k1 * y - k2 * y * y;
-            };
+    //         auto f = [k1, k2](double t, double y) {
+    //             return k1 * y - k2 * y * y;
+    //         };
 
-            // RK4 steps
-            double h = tau;
-            double k1_rk = h * f(t, y);
-            double k2_rk = h * f(t + h/2, y + k1_rk/2);
-            double k3_rk = h * f(t + h/2, y + k2_rk/2);
-            double k4_rk = h * f(t + h, y + k3_rk);
+    //         // RK4 steps
+    //         double h = tau;
+    //         double k1_rk = h * f(t, y);
+    //         double k2_rk = h * f(t + h/2, y + k1_rk/2);
+    //         double k3_rk = h * f(t + h/2, y + k2_rk/2);
+    //         double k4_rk = h * f(t + h, y + k3_rk);
 
-            double delta = (k1_rk + 2*k2_rk + 2*k3_rk + k4_rk) / 6;
+    //         double delta = (k1_rk + 2*k2_rk + 2*k3_rk + k4_rk) / 6;
 
-            if (delta > 0) {
-                cell.state = Cell::State::ALIVE; // AS
-            } else if (delta < -0.5) {
-                cell.state = Cell::State::DEAD;
-            }
-        }
-    );
+    //         if (delta > 0) {
+    //             cell.state = Cell::State::ALIVE; // AS
+    //         } else if (delta < -0.5) {
+    //             cell.state = Cell::State::DEAD;
+    //         }
+    //     }
+    // );
 
-    // Handle population changes similar to stochastic method
-    tbb::concurrent_vector<Cell, Cell::CellAllocator> new_cells;
-    new_cells.reserve(cells.size() * 2);
+    // // Handle population changes similar to stochastic method
+    // tbb::concurrent_vector<Cell, Cell::CellMapAllocator> new_cells;
+    // new_cells.reserve(cells.size() * 2);
 
-    for (const auto& cell : cells) {
-        if (cell.state != Cell::State::DEAD) {
-            new_cells.push_back(cell);
-            if (1) {
-                Cell daughter_cell = cell;
-                daughter_cell.id = static_cast<uint64_t>(new_cells.size());
-                new_cells.push_back(daughter_cell);
-            }
-        }
-    }
+    // for (const auto& cell : cells) {
+    //     if (cell.state != Cell::State::DEAD) {
+    //         new_cells.push_back(cell);
+    //         if (1) {
+    //             Cell daughter_cell = cell;
+    //             daughter_cell.id = static_cast<uint64_t>(new_cells.size());
+    //             new_cells.push_back(daughter_cell);
+    //         }
+    //     }
+    // }
 
-    cells.swap(new_cells);
+    // cells.swap(new_cells);
 }
