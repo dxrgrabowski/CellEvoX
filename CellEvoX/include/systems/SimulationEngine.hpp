@@ -33,7 +33,7 @@ private:
     tbb::concurrent_vector<Cell> cells;
     std::vector<Mutation> available_mutations; // try tbb?
     size_t actual_population;
-    size_t actual_deaths;
+    size_t total_deaths;
     double tau;
     double total_mutation_probability;
     SimulationConfig config;
