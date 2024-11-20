@@ -4,6 +4,8 @@
 #include <fstream>
 #include "systems/SimulationEngine.hpp"
 #include "utils/SimulationConfig.hpp"
+#include "ecs/Run.hpp"
+#include "core/RunDataEngine.hpp"
 //#include "core/DatabaseManager.hpp"
 namespace CellEvoX::core {
 
@@ -25,7 +27,11 @@ void Application::initialize() {
         nlohmann::json config;
         config_file >> config;
         sim_engine = std::make_unique<SimulationEngine>(utils::fromJson(config));
-        sim_engine->run(10000);
+        const ecs::Run &run = sim_engine->run(config.at("steps"));
+
+        RunDataEngine data_engine(0.005);
+        data_engine.exportToGEXF(run.cells, "output.gexf", run.tau);
+        data_engine.exportToCSV(run.cells, "output.csv");
     }
 
 

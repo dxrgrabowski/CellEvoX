@@ -44,5 +44,5 @@
         //"source=/run/user/1000/wayland-0,target=/run/user/1000/wayland-0,type=bind",
         "source=/dev/dri,target=/dev/dri,type=bind"
     ],
-    "postCreateCommand": "sudo chown -R $(whoami) /home/${env:USER}/"
+    "postCreateCommand": "sudo chown -R $(whoami) /home/${env:USER}/ && git config --global user.email 'mdexor@gmail.com'"
 }

@@ -7,8 +7,10 @@ set(HEADERS
     include/systems/SimulationEngine.hpp
    # include/core/DatabaseManager.hpp
     include/ecs/Cell.hpp
+    include/ecs/Run.hpp
     include/utils/MathUtils.hpp
     include/utils/SimulationConfig.hpp
+    include/core/RunDataEngine.hpp
 )
 
 set(SOURCES
@@ -16,7 +18,7 @@ set(SOURCES
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
     #src/core/DatabaseManager.cpp
-    src/ecs/Cell.cpp
+    src/core/RunDataEngine.cpp
 )
 
 

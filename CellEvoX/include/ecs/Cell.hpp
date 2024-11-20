@@ -9,6 +9,24 @@ enum class MutationType : uint8_t {
     NEUTRAL = 2,
     NEGATIVE = 3
 };
+
+inline std::ostream& operator<<(std::ostream& os, MutationType type) {
+    switch (type) {
+        case MutationType::DRIVER:
+            os << "DRIVER";
+            break;
+        case MutationType::POSITIVE:
+            os << "POSITIVE";
+            break;
+        case MutationType::NEUTRAL:
+            os << "NEUTRAL";
+            break;
+        case MutationType::NEGATIVE:
+            os << "NEGATIVE";
+            break;
+    }
+    return os;
+}
 struct Mutation {
     double effect;
     double probability;
@@ -19,11 +37,12 @@ struct Mutation {
 class Cell {
 public:
     //using CellAllocator = boost::pool_allocator<Cell>;
-    uint64_t parent_id{0};
-    uint64_t id{0};
+    uint32_t parent_id{0};
+    uint32_t id{0};
     double fitness{1.0};
     double birth_time{0.0};
-    enum class State {
+    double death_time{0.0};
+    enum class State : uint8_t {
         ALIVE,
         DEAD,
     };
@@ -31,9 +50,9 @@ public:
     
     std::vector<Mutation> mutations; // Test later with boost::container::small_vector
 
-    explicit Cell(uint64_t cellId) : id(cellId) {}
+    explicit Cell(uint32_t cellId) : id(cellId) {}
 
-    explicit Cell(const Cell& parent, uint64_t cellId, double cellFitness, double birthTime) : 
+    explicit Cell(const Cell& parent, uint32_t cellId, double cellFitness, double birthTime) : 
         parent_id(parent.id), 
         id(cellId), 
         fitness(cellFitness), 

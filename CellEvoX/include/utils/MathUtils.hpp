@@ -6,11 +6,11 @@
 namespace utils {
     class FitnessCalculator {
     public:
-        static Eigen::VectorXd getCellsFitnessVector(const tbb::concurrent_vector<Cell>& cells, const std::vector<int> &alive_cell_indices) {
+        static Eigen::VectorXd getCellsFitnessVector(const tbb::concurrent_vector<Cell>& cells, const std::vector<uint32_t> &alive_cell_indices) {
             Eigen::VectorXd fitnessVector(alive_cell_indices.size());
 
-            tbb::parallel_for(int(0), (int)alive_cell_indices.size(), [&](int idx) {
-                int i = alive_cell_indices[idx];
+            tbb::parallel_for(uint32_t(0), (uint32_t)alive_cell_indices.size(), [&](uint32_t idx) {
+                uint32_t i = alive_cell_indices[idx];
                 fitnessVector(idx) = cells[i].fitness;
             });
             

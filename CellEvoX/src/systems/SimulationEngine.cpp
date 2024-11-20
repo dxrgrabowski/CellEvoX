@@ -19,7 +19,7 @@ SimulationEngine::SimulationEngine(SimulationConfig config) :
     utils::printConfig(config);
     cells.reserve(config.initial_population);
     
-    for (size_t i = 0; i < config.initial_population; ++i) {
+    for (uint32_t i = 0; i < config.initial_population; ++i) {
         cells.emplace_back(i);
     }
 
@@ -45,9 +45,9 @@ void SimulationEngine::step() {
     }
 }
 
-void SimulationEngine::run(size_t steps) {
+const ecs::Run SimulationEngine::run(uint32_t steps) {
     auto start_time = std::chrono::steady_clock::now();
-    for (size_t i = 0; i < steps; ++i) {
+    for (uint32_t i = 0; i < steps; ++i) {
         auto current_time = std::chrono::steady_clock::now();
         auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
         
@@ -59,57 +59,10 @@ void SimulationEngine::run(size_t steps) {
         step();
     }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, cells.size() - 1);
-
-    size_t total_mutations = 0;
-    size_t driver_mutations = 0;
-    size_t positive_mutations = 0;
-    size_t neutral_mutations = 0;
-    size_t negative_mutations = 0;
-
-    for (size_t i = 0; i < cells.size(); ++i) {
-        size_t random_index = dis(gen);
-        total_mutations += cells[random_index].mutations.size();
-        for (const auto& mutation : cells[random_index].mutations) {
-            switch (mutation.type) {
-                case MutationType::DRIVER:
-                    ++driver_mutations;
-                    break;
-                case MutationType::POSITIVE:
-                    ++positive_mutations;
-                    break;
-                case MutationType::NEUTRAL:
-                    ++neutral_mutations;
-                    break;
-                case MutationType::NEGATIVE:
-                    ++negative_mutations;
-                    break;
-            }
-        }
-    }
-
-    double average_mutations = static_cast<double>(total_mutations) / cells.size();
-    size_t mutation_vector_size = average_mutations * sizeof(Mutation);
-    size_t total_mutation_memory = mutation_vector_size * cells.size();
-
-    spdlog::info("Average number of mutations per cell: {:.2f}", average_mutations);
-
-    spdlog::info("Simulation ended at time {}", tau);
-    spdlog::info("Total cells: {}\n", cells.size());
-    spdlog::info("Size of one Cell: {} bytes", sizeof(Cell));
-    size_t total_size = cells.size() * sizeof(Cell);
-    size_t total_mutation_size = total_size / (1024 * 1024);
-    spdlog::info("Total size of Cells: {} B | {} MB", total_size, total_mutation_size);
-    spdlog::info("Total mutations: {} size: {} B | {} MB", total_mutations, total_mutation_memory, total_mutation_memory / (1024 * 1024));  
-    spdlog::info("Total memory: {} B | {} MB\n", total_size + total_mutation_memory, (total_size + total_mutation_memory) / (1024 * 1024));
-
-    spdlog::info("Driver mutations: {}", driver_mutations);
-    spdlog::info("Positive mutations: {}", positive_mutations);
-    spdlog::info("Neutral mutations: {}", neutral_mutations);
-    spdlog::info("Negative mutations: {}", negative_mutations);
-    spdlog::info("Total mutations: {}", total_mutations);
+    return ecs::Run(std::move(cells), 
+        total_deaths, 
+        tau
+    );
 }
 
 void SimulationEngine::stop() {
@@ -132,8 +85,8 @@ void SimulationEngine::stochasticStep() {
     death_probs = -death_probs.setRandom().array().log();  // Exponential distribution
     birth_probs = -birth_probs.setRandom().array().log();  // Exponential distribution
 
-    std::vector<int> alive_cell_indices;
-    for (size_t i = 0; i < cells.size(); ++i) {
+    std::vector<uint32_t> alive_cell_indices;
+    for (uint32_t i = 0; i < cells.size(); ++i) {
         if (cells[i].state == Cell::State::ALIVE) {
             alive_cell_indices.push_back(i);
         }
@@ -152,13 +105,14 @@ void SimulationEngine::stochasticStep() {
     }
     
     tbb::concurrent_vector<Cell> new_cells;
-    std::atomic<int> new_cells_count(0), death_count(0);
+    std::atomic<uint32_t> new_cells_count(0), death_count(0);
 
     
-    tbb::parallel_for(0, (int)alive_cell_indices.size(), [&](int idx) {
-        int i = alive_cell_indices[idx];
+    tbb::parallel_for((uint32_t)0, (uint32_t)alive_cell_indices.size(), [&](uint32_t idx) {
+        uint32_t i = alive_cell_indices[idx];
         if (death_probs(idx) <= tau) {
             cells[i].state = Cell::State::DEAD;
+            cells[i].death_time = tau;
             death_count++;
             //spdlog::trace("Cell {} died", cells[i].id);
         } 
@@ -193,10 +147,10 @@ void SimulationEngine::stochasticStep() {
     });
 
 
-    size_t starting_id = cells.size();
-    size_t new_cells_size = new_cells.size();
+    uint32_t starting_id = cells.size();
+    uint32_t new_cells_size = new_cells.size();
 
-    tbb::parallel_for(size_t(0), new_cells_size, [&](size_t i) {
+    tbb::parallel_for(uint32_t(0), new_cells_size, [&](uint32_t i) {
         new_cells[i].id = starting_id + i;  // Każda komórka otrzymuje unikalny ID
         cells.push_back(new_cells[i]);
     });
@@ -205,45 +159,45 @@ void SimulationEngine::stochasticStep() {
     total_deaths += death_count;
     actual_population += new_cells_count;
     actual_population -= death_count;
-    spdlog::info("Step {:.3f} for {} cells | New cells: {} | Dead cells: {}", tau, N, new_cells_count, death_count);
+    spdlog::info("Step {:.3f} for {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau, N, new_cells_count, death_count, total_deaths);
 
-    // Sprawdzenie liczby martwych komórek
-    size_t dead_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
-        return cell.state == Cell::State::DEAD;
-    });
+    // // Sprawdzenie liczby martwych komórek
+    // uint32_t dead_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
+    //     return cell.state == Cell::State::DEAD;
+    // });
 
-    if (dead_cells_count != total_deaths) {
-        spdlog::error("Post mismatch in dead cells count: expected {}, found {}", total_deaths, dead_cells_count);
-    }
+    // if (dead_cells_count != total_deaths) {
+    //     spdlog::error("Post mismatch in dead cells count: expected {}, found {}", total_deaths, dead_cells_count);
+    // }
 
-    // Sprawdzenie liczby narodzin
-    size_t alive_cells_count = cells.size() - total_deaths;
+    // // Sprawdzenie liczby narodzin
+    // uint32_t alive_cells_count = cells.size() - total_deaths;
 
-    if (alive_cells_count != actual_population) {
-        spdlog::error("Post mismatch in alive cells count: expected {}, found {}", actual_population, alive_cells_count);
-    }
+    // if (alive_cells_count != actual_population) {
+    //     spdlog::error("Post mismatch in alive cells count: expected {}, found {}", actual_population, alive_cells_count);
+    // }
 
-    // Sprawdzenie duplikatów i ciągłości ID
-    std::unordered_set<uint64_t> cell_ids;
-    bool duplicate_found = false;
-    for (auto it = cells.begin(); it != cells.end(); ++it) {
-        if (!cell_ids.insert(it->id).second) {
-            spdlog::error("Duplicate cell ID found: {}", it->id);
-            duplicate_found = true;
-        }
-    }
+    // // Sprawdzenie duplikatów i ciągłości ID
+    // std::unordered_set<uint32_t> cell_ids;
+    // bool duplicate_found = false;
+    // for (auto it = cells.begin(); it != cells.end(); ++it) {
+    //     if (!cell_ids.insert(it->id).second) {
+    //         spdlog::error("Duplicate cell ID found: {}", it->id);
+    //         duplicate_found = true;
+    //     }
+    // }
 
-    // Sprawdzenie, czy ID odpowiadają liczbie komórek
-    uint64_t max_id = 0;
-    for (const auto& cell : cells) {
-        if (cell.id > max_id) {
-            max_id = cell.id;
-        }
-    }
+    // // Sprawdzenie, czy ID odpowiadają liczbie komórek
+    // uint32_t max_id = 0;
+    // for (const auto& cell : cells) {
+    //     if (cell.id > max_id) {
+    //         max_id = cell.id;
+    //     }
+    // }
 
-    if (max_id + 1 != cells.size()) {
-        spdlog::error("Mismatch in cell count and max ID: max ID {}, cell count {}", max_id, cells.size());
-    } 
+    // if (max_id + 1 != cells.size()) {
+    //     spdlog::error("Mismatch in cell count and max ID: max ID {}, cell count {}", max_id, cells.size());
+    // } 
 }
 
 // void SimulationEngine::rk4DeterministicStep(double deltaTime) {
