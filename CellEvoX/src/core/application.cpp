@@ -29,9 +29,9 @@ void Application::initialize() {
         sim_engine = std::make_unique<SimulationEngine>(utils::fromJson(config));
         const ecs::Run &run = sim_engine->run(config.at("steps"));
 
-        RunDataEngine data_engine(0.005);
-        data_engine.exportToGEXF(run.cells, "output.gexf", run.tau);
-        data_engine.exportToCSV(run.cells, "output.csv");
+        // RunDataEngine data_engine(0.005);
+        // data_engine.exportToGEXF(run.cells, "output.gexf", run.tau);
+        // data_engine.exportToCSV(run.cells, "output.csv");
     }
 
 

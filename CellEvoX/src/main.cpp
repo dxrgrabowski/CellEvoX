@@ -1,9 +1,9 @@
-#include <QGuiApplication>
-#include <QQmlApplicationEngine>
 #include "core/application.hpp"
 //#include <spdlog/spdlog.h>
 #include <iostream>
 #include <boost/program_options.hpp>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
 
 
 namespace po = boost::program_options;

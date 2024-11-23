@@ -40,7 +40,6 @@ public:
     uint32_t parent_id{0};
     uint32_t id{0};
     double fitness{1.0};
-    double birth_time{0.0};
     double death_time{0.0};
     enum class State : uint8_t {
         ALIVE,
@@ -48,17 +47,52 @@ public:
     };
     State state{State::ALIVE};
     
-    std::vector<Mutation> mutations; // Test later with boost::container::small_vector
+    std::vector<Mutation> mutations; 
 
     explicit Cell(uint32_t cellId) : id(cellId) {}
 
-    explicit Cell(const Cell& parent, uint32_t cellId, double cellFitness, double birthTime) : 
+    
+    explicit Cell(const Cell& parent, uint32_t cellId, double cellFitness) : 
         parent_id(parent.id), 
         id(cellId), 
         fitness(cellFitness), 
-        mutations(parent.mutations),
-        birth_time(birthTime) {}
+        mutations(parent.mutations) {}
+
+    // Move constructor
+    Cell(Cell&& other) noexcept :
+        parent_id(other.parent_id),
+        id(other.id),
+        fitness(other.fitness),
+        death_time(other.death_time),
+        state(other.state),
+        mutations(std::move(other.mutations)) {}
+        
+    // Move assignment operator
+    Cell& operator=(Cell&& other) noexcept {
+        if (this != &other) {
+            parent_id = other.parent_id;
+            id = other.id;
+            fitness = other.fitness;
+            death_time = other.death_time;
+            state = other.state;
+            mutations = std::move(other.mutations);
+        }
+        return *this;
+    }
+    
+    // Copy assignment operator (if needed)
+    Cell& operator=(const Cell& other) {
+        if (this != &other) {
+            parent_id = other.parent_id;
+            id = other.id;
+            fitness = other.fitness;
+            death_time = other.death_time;
+            state = other.state;
+            mutations = other.mutations;
+        }
+        return *this;
+    }
 };
 
-// Czy przy podziale nowa komórka może dostać więcej niż jedną mutację? 
-// Dlaczego, w ten sposób zaburzamy dane nam prawdopodobieństo mutacji i staje się to zależne od kolejności ifów
+// Czy po śmierci starej komórki i narodzinach nowych tylko jedna 
+// dostaje nowy fitness z racji ewentualnej nowej mutacji

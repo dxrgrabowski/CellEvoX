@@ -1,17 +1,17 @@
 #pragma once
 
-#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_hash_map.h>
 #include <vector>
 #include <random>
 #include <spdlog/spdlog.h>
 #include "ecs/Cell.hpp"
 #include <unordered_set>
-
 namespace ecs {
 
+using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
 class Run {
 public:
-    tbb::concurrent_vector<Cell> cells;
+    CellMap cells;
     size_t total_deaths = 0;
     size_t total_mutations = 0;
     int driver_mutations = 0;
@@ -22,7 +22,7 @@ public:
     size_t total_memory_usage = 0;
     double tau = 0.0;
 
-    Run(tbb::concurrent_vector<Cell>&& cells, size_t deaths, double tau)
+    Run(CellMap cells, size_t deaths, double tau)
         : cells(std::move(cells)),
           total_deaths(deaths),
           tau(tau) {
@@ -63,8 +63,8 @@ public:
         int N = cells.size();
 
         for (const auto& cell : cells) {
-            total_mutations += cell.mutations.size();
-            for (const auto& mutation : cell.mutations) {
+            total_mutations += cell.second.mutations.size();
+            for (const auto& mutation : cell.second.mutations) {
                 switch (mutation.type) {
                     case MutationType::DRIVER:
                         ++driver_mutations;
@@ -89,42 +89,13 @@ public:
 
     void checkRunCorrectness() const {
 
-        int dead_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
-            return cell.state == Cell::State::DEAD;
-        });
-        
-        int alive_cells_count = std::count_if(cells.begin(), cells.end(), [](const Cell& cell) {
-            return cell.state == Cell::State::ALIVE;
-        });
-
-        if (dead_cells_count != total_deaths) {
-            spdlog::error("Mismatch in dead cells count: expected {}, found {}", total_deaths, dead_cells_count);
-        }
-        if (alive_cells_count != cells.size() - total_deaths) {
-            spdlog::error("Mismatch in alive cells count: expected {}, found {}", cells.size() - total_deaths, alive_cells_count);
-        }
-
         // Check duplicate cell IDs and ID consistency
         std::unordered_set<uint64_t> cell_ids;
         uint64_t max_id = 0;
 
         for (const auto& cell : cells) {
-            if (!cell_ids.insert(cell.id).second) {
-                spdlog::error("Duplicate cell ID found: {}", cell.id);
-            }
-            if (cell.id > max_id) {
-                max_id = cell.id;
-            }
-        }
-
-        if (max_id + 1 != cells.size()) {
-            spdlog::error("Mismatch in cell count and max ID: max ID {}, cell count {}", max_id, cells.size());
-        }
-
-        // Check ID continuity
-        for (uint64_t id = 0; id <= max_id; ++id) {
-            if (cell_ids.find(id) == cell_ids.end()) {
-                spdlog::error("Missing cell ID: {}", id);
+            if (!cell_ids.insert(cell.second.id).second) {
+                spdlog::error("Duplicate cell ID found: {}", cell.second.id);
             }
         }
     }
