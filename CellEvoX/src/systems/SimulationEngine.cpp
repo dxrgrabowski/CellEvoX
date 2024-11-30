@@ -14,20 +14,19 @@
 
 using namespace utils;
 
-SimulationEngine::SimulationEngine(SimulationConfig config) :
+SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config) :
     tau(0.0), 
     config(config), 
-    actual_population(config.initial_population),
+    actual_population(config->initial_population),
     total_deaths(0)
 {
-    utils::printConfig(config);
-    cells.rehash(config.initial_population);
+    cells.rehash(config->initial_population);
     
-    for (uint32_t i = 0; i < config.initial_population; ++i) {
+    for (uint32_t i = 0; i < config->initial_population; ++i) {
         cells.insert({i, Cell(i)});
     }
 
-    for (const auto& mutation : config.mutations) {
+    for (const auto& mutation : config->mutations) {
         available_mutation_types[mutation.type_id] = mutation;
     }
 
@@ -35,13 +34,10 @@ SimulationEngine::SimulationEngine(SimulationConfig config) :
             [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
                 return sum + pair.second.probability;
             });
-
-    //spdlog::info("Running simulation for {} steps", config.steps);
-    //run(config.steps);
 }
 
 void SimulationEngine::step() {
-    switch (config.sim_type) {
+    switch (config->sim_type) {
         case SimulationType::STOCHASTIC_TAU_LEAP:
             stochasticStep();
             break;
@@ -51,7 +47,7 @@ void SimulationEngine::step() {
     }
 }
 
-const ecs::Run SimulationEngine::run(uint32_t steps) {
+ecs::Run SimulationEngine::run(uint32_t steps) {
     auto start_time = std::chrono::steady_clock::now();
     for (uint32_t i = 0; i < steps; ++i) {
         auto current_time = std::chrono::steady_clock::now();
@@ -92,9 +88,10 @@ Eigen::VectorXd generateExponentialDistribution(int size) {
     }
 
 void SimulationEngine::stochasticStep() {
-    tau += config.tau_step;
+    double tau_step = config->tau_step;
+    tau += tau_step;
     const size_t N = actual_population;
-    const size_t Nc = config.env_capacity;
+    const size_t Nc = config->env_capacity;
     const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
    
     Eigen::VectorXd death_probs = 
@@ -124,13 +121,13 @@ void SimulationEngine::stochasticStep() {
             uint32_t idx = alive_cell_indices[i];
             CellMap::accessor cell;
             if (cells.find(cell, idx)) {
-                if (death_probs[i] <= config.tau_step) {
+                if (death_probs[i] <= tau_step) {
                     cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
                     dead_cells.push_back(idx);
                     death_count++;
                     //spdlog::trace("Cell {} died", cells[i].id);
                 } 
-                else if (birth_probs[i] <= config.tau_step) {
+                else if (birth_probs[i] <= tau_step) {
                     new_cells_count += 2;
 
                     cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});

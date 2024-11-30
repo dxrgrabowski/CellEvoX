@@ -18,6 +18,8 @@ public:
 private:
     po::variables_map& vm;
     std::unique_ptr<SimulationEngine> sim_engine;
+    std::shared_ptr<SimulationConfig> sim_config;
+    std::vector<std::shared_ptr<ecs::Run>> runs;
 };
 
 }

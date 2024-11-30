@@ -6,8 +6,12 @@
 
 namespace CellEvoX::core {
 
-RunDataEngine::RunDataEngine(double generation_step)
-    : generation_step(generation_step) {}
+RunDataEngine::RunDataEngine(
+    std::shared_ptr<SimulationConfig> config, 
+    std::shared_ptr<ecs::Run> run, 
+    double generation_step)
+    : config(config), run(run), 
+    generation_step(generation_step) {}
 
 
 

@@ -26,11 +26,13 @@ void Application::initialize() {
         std::ifstream config_file(vm["config"].as<std::string>());
         nlohmann::json config;
         config_file >> config;
-        sim_engine = std::make_unique<SimulationEngine>(utils::fromJson(config));
-        const ecs::Run &run = sim_engine->run(config.at("steps"));
+        sim_config = std::make_shared<SimulationConfig>(utils::fromJson(config));
+        utils::printConfig(*sim_config);
+        sim_engine = std::make_unique<SimulationEngine>(sim_config);
+        runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
 
-        // RunDataEngine data_engine(0.005);
-        // data_engine.exportToGEXF(run.cells, "output.gexf", run.tau);
+        RunDataEngine data_engine(sim_config, runs[0], 0.005);
+        // data_engine.exportToGEXF(run, "output.gexf", run.tau);
         // data_engine.exportToCSV(run.cells, "output.csv");
     }
 

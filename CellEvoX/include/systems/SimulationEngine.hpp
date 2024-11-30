@@ -23,10 +23,10 @@ struct SimulationConfig {
 class SimulationEngine {
 public:
 
-    SimulationEngine(SimulationConfig config);
+    SimulationEngine(std::shared_ptr<SimulationConfig>);
     
     void step();
-    const ecs::Run run(uint32_t steps);
+    ecs::Run run(uint32_t steps);
     void stop();
     
 private:
@@ -41,5 +41,5 @@ private:
     size_t total_deaths;
     double tau;
     double total_mutation_probability;
-    SimulationConfig config;
+    std::shared_ptr<SimulationConfig> config;
 };
