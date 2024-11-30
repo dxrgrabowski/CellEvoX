@@ -65,8 +65,8 @@ target_link_libraries(CellEvoX_GUI
     Qt6::Gui
     Boost::boost
     Boost::program_options
-    protobuf::libprotobuf
-    RocksDB::rocksdb
+    #protobuf::libprotobuf
+    #RocksDB::rocksdb
     spdlog::spdlog
     Eigen3::Eigen
     TBB::tbb

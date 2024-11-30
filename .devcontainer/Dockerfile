@@ -37,9 +37,9 @@ RUN apt-get update && apt-get install -y \
     gnupg2 \
     libboost-all-dev \
     libtbb-dev \
-    libprotobuf-dev \
-    protobuf-compiler \
-    librocksdb-dev \
+    # libprotobuf-dev \
+    # protobuf-compiler \
+    # librocksdb-dev \
     libeigen3-dev \
     qt6-base-dev \
     qt6-tools-dev \
@@ -61,7 +61,7 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qt-labs-platform \
     qml6-module-qt-labs-folderlistmodel \
     nlohmann-json3-dev \
-
+    gdb
 
 
 ENV XDG_RUNTIME_DIR=/run/user/1000

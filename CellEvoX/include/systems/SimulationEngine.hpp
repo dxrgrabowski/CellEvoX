@@ -32,11 +32,12 @@ public:
 private:
     void stochasticStep();
     //void rk4DeterministicStep(double deltaTime);
-    tbb::concurrent_hash_map<uint32_t, Mutation> mutations;
+    tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<uint32_t>> mutation_instances;
 
     CellMap cells;
-    tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard;
-    std::vector<Mutation> available_mutations; // try tbb?
+    // <id, <parent_id, death_time>>
+    tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard; 
+    std::unordered_map<uint8_t, Mutation> available_mutation_types; // try tbb?
     size_t actual_population;
     size_t total_deaths;
     double tau;

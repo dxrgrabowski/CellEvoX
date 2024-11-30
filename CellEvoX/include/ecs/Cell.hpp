@@ -41,13 +41,8 @@ public:
     uint32_t id{0};
     double fitness{1.0};
     double death_time{0.0};
-    enum class State : uint8_t {
-        ALIVE,
-        DEAD,
-    };
-    State state{State::ALIVE};
     
-    std::vector<Mutation> mutations; 
+    std::vector<uint8_t> mutations; 
 
     explicit Cell(uint32_t cellId) : id(cellId) {}
 
@@ -64,7 +59,6 @@ public:
         id(other.id),
         fitness(other.fitness),
         death_time(other.death_time),
-        state(other.state),
         mutations(std::move(other.mutations)) {}
         
     // Move assignment operator
@@ -74,24 +68,12 @@ public:
             id = other.id;
             fitness = other.fitness;
             death_time = other.death_time;
-            state = other.state;
             mutations = std::move(other.mutations);
         }
         return *this;
     }
     
-    // Copy assignment operator (if needed)
-    Cell& operator=(const Cell& other) {
-        if (this != &other) {
-            parent_id = other.parent_id;
-            id = other.id;
-            fitness = other.fitness;
-            death_time = other.death_time;
-            state = other.state;
-            mutations = other.mutations;
-        }
-        return *this;
-    }
+    Cell& operator=(const Cell& other) = delete;
 };
 
 // Czy po śmierci starej komórki i narodzinach nowych tylko jedna 

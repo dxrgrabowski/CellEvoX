@@ -2,7 +2,7 @@
     "name": "CellEvoX Qt Development Container",
     "remoteUser": "${env:USER}",
     "build": {
-        "dockerfile": "../Dockerfile",
+        "dockerfile": "Dockerfile",
         "args": {
             "USER": "${env:USER}"
         }
