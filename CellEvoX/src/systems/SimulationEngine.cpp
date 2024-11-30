@@ -28,11 +28,11 @@ SimulationEngine::SimulationEngine(SimulationConfig config) :
     }
 
     for (const auto& mutation : config.mutations) {
-        available_mutation_types[mutation.id] = mutation;
+        available_mutation_types[mutation.type_id] = mutation;
     }
 
     total_mutation_probability = std::accumulate(available_mutation_types.begin(), available_mutation_types.end(), 0.0, 
-            [](double sum, const std::pair<const uint8_t, Mutation>& pair) {
+            [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
                 return sum + pair.second.probability;
             });
 
@@ -65,8 +65,10 @@ const ecs::Run SimulationEngine::run(uint32_t steps) {
         step();
     }
     
-    return ecs::Run(std::move(cells), 
+    return ecs::Run(
+        std::move(cells), 
         std::move(available_mutation_types),
+        std::move(cells_graveyard),
         total_deaths, 
         tau
      );
@@ -136,16 +138,14 @@ void SimulationEngine::stochasticStep() {
                     death_count++;
                     double rand_val = (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0; // Random val from 0.0 to 1.0   
                     if (rand_val >= total_mutation_probability) {
-                        new_cells.push_back(Cell(
+                        new_cells.emplace_back(
                             cell->second,
-                            0,
                             cell->second.fitness 
-                        ));
-                        new_cells.push_back(Cell(
+                        );
+                        new_cells.emplace_back(
                             cell->second,
-                            0,
                             cell->second.fitness 
-                        ));
+                        );
                     }else {
                         double prob_sum = 0.0;
                         for (const auto& mut : available_mutation_types) {
@@ -154,17 +154,15 @@ void SimulationEngine::stochasticStep() {
                                 
                                 Cell daughter_cell1 = Cell(
                                     cell->second,
-                                    0,
                                     cell->second.fitness * (1.0 + mut.second.effect) 
                                 );
-                                daughter_cell1.mutations.push_back(mut.second.id);
+                                daughter_cell1.mutations.push_back({0, mut.second.type_id});
 
                                 new_cells.push_back(std::move(daughter_cell1));
-                                new_cells.push_back(Cell(
+                                new_cells.emplace_back(
                                     cell->second,
-                                    0,
                                     cell->second.fitness 
-                                ));
+                                );
                                 break;
                             }
                         }
@@ -178,7 +176,16 @@ void SimulationEngine::stochasticStep() {
     for (size_t i = 0; i < new_cells.size(); ++i) {
         CellMap::accessor accessor;
         new_cells[i].id = starting_id + i;
-        cells.insert(accessor, {starting_id + i, std::move(new_cells[i])});
+        if (!cells.insert(accessor, {starting_id + i, std::move(new_cells[i])}))
+        {
+            spdlog::error("Failed to insert new cell {}", starting_id + i);
+        }
+        
+        for(auto &mut : accessor->second.mutations)
+        {
+            if(mut.first == 0)
+                mut.first = starting_id + i;
+        }
     }
     for (const auto& dead_id : dead_cells) {
         cells.erase(dead_id);
@@ -186,13 +193,6 @@ void SimulationEngine::stochasticStep() {
 
     total_deaths += death_count;
     actual_population = actual_population + new_cells_count - death_count;
-    // spdlog::info("Step {:.3f} {} -> {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau,N, actual_population, new_cells_count, death_count, total_deaths);
-
-    // if (cells.size() != actual_population) {
-    //     spdlog::error("Post Mismatch in cell count: expected {}, found {}", actual_population, cells.size());
-    // }
-    // if (total_deaths != cells_graveyard.size()) {
-    //     spdlog::error("Post Mismatch in graveyard count: expected {}, found {}", total_deaths, cells_graveyard.size());
-    // }
+    //spdlog::info("Step {:.3f} {} -> {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau,N, actual_population, new_cells_count, death_count, total_deaths);
 }
 

@@ -12,7 +12,8 @@ using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
 class Run {
 public:
     CellMap cells;
-    std::unordered_map<uint8_t, Mutation> mutation_id_to_type;
+    std::unordered_map<uint8_t, MutationType> mutation_id_to_type;
+    tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard; 
     size_t total_deaths = 0;
     size_t total_mutations = 0;
     int driver_mutations = 0;
@@ -20,23 +21,33 @@ public:
     int neutral_mutations = 0;
     int negative_mutations = 0;
     double average_mutations = 0.0;
-    size_t total_memory_usage = 0;
+    size_t total_cell_memory_usage = 0;
+    size_t total_mutations_memory = 0;
+    size_t total_graveyard_memory = 0;
     double tau = 0.0;
 
-    Run(CellMap cells, std::unordered_map<uint8_t, Mutation> mutation_id_to_type, size_t deaths, double tau)
-        : cells(std::move(cells)),
-          mutation_id_to_type(std::move(mutation_id_to_type)),
-          total_deaths(deaths),
-          tau(tau) {
+    Run(
+        CellMap cells, 
+        std::unordered_map<uint8_t, MutationType> mutation_id_to_type, 
+        tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard,
+        size_t deaths, 
+        double tau
+    )   : cells(std::move(cells)),
+        mutation_id_to_type(std::move(mutation_id_to_type)),
+        cells_graveyard(std::move(cells_graveyard)),
+        total_deaths(deaths),
+        tau(tau) 
+    {
+
         processRunInfo();
         logResults();
         checkRunCorrectness();
     }
 
-    Run(const Run&) = delete; // Prevent copying
+    Run(const Run&) = delete;
     Run& operator=(const Run&) = delete;
 
-    Run(Run&&) = default; // Allow move semantics
+    Run(Run&&) = default;
     Run& operator=(Run&&) = default;
 
     void logResults() const {
@@ -49,15 +60,11 @@ public:
         spdlog::info("    Positive mutations: {}", positive_mutations);
         spdlog::info("    Neutral mutations: {}", neutral_mutations);
         spdlog::info("    Negative mutations: {}", negative_mutations);
+        size_t total_memory_usage = total_cell_memory_usage + total_mutations_memory + total_graveyard_memory;
         spdlog::info("Total memory usage: {} KB with:", total_memory_usage / (1024));
-        
-        int total_cell_memory = cells.size() * sizeof(Cell) / (1024);
-        spdlog::info("   Alive cells memory usage: {} KB", total_cell_memory);
-        
-        size_t total_mutations_memory = 0;
-        size_t mutation_per_cell_mem = average_mutations * sizeof(Mutation);
-        size_t total_mutation_memory = mutation_per_cell_mem * cells.size();
-        spdlog::info("    Mutations memory usage: {} KB", total_mutation_memory / (1024));
+        spdlog::info("   Alive cells memory usage: {} KB", total_cell_memory_usage/ (1024));
+        spdlog::info("   Graveyard memory usage: {} KB", total_graveyard_memory / (1024));
+        spdlog::info("   Mutations memory usage: {} KB", total_mutations_memory / (1024));
     }
 
     void processRunInfo()
@@ -67,18 +74,18 @@ public:
        for (const auto& cell : cells) {
             total_mutations += cell.second.mutations.size();
             for (const auto& mutation_id : cell.second.mutations) {
-                MutationType type = mutation_id_to_type[mutation_id].type;
+                MutationVariant type = mutation_id_to_type[mutation_id.second].type;
                 switch (type) {
-                    case MutationType::DRIVER:
+                    case MutationVariant::DRIVER:
                         ++driver_mutations;
                         break;
-                    case MutationType::POSITIVE:
+                    case MutationVariant::POSITIVE:
                         ++positive_mutations;
                         break;
-                    case MutationType::NEUTRAL:
+                    case MutationVariant::NEUTRAL:
                         ++neutral_mutations;
                         break;
-                    case MutationType::NEGATIVE:
+                    case MutationVariant::NEGATIVE:
                         ++negative_mutations;
                         break;
                 }
@@ -86,13 +93,15 @@ public:
         }
 
         average_mutations = static_cast<double>(total_mutations) / N;
-        size_t mutation_vector_size = average_mutations * sizeof(Mutation);
-        total_memory_usage = mutation_vector_size * N + N * sizeof(Cell);
+        total_mutations_memory = N * average_mutations * sizeof(std::pair<uint32_t, uint8_t>);
+        total_cell_memory_usage = N * sizeof(Cell);
+
+        total_graveyard_memory = cells_graveyard.size() * sizeof(std::pair<uint32_t, std::pair<uint32_t, double>>);
     }
 
+    // Check duplicate cell IDs and ID consistency
     void checkRunCorrectness() const {
 
-        // Check duplicate cell IDs and ID consistency
         std::unordered_set<uint64_t> cell_ids;
         uint64_t max_id = 0;
 
@@ -100,6 +109,28 @@ public:
             if (!cell_ids.insert(cell.second.id).second) {
                 spdlog::error("Duplicate cell ID found: {}", cell.second.id);
             }
+            if (cell.second.id > max_id) {
+                max_id = cell.second.id;
+            }
+        }
+
+        for (const auto& cell : cells_graveyard) {
+            if (!cell_ids.insert(cell.first).second) {
+                spdlog::error("Duplicate cell ID found in graveyard: {}", cell.first);
+            }
+            if (cell.first > max_id) {
+                max_id = cell.first;
+            }
+        }
+
+        if (max_id + 1 != cells.size() + cells_graveyard.size()) {
+            spdlog::error("Mismatch in cell count and max ID: max ID {}, total cells {}", max_id, cells.size() + cells_graveyard.size());
+        } else {
+            spdlog::debug("Cell count matches max ID.");
+        }
+
+        if (total_deaths != cells_graveyard.size()) {
+            spdlog::error("Post Mismatch in graveyard count: expected {}, found {}", total_deaths, cells_graveyard.size());
         }
     }
 };

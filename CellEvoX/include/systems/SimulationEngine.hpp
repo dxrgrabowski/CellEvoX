@@ -12,7 +12,7 @@ enum class SimulationType {
 };
 
 struct SimulationConfig {
-        std::vector<Mutation> mutations;
+        std::vector<MutationType> mutations;
         SimulationType sim_type;
         double tau_step;
         size_t initial_population;
@@ -32,12 +32,11 @@ public:
 private:
     void stochasticStep();
     //void rk4DeterministicStep(double deltaTime);
-    tbb::concurrent_hash_map<uint32_t, tbb::concurrent_vector<uint32_t>> mutation_instances;
 
     CellMap cells;
     // <id, <parent_id, death_time>>
     tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard; 
-    std::unordered_map<uint8_t, Mutation> available_mutation_types; // try tbb?
+    std::unordered_map<uint8_t, MutationType> available_mutation_types;
     size_t actual_population;
     size_t total_deaths;
     double tau;

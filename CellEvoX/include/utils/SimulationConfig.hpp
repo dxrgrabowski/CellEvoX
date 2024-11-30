@@ -16,21 +16,21 @@ inline const char* toString(SimulationType type) {
     }
 }
 
-inline MutationType stringToMutationType(const std::string& type) {
-    static const std::unordered_map<std::string, MutationType> typeMap = {
-        {"DRIVER", MutationType::DRIVER},
-        {"POSITIVE", MutationType::POSITIVE},
-        {"NEUTRAL", MutationType::NEUTRAL},
-        {"NEGATIVE", MutationType::NEGATIVE}
+inline MutationVariant stringToMutationVariant(const std::string& type) {
+    static const std::unordered_map<std::string, MutationVariant> typeMap = {
+        {"DRIVER", MutationVariant::DRIVER},
+        {"POSITIVE", MutationVariant::POSITIVE},
+        {"NEUTRAL", MutationVariant::NEUTRAL},
+        {"NEGATIVE", MutationVariant::NEGATIVE}
     };
     return typeMap.at(type);
 }
-inline std::string toString(MutationType type) {
+inline std::string toString(MutationVariant type) {
     switch (type) {
-        case MutationType::DRIVER: return "DRIVER";
-        case MutationType::POSITIVE: return "POSITIVE";
-        case MutationType::NEUTRAL: return "NEUTRAL";
-        case MutationType::NEGATIVE: return "NEGATIVE";
+        case MutationVariant::DRIVER: return "DRIVER";
+        case MutationVariant::POSITIVE: return "POSITIVE";
+        case MutationVariant::NEUTRAL: return "NEUTRAL";
+        case MutationVariant::NEGATIVE: return "NEGATIVE";
         default: return "UNKNOWN";
     }
 }
@@ -50,7 +50,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
                 mut.at("effect"),
                 mut.at("probability"),
                 mut.at("id"),
-                stringToMutationType(mut.at("type"))
+                stringToMutationVariant(mut.at("type"))
             });
         }
     } catch (const nlohmann::json::exception& e) {
@@ -70,8 +70,8 @@ inline void printConfig(const SimulationConfig& config) {
     spdlog::info("Number of steps: {}", config.steps);
     spdlog::info("Mutations:");
     for (const auto& mut : config.mutations) {
-        spdlog::info("{} mutation with id: {}, effect: {:.2f}, probability: {:.3f}", 
-            toString(mut.type), mut.id, mut.effect, mut.probability);
+        spdlog::info("    {} mutation with id: {}, effect: {:.2f}, probability: {:.3f}", 
+            toString(mut.type), mut.type_id, mut.effect, mut.probability);
     }
 }
 
