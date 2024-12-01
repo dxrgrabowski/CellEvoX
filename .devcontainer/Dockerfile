@@ -61,7 +61,8 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qt-labs-platform \
     qml6-module-qt-labs-folderlistmodel \
     nlohmann-json3-dev \
-    gdb
+    gdb \
+    python3-matplotlib
 
 
 ENV XDG_RUNTIME_DIR=/run/user/1000

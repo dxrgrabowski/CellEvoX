@@ -11,6 +11,7 @@ set(HEADERS
     include/utils/MathUtils.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
+    include/external/matplotlibcpp.h
 )
 
 set(SOURCES
@@ -54,6 +55,8 @@ target_sources(CellEvoX_GUI PRIVATE ${QML_RESOURCES})
 target_include_directories(CellEvoX_GUI
     PRIVATE
     include
+    ${Python3_INCLUDE_DIRS}
+    ${NUMPY_INCLUDE_DIR}
 )
 
 target_link_libraries(CellEvoX_GUI
@@ -71,6 +74,7 @@ target_link_libraries(CellEvoX_GUI
     Eigen3::Eigen
     TBB::tbb
     nlohmann_json::nlohmann_json
+    ${Python3_LIBRARIES}
 )
 
 install(TARGETS CellEvoX_GUI

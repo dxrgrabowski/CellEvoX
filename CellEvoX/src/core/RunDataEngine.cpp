@@ -3,8 +3,11 @@
 #include <cmath>
 #include <spdlog/spdlog.h>
 #include <map>
+#include <external/matplotlibcpp.h>
 
 namespace CellEvoX::core {
+
+namespace plt = matplotlibcpp;
 
 RunDataEngine::RunDataEngine(
     std::shared_ptr<SimulationConfig> config, 
@@ -13,18 +16,14 @@ RunDataEngine::RunDataEngine(
     : config(config), run(run), 
     generation_step(generation_step) {}
 
-
-
-void RunDataEngine::generateGraphvizDot(const tbb::concurrent_vector<Cell>& cells, const std::string& output_path) {
-
-}
-
-void RunDataEngine::exportToGEXF(const tbb::concurrent_vector<Cell>& cells, const std::string& output_file, const double& sim_end) {
- 
-}
-
-void RunDataEngine::exportToCSV(const tbb::concurrent_vector<Cell>& cells, const std::string& output_file) {
+void RunDataEngine::exportToCharts() 
+{
 
 }
+
+
+// void RunDataEngine::exportToCSV() {
+
+// }
 
 } // namespace core

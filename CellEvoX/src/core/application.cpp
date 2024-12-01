@@ -32,8 +32,7 @@ void Application::initialize() {
         runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
 
         RunDataEngine data_engine(sim_config, runs[0], 0.005);
-        // data_engine.exportToGEXF(run, "output.gexf", run.tau);
-        // data_engine.exportToCSV(run.cells, "output.csv");
+        data_engine.exportToCharts();
     }
 
 

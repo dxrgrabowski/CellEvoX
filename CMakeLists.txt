@@ -11,6 +11,12 @@ set(CMAKE_AUTOUIC ON)
 # Find required packages
 find_package(Qt6 6.6.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+execute_process(
+    COMMAND python3 -c "import numpy; print(numpy.get_include())"
+    OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(TBB CONFIG REQUIRED)
