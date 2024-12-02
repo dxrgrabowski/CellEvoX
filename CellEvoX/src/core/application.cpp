@@ -32,7 +32,9 @@ void Application::initialize() {
         runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
 
         RunDataEngine data_engine(sim_config, runs[0], 0.005);
-        data_engine.exportToCharts();
+        data_engine.plotFitnessStatistics();
+        data_engine.plotLivingCellsOverGenerations();
+        data_engine.plotMutationWave();
     }
 
 

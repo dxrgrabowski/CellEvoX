@@ -14,6 +14,9 @@ public:
 
     // Generate a graph in Graphviz DOT format
     void exportToCharts();
+    void plotLivingCellsOverGenerations();
+    void plotFitnessStatistics();
+    void plotMutationWave();
     //void exportToCSV(const tbb::concurrent_vector<Cell>& cells, const std::string& output_file);
 private:
     double generation_step; // Time step for separating generations

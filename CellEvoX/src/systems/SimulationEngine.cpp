@@ -48,23 +48,41 @@ void SimulationEngine::step() {
 }
 
 ecs::Run SimulationEngine::run(uint32_t steps) {
-    auto start_time = std::chrono::steady_clock::now();
+    auto last_update_time = std::chrono::steady_clock::now();
+    const char* spinner = "|/-\\";
+    int spinner_index = 0;
+    const int bar_width = 50; // Width of the progress bar
+
     for (uint32_t i = 0; i < steps; ++i) {
-        auto current_time = std::chrono::steady_clock::now();
-        auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-        
-        if (elapsed_time >= 60) {
-            spdlog::info("Simulation ended after {} seconds at step {}", elapsed_time, i);
-            break;
-        }
-        
         step();
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_update_time).count();
+        if (elapsed_time >= 100) { // Update progress every 100 milliseconds
+            int progress = static_cast<int>((static_cast<double>(i + 1) / steps) * 100);
+            int pos = static_cast<int>((static_cast<double>(i + 1) / steps) * bar_width);
+
+            std::cout << "\r\033[1;32mProgress: [";
+            for (int j = 0; j < bar_width; ++j) {
+                if (j < pos) std::cout << "#";
+                else std::cout << " ";
+            }
+            std::cout << "] " << progress << "% " << spinner[spinner_index] << "\033[0m" << std::flush;
+
+            spinner_index = (spinner_index + 1) % 4;
+            last_update_time = current_time;
+        }
     }
+    std::cout << "\r\033[1;32mProgress: [";
+    for (int j = 0; j < bar_width; ++j) {
+        std::cout << "#";
+    }
+    std::cout << "] 100% \033[0m" << std::endl;
     
     return ecs::Run(
         std::move(cells), 
         std::move(available_mutation_types),
         std::move(cells_graveyard),
+        std::move(generational_report),
         total_deaths, 
         tau
      );
@@ -187,9 +205,29 @@ void SimulationEngine::stochasticStep() {
     for (const auto& dead_id : dead_cells) {
         cells.erase(dead_id);
     }
-
     total_deaths += death_count;
     actual_population = actual_population + new_cells_count - death_count;
+
+    if (static_cast<int>(tau) % 10 == 0) {
+        takeSnapshot();
+    }
     //spdlog::info("Step {:.3f} {} -> {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau,N, actual_population, new_cells_count, death_count, total_deaths);
 }
 
+void SimulationEngine::takeSnapshot() {
+    double total_fitness = 0.0;
+    double total_fitness_squared = 0.0;
+    size_t living_cells_count = 0;
+
+    for (const auto& cell : cells) {
+        total_fitness += cell.second.fitness;
+        total_fitness_squared += cell.second.fitness * cell.second.fitness;
+        ++living_cells_count;
+    }
+
+    double mean_fitness = total_fitness / living_cells_count;
+    double fitness_variance = (total_fitness_squared / living_cells_count) - (mean_fitness * mean_fitness);
+
+    generational_report.push_back({tau ,mean_fitness, fitness_variance, living_cells_count});
+}
+ 
