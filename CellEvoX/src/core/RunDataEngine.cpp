@@ -109,6 +109,62 @@ void RunDataEngine::plotMutationWave() {
     plt::save("mutation_wave_histogram.png"); // Zapisz wykres do pliku
     plt::show(); // Wyświetl wykres
 }
+
+void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
+{
+    std::ofstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Nie można otworzyć pliku: " << filename << std::endl;
+        return;
+    }
+
+    file << R"(<?xml version="1.0" encoding="UTF-8"?>)" << "\n";
+    file << R"(<gexf xmlns="http://www.gexf.net/1.3" version="1.3">)" << "\n";
+    file << R"(<graph mode="static" defaultedgetype="directed">)" << "\n";
+
+    file << R"(<attributes class="node">)" << "\n";
+    file << R"(<attribute id="0" title="status" type="string"/>)" << "\n";
+    file << R"(<attribute id="2" title="parent_id" type="integer"/>)" << "\n";
+    file << R"(<attribute id="3" title="child_sum" type="integer"/>)" << "\n";
+    file << R"(</attributes>)" << "\n";
+    
+    file << R"(<nodes>)" << "\n";
+    for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+        CellMap::const_accessor cell_accessor;
+        bool is_alive = run->cells.find(cell_accessor, node_id);
+        std::string status = is_alive ? "ALIVE" : "DEAD";
+
+        file << R"(<node id=")" << node_id << R"(" label="Node )" << node_id << R"(">)" << "\n";
+        file << R"(<attvalues>)" << "\n";
+        file << R"(<attvalue for="0" value=")" << status << R"("/>)" << "\n";
+        file << R"(<attvalue for="2" value=")" << node_data.parent_id << R"("/>)" << "\n";
+        file << R"(<attvalue for="3" value=")" << node_data.child_sum << R"("/>)" << "\n";
+        file << R"(</attvalues>)" << "\n";
+        file << R"(</node>)" << "\n";
+    }
+    file << R"(</nodes>)" << "\n";
+
+    file << R"(<edges>)" << "\n";
+    uint32_t edge_id = 0;
+    for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+        if (node_data.parent_id != 0) {
+            file << R"(<edge id=")" << edge_id++ << R"(" source=")" 
+                 << node_data.parent_id << R"(" target=")" << node_id << R"("/>)" << "\n";
+        } else if (node_id != 0) {
+            file << R"(<edge id=")" << edge_id++ << R"(" source=")" 
+                 << 0 << R"(" target=")" << node_id << R"("/>)" << "\n";
+        }
+    }
+    file << R"(</edges>)" << "\n";
+
+    file << R"(</graph>)" << "\n";
+    file << R"(</gexf>)" << "\n";
+
+    file.close();
+    std::cout << "Graf zapisany do pliku: " << filename << std::endl;
+}
+
 void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename) {
     tbb::concurrent_vector<uint32_t> selected_cells;
     tbb::concurrent_unordered_set<uint32_t> visited_nodes;
@@ -206,5 +262,5 @@ void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::
     gexf_file << "    </edges>\n";
     gexf_file << "  </graph>\n";
     gexf_file << "</gexf>\n";
-}
+}                  
 } // namespace core

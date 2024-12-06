@@ -109,6 +109,58 @@ public:
         total_cell_memory_usage = N * sizeof(Cell);
 
         total_graveyard_memory = cells_graveyard.size() * sizeof(std::pair<uint32_t, std::pair<uint32_t, double>>);
+
+        
+        tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
+        if (!phylogenic_tree.find(accessor, 0)) {
+            phylogenic_tree.insert({0, {0, 0, 0.0}});
+        }
+
+        // child sum counting
+        for (const auto& [cell_id, cell_data] : cells) {
+            uint32_t current_id = cell_id;
+
+            while (true) {
+                NodeData node;
+
+               
+                {
+                    tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
+                    if (phylogenic_tree.find(accessor, current_id)) {
+                        node = accessor->second; 
+                    } else {
+                        Graveyard::accessor g_accessor;
+                        CellMap::accessor c_accessor;
+                        if (cells_graveyard.find(g_accessor, current_id)) {
+                            const auto& [parent_id, death_time] = g_accessor->second;
+                            node = {parent_id, 0, death_time};
+                        } else if (cells.find(c_accessor, current_id)) {
+                            const auto& parent_id = c_accessor->second.parent_id;
+                            node = {parent_id, 0, 0.0};
+                        } 
+                        else {
+                            node = {0, 0, 0.0}; 
+                            spdlog::error("Cell with ID {} not found in cells or graveyard", current_id);
+                        }
+                        phylogenic_tree.insert({current_id, node});
+                    }
+                }
+
+                {
+                    tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
+                    phylogenic_tree.find(accessor, current_id);
+                    accessor->second.child_sum++;
+                    current_id = accessor->second.parent_id;
+                }
+
+                if (current_id == 0) {
+                    break;
+                }
+            }
+        }
+        
+
+
     }
 
     // Check duplicate cell IDs and ID consistency
