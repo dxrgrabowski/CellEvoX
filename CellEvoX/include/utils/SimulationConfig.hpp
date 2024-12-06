@@ -44,7 +44,8 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
         config.initial_population = j.at("initial_population");
         config.env_capacity = j.at("env_capacity");
         config.steps = j.at("steps");
-
+        config.stat_res = j.at("statistics_resolution");
+        config.popul_res = j.at("population_statistics_res");
         for (const auto& mut : j.at("mutations")) {
             config.mutations.push_back({
                 mut.at("effect"),
@@ -68,6 +69,8 @@ inline void printConfig(const SimulationConfig& config) {
     spdlog::info("Initial population: {}", config.initial_population);
     spdlog::info("Environment capacity: {}", config.env_capacity);
     spdlog::info("Number of steps: {}", config.steps);
+    spdlog::info("Statistics resolution: {}", config.stat_res);
+    spdlog::info("Population statistics resolution: {}", config.popul_res);
     spdlog::info("Mutations:");
     for (const auto& mut : config.mutations) {
         spdlog::info("    {} mutation with id: {}, effect: {:.2f}, probability: {:.3f}", 

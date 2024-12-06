@@ -60,6 +60,14 @@ public:
         death_time(other.death_time),
         mutations(std::move(other.mutations)) {}
         
+    // Copy constructor
+    Cell(const Cell& other) :
+        parent_id(other.parent_id),
+        id(other.id),
+        fitness(other.fitness),
+        death_time(other.death_time),
+        mutations(other.mutations) {}
+        
     // Move assignment operator
     Cell& operator=(Cell&& other) noexcept {
         if (this != &other) {

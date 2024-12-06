@@ -61,12 +61,14 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
             int progress = static_cast<int>((static_cast<double>(i + 1) / steps) * 100);
             int pos = static_cast<int>((static_cast<double>(i + 1) / steps) * bar_width);
 
-            std::cout << "\r\033[1;32mProgress: [";
+            std::cout << "\r\033[1;32mProgress: [\033[35m";
             for (int j = 0; j < bar_width; ++j) {
                 if (j < pos) std::cout << "#";
                 else std::cout << " ";
             }
-            std::cout << "] " << progress << "% " << spinner[spinner_index] << "\033[0m" << std::flush;
+            int steps_remaining = steps - (i + 1);
+            std::cout << "\033[1;32m] " << progress << "% \033[34m" << spinner[spinner_index] 
+                      << " \033[0m" << steps_remaining << " steps remaining" << std::flush;
 
             spinner_index = (spinner_index + 1) % 4;
             last_update_time = current_time;
@@ -82,7 +84,7 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
         std::move(cells), 
         std::move(available_mutation_types),
         std::move(cells_graveyard),
-        std::move(generational_report),
+        std::move(generational_stat_report),
         total_deaths, 
         tau
      );
@@ -93,17 +95,17 @@ void SimulationEngine::stop() {
 }
 
 Eigen::VectorXd generateExponentialDistribution(int size) {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::exponential_distribution<> exp_dist(1.0);
-        
-        Eigen::VectorXd result(size);
-        for (int i = 0; i < size; ++i) {
-            result(i) = exp_dist(gen);
-        }
-        
-        return result;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::exponential_distribution<> exp_dist(1.0);
+    
+    Eigen::VectorXd result(size);
+    for (int i = 0; i < size; ++i) {
+        result(i) = exp_dist(gen);
     }
+    
+    return result;
+}
 
 void SimulationEngine::stochasticStep() {
     double tau_step = config->tau_step;
@@ -207,14 +209,20 @@ void SimulationEngine::stochasticStep() {
     }
     total_deaths += death_count;
     actual_population = actual_population + new_cells_count - death_count;
-
-    if (static_cast<int>(tau) % 10 == 0) {
-        takeSnapshot();
+    
+    int current_tau = static_cast<int>(tau);
+    if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {
+        takeStatSnapshot();
+        last_stat_snapshot_tau = current_tau;
+    }
+    if (current_tau % config->popul_res == 0 && current_tau != last_population_snapshot_tau) {
+        takePopulationSnapshot();
+        last_population_snapshot_tau = current_tau;
     }
     //spdlog::info("Step {:.3f} {} -> {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau,N, actual_population, new_cells_count, death_count, total_deaths);
 }
 
-void SimulationEngine::takeSnapshot() {
+void SimulationEngine::takeStatSnapshot() {
     double total_fitness = 0.0;
     double total_fitness_squared = 0.0;
     size_t living_cells_count = 0;
@@ -228,6 +236,16 @@ void SimulationEngine::takeSnapshot() {
     double mean_fitness = total_fitness / living_cells_count;
     double fitness_variance = (total_fitness_squared / living_cells_count) - (mean_fitness * mean_fitness);
 
-    generational_report.push_back({tau ,mean_fitness, fitness_variance, living_cells_count});
+    generational_stat_report.push_back({tau ,mean_fitness, fitness_variance, living_cells_count});
 }
  
+void SimulationEngine::takePopulationSnapshot()
+{
+    CellMap cells_copy;
+    cells_copy.rehash(cells.size());
+    for (const auto& cell : cells) {
+        CellMap::accessor accessor;
+        cells_copy.insert(accessor, {cell.first, cell.second});
+    }
+    generational_popul_report.push_back(std::move(cells_copy));
+}

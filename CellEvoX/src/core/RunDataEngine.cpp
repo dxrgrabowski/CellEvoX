@@ -4,7 +4,12 @@
 #include <spdlog/spdlog.h>
 #include <map>
 #include <external/matplotlibcpp.h>
-
+#include <random>
+#include <tbb/parallel_for.h>
+#include <tbb/concurrent_hash_map.h>
+#include <fstream>
+#include <iostream>
+#include <tbb/concurrent_unordered_set.h>
 namespace CellEvoX::core {
 
 namespace plt = matplotlibcpp;
@@ -25,7 +30,7 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
     std::vector<double> generations; // Oś X - numer generacji (tau)
     std::vector<size_t> living_cells; // Oś Y - liczba żyjących komórek
     
-    for (const auto& snapshot : run->generational_report) {
+    for (const auto& snapshot : run->generational_stat_report) {
         generations.push_back(snapshot.tau);                // Generacja (tau)
         living_cells.push_back(snapshot.total_living_cells); // Liczba komórek
     }
@@ -47,7 +52,7 @@ void RunDataEngine::plotFitnessStatistics() {
     std::vector<double> mean_fitness;   // Oś Y dla średniej wartości fitness
     std::vector<double> fitness_variance; // Oś Y dla wariancji fitness
     
-    for (const auto& snapshot : run->generational_report) {
+    for (const auto& snapshot : run->generational_stat_report) {
         generations.push_back(snapshot.tau);              // Generacja (tau)
         mean_fitness.push_back(snapshot.mean_fitness);    // Średnia fitness
         fitness_variance.push_back(snapshot.fitness_variance); // Wariancja fitness
@@ -56,7 +61,7 @@ void RunDataEngine::plotFitnessStatistics() {
     // Wykres średniej fitness (χs(t))
     plt::figure_size(800, 600);
     plt::plot(generations, mean_fitness, {{"label", "Mean Fitness (χs(t))"}}); // "r-" oznacza czerwoną linię
-    plt::xlabel("Generation (tau)");
+    plt::xlabel("Generation");
     plt::ylabel("Mean Fitness");
     plt::title("Mean Fitness Over Generations");
     plt::legend();
@@ -104,5 +109,102 @@ void RunDataEngine::plotMutationWave() {
     plt::save("mutation_wave_histogram.png"); // Zapisz wykres do pliku
     plt::show(); // Wyświetl wykres
 }
+void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename) {
+    tbb::concurrent_vector<uint32_t> selected_cells;
+    tbb::concurrent_unordered_set<uint32_t> visited_nodes;
+    tbb::concurrent_vector<std::pair<uint32_t, uint32_t>> edges;
+    tbb::concurrent_hash_map<uint32_t, std::pair<std::string, double>> node_attributes;
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, run->cells.size() - 1);
 
+    std::vector<uint32_t> cell_ids;
+    for (auto it = run->cells.begin(); it != run->cells.end(); ++it) {
+        cell_ids.push_back(it->first);
+    }
+
+    for (size_t i = 0; i < num_cells_to_trace; ++i) {
+        uint32_t idx = dis(gen);
+        selected_cells.push_back(cell_ids[idx]);
+    }
+
+    tbb::parallel_for(size_t(0), selected_cells.size(), [&](size_t i) {
+        uint32_t current_id = selected_cells[i];
+        while (current_id != 0) {
+            uint32_t parent_id = 0;
+
+             {
+                CellMap::const_accessor cell_accessor;
+                if (run->cells.find(cell_accessor, current_id)) {
+                    parent_id = cell_accessor->second.parent_id;
+
+                    tbb::concurrent_hash_map<uint32_t, std::pair<std::string, double>>::accessor attr_accessor;
+                    if (node_attributes.insert(attr_accessor, current_id)) {
+                        attr_accessor->second = {"alive", 0.0};
+                    }
+                } else {
+                    Graveyard::const_accessor grave_accessor;
+                    if (run->cells_graveyard.find(grave_accessor, current_id)) {
+                        parent_id = grave_accessor->second.first;
+
+                        tbb::concurrent_hash_map<uint32_t, std::pair<std::string, double>>::accessor attr_accessor;
+                        if (node_attributes.insert(attr_accessor, current_id)) {
+                            attr_accessor->second = {"dead", grave_accessor->second.second};
+                        }
+                    }
+                }
+            }
+
+            if (parent_id != 0) {
+                edges.emplace_back(parent_id, current_id);
+                visited_nodes.insert(current_id);
+                visited_nodes.insert(parent_id);
+            }
+
+            current_id = parent_id;
+        }
+    });
+
+    std::ofstream gexf_file(filename);
+    if (!gexf_file.is_open()) {
+        return;
+    }
+
+    gexf_file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    gexf_file << "<gexf xmlns=\"http://www.gexf.net/1.3\" version=\"1.3\">\n";
+    gexf_file << "  <graph mode=\"static\" defaultedgetype=\"directed\">\n";
+    gexf_file << "    <attributes class=\"node\">\n";
+    gexf_file << "      <attribute id=\"0\" title=\"status\" type=\"string\"/>\n";
+    gexf_file << "      <attribute id=\"1\" title=\"death_time\" type=\"double\"/>\n";
+    gexf_file << "    </attributes>\n";
+    gexf_file << "    <nodes>\n";
+   for (const auto& node : visited_nodes) {
+        std::string status = "unknown";
+        double death_time = -1.0;
+
+        tbb::concurrent_hash_map<uint32_t, std::pair<std::string, double>>::const_accessor attr_accessor;
+        if (node_attributes.find(attr_accessor, node)) {
+            status = attr_accessor->second.first;
+            death_time = attr_accessor->second.second;
+        }
+
+        gexf_file << "      <node id=\"" << node << "\" label=\"Cell " << node << "\">\n";
+        gexf_file << "        <attvalues>\n";
+        gexf_file << "          <attvalue for=\"0\" value=\"" << status << "\"/>\n";
+        gexf_file << "          <attvalue for=\"1\" value=\"" << death_time << "\"/>\n";
+        gexf_file << "        </attvalues>\n";
+        gexf_file << "      </node>\n";
+    }
+    gexf_file << "    </nodes>\n";
+    gexf_file << "    <edges>\n";
+    size_t edge_id = 0;
+    for (const auto& edge : edges) {
+        gexf_file << "      <edge id=\"" << edge_id++ << "\" source=\"" << edge.first
+                    << "\" target=\"" << edge.second << "\"/>\n";
+    }
+    gexf_file << "    </edges>\n";
+    gexf_file << "  </graph>\n";
+    gexf_file << "</gexf>\n";
+}
 } // namespace core

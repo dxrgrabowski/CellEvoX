@@ -8,17 +8,22 @@
 #include <unordered_set>
 #include <vector>
 
-struct SimulationSnapshot;
+struct StatSnapshot;
 namespace ecs {
-
+struct NodeData {
+    uint32_t parent_id;
+    uint32_t child_sum = 0;
+    double death_time;
+};
 using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
-
+using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>>;
 class Run {
 public:
     CellMap cells;
     std::unordered_map<uint8_t, MutationType> mutation_id_to_type;
-    tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> cells_graveyard; 
-    std::vector<SimulationSnapshot> generational_report;
+    tbb::concurrent_hash_map<uint32_t, NodeData> phylogenic_tree;
+    Graveyard cells_graveyard; 
+    std::vector<StatSnapshot> generational_stat_report;
     size_t total_deaths = 0;
     size_t total_mutations = 0;
     int driver_mutations = 0;
@@ -34,14 +39,14 @@ public:
     Run(
         CellMap &&cells, 
         std::unordered_map<uint8_t, MutationType> mutation_id_to_type, 
-        tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>> &&cells_graveyard,
-        std::vector<SimulationSnapshot> &&generational_report,
+        Graveyard &&cells_graveyard,
+        std::vector<StatSnapshot> &&generational_stat_report,
         size_t deaths, 
         double tau
     )   : cells(std::move(cells)),
         mutation_id_to_type(std::move(mutation_id_to_type)),
         cells_graveyard(std::move(cells_graveyard)),
-        generational_report(std::move(generational_report)),
+        generational_stat_report(std::move(generational_stat_report)),
         total_deaths(deaths),
         tau(tau) 
     {
