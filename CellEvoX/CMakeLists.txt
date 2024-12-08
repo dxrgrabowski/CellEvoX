@@ -20,6 +20,7 @@ set(SOURCES
     src/systems/SimulationEngine.cpp
     #src/core/DatabaseManager.cpp
     src/core/RunDataEngine.cpp
+    src/ecs/Run.cpp
 )
 
 

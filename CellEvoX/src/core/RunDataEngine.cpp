@@ -38,7 +38,7 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
     // Rysowanie wykresu
     plt::figure_size(800, 600); // Ustaw rozmiar wykresu
     plt::plot(generations, living_cells, "g-"); // "g-" oznacza zieloną linię
-    plt::xlabel("Generation (tau)");
+    plt::xlabel("Generation");
     plt::ylabel("Total Living Cells");
     plt::title("Number of Living Cells Over Generations");
     plt::grid(true); // Dodaj siatkę
