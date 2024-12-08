@@ -114,6 +114,7 @@ public:
         tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
         if (!phylogenic_tree.find(accessor, 0)) {
             phylogenic_tree.insert({0, {0, 0, 0.0}});
+            spdlog::debug("Root node 0 inserted");
         }
 
         // child sum counting
@@ -122,8 +123,6 @@ public:
 
             while (true) {
                 NodeData node;
-
-               
                 {
                     tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
                     if (phylogenic_tree.find(accessor, current_id)) {
@@ -160,66 +159,80 @@ public:
         }
         spdlog::debug("Child sum counting finished");
         
-        // Add this at the beginning of your function
-        auto start_time = std::chrono::high_resolution_clock::now();
+       auto start_time = std::chrono::high_resolution_clock::now();
         int deleted_nodes_count = 0;
-        
-        for (auto it = phylogenic_tree.begin(); it != phylogenic_tree.end();) {
-            uint32_t current_id = it->first;
-            auto& current_node = it->second;
-            //spdlog::debug("Checking cell ID {}", current_id);
-            // Pomijamy żywe komórki (według progu death_time)
-            if (current_node.death_time < 0.0025) { //fix
-                ++it;
-                continue;
-            }
-        
-            uint32_t parent_id = current_node.parent_id;
-            uint32_t child_sum = current_node.child_sum;
-        
-            bool is_duplicate = false;
-        
-            // Przejście w górę drzewa w celu sprawdzenia duplikatów
-            while (parent_id != 0) {
-                tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-                if (phylogenic_tree.find(accessor, parent_id)) {
-                    NodeData& parent_node = accessor->second;
-        
-                    // Jeśli znaleziono martwego rodzica z takim samym child_sum
-                    if (parent_node.death_time > 0.0 && parent_node.child_sum == child_sum) {
-                        is_duplicate = true;
-                        break;
-                    }
-        
-                    // Przejdź do następnego rodzica
-                    parent_id = parent_node.parent_id;
-                } else {
-                    break; // Jeśli rodzic nie istnieje w mapie, przerwij
+       std::unordered_set<uint32_t> visited_nodes;
+        std::vector<uint32_t> nodes_to_be_removed;  
+        for (const auto& [cell_id, cell_data] : cells) {
+            uint32_t current_id = cell_id; 
+           
+            while (current_id != 0) {
+                
+                if (visited_nodes.count(current_id)) {
+                    break;
                 }
-            }
-        
-            if (is_duplicate) {
-                tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-                if (phylogenic_tree.find(accessor, current_id)) {
-                    uint32_t node_parent_id = accessor->second.parent_id;
-        
-                    // Aktualizacja parent_id dzieci
-                    for (auto& [child_id, child_node] : phylogenic_tree) {
-                        if (child_node.parent_id == current_id) {
-                            child_node.parent_id = node_parent_id;
+                
+                visited_nodes.insert(current_id);
+
+                tbb::concurrent_hash_map<uint32_t, NodeData>::accessor current_accessor;
+                if (!phylogenic_tree.find(current_accessor, current_id)) {
+                    spdlog::error("Current node with ID {} not found", current_id);
+                    break; 
+                }
+                NodeData& current_node = current_accessor->second;
+
+                uint32_t parent_id = current_node.parent_id;
+                if (parent_id == 0) {
+                    break; 
+                }
+
+                tbb::concurrent_hash_map<uint32_t, NodeData>::accessor parent_accessor;
+                if (!phylogenic_tree.find(parent_accessor, parent_id)) {
+                    spdlog::error("Parent node with ID {} not found", parent_id);
+                    break; 
+                }
+                NodeData& parent_node = parent_accessor->second;
+
+                if  (current_node.child_sum == parent_node.child_sum) {
+                    uint32_t next_parent_id = parent_node.parent_id;
+                    bool found_larger_child_sum = false;
+                    nodes_to_be_removed.push_back(parent_id);
+            
+                    while (next_parent_id != 0) {
+                        tbb::concurrent_hash_map<uint32_t, NodeData>::accessor next_parent_accessor;
+                        if (!phylogenic_tree.find(next_parent_accessor, next_parent_id)) {
+                            spdlog::error("Parent node with ID {} not found", next_parent_id);
+                            break; 
                         }
+                        NodeData& next_parent_node = next_parent_accessor->second;
+
+                        if (next_parent_node.child_sum > current_node.child_sum) {
+                            found_larger_child_sum = true;
+                            current_node.parent_id = next_parent_id;
+                            break;
+                        } else {
+                            nodes_to_be_removed.push_back(next_parent_id);
+                        }
+
+                        next_parent_id = next_parent_node.parent_id;
                     }
-        
-                    phylogenic_tree.erase(accessor);
-                    ++deleted_nodes_count; // Increment the counter
+
+                    if(next_parent_id == 0)
+                    {
+                        current_node.parent_id = 0;
+                    }
                 }
-        
-                it = phylogenic_tree.begin(); 
-            } else {
-                ++it; 
+
+                current_id = current_node.parent_id;
             }
         }
-        
+        for (uint32_t node_id : nodes_to_be_removed) {
+            tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
+            if (phylogenic_tree.find(accessor, node_id)) {
+                phylogenic_tree.erase(accessor);
+                ++deleted_nodes_count;
+            }
+        }
         // Add this at the end of your function
         auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end_time - start_time;
