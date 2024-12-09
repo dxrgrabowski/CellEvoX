@@ -37,7 +37,7 @@ void Application::initialize() {
         data_engine.plotLivingCellsOverGenerations();
         data_engine.plotMutationWave();
         data_engine.exportToCSV();
-        data_engine.exportPhylogenicTreeToGEXF("phylogeny.gexf");
+        data_engine.exportPhylogeneticTreeToGEXF("phylogeny.gexf");
     }
 
 

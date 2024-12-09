@@ -20,7 +20,7 @@ class Run {
 public:
     CellMap cells;
     std::unordered_map<uint8_t, MutationType> mutation_id_to_type;
-    tbb::concurrent_hash_map<uint32_t, NodeData> phylogenic_tree;
+    tbb::concurrent_hash_map<uint32_t, NodeData> phylogenetic_tree;
     Graveyard cells_graveyard; 
     std::vector<StatSnapshot> generational_stat_report;
     std::vector<std::pair<int, CellMap>> generational_popul_report;

@@ -44,8 +44,8 @@ void Run::logResults() const {
 void Run::createPhylogeneticTree() {
 
     tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-    if (!phylogenic_tree.find(accessor, 0)) {
-        phylogenic_tree.insert({0, {0, 0, 0.0}});
+    if (!phylogenetic_tree.find(accessor, 0)) {
+        phylogenetic_tree.insert({0, {0, 0, 0.0}});
         spdlog::debug("Root node 0 inserted");
     }
 
@@ -57,7 +57,7 @@ void Run::createPhylogeneticTree() {
             NodeData node;
             {
                 tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-                if (phylogenic_tree.find(accessor, current_id)) {
+                if (phylogenetic_tree.find(accessor, current_id)) {
                     node = accessor->second; 
                 } else {
                     Graveyard::accessor g_accessor;
@@ -73,20 +73,20 @@ void Run::createPhylogeneticTree() {
                         node = {0, 0, 0.0}; 
                         spdlog::error("Cell with ID {} not found in cells or graveyard", current_id);
                     }
-                    phylogenic_tree.insert({current_id, node});
+                    phylogenetic_tree.insert({current_id, node});
                 }
             }
 
             {
                 tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-                phylogenic_tree.find(accessor, current_id);
+                phylogenetic_tree.find(accessor, current_id);
                 accessor->second.child_sum++;
                 current_id = accessor->second.parent_id;
             }
 
             if (current_id == 0) {
                 tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-                phylogenic_tree.find(accessor, current_id);
+                phylogenetic_tree.find(accessor, current_id);
                 accessor->second.child_sum++;
                 break;
             }
@@ -110,7 +110,7 @@ void Run::createPhylogeneticTree() {
             visited_nodes.insert(current_id);
 
             tbb::concurrent_hash_map<uint32_t, NodeData>::accessor current_accessor;
-            if (!phylogenic_tree.find(current_accessor, current_id)) {
+            if (!phylogenetic_tree.find(current_accessor, current_id)) {
                 spdlog::error("Current node with ID {} not found", current_id);
                 break; 
             }
@@ -122,7 +122,7 @@ void Run::createPhylogeneticTree() {
             }
 
             tbb::concurrent_hash_map<uint32_t, NodeData>::accessor parent_accessor;
-            if (!phylogenic_tree.find(parent_accessor, parent_id)) {
+            if (!phylogenetic_tree.find(parent_accessor, parent_id)) {
                 spdlog::error("Parent node with ID {} not found", parent_id);
                 break; 
             }
@@ -134,7 +134,7 @@ void Run::createPhylogeneticTree() {
         
                 while (next_parent_id != 0) {
                     tbb::concurrent_hash_map<uint32_t, NodeData>::accessor next_parent_accessor;
-                    if (!phylogenic_tree.find(next_parent_accessor, next_parent_id)) {
+                    if (!phylogenetic_tree.find(next_parent_accessor, next_parent_id)) {
                         spdlog::error("Parent node with ID {} not found", next_parent_id);
                         break; 
                     }
@@ -161,8 +161,8 @@ void Run::createPhylogeneticTree() {
     }
     for (uint32_t node_id : nodes_to_be_removed) {
         tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-        if (phylogenic_tree.find(accessor, node_id)) {
-            phylogenic_tree.erase(accessor);
+        if (phylogenetic_tree.find(accessor, node_id)) {
+            phylogenetic_tree.erase(accessor);
             ++deleted_nodes_count;
         }
     }

@@ -91,7 +91,7 @@ void RunDataEngine::exportToCSV()
         }
     }
     {
-        std::string phylogenyFilename = output_dir + "phylogenic_tree.csv";
+        std::string phylogenyFilename = output_dir + "phylogenetic_tree.csv";
         std::ofstream file(phylogenyFilename);
 
         if (!file.is_open()) {
@@ -101,7 +101,7 @@ void RunDataEngine::exportToCSV()
 
         file << "NodeID,ParentID,ChildSum,DeathTime\n";
 
-        for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+        for (const auto& [node_id, node_data] : run->phylogenetic_tree) {
             file << node_id << "," 
                 << node_data.parent_id << "," 
                 << node_data.child_sum << "," 
@@ -109,7 +109,7 @@ void RunDataEngine::exportToCSV()
         }
 
         file.close();
-        std::cout << "Phylogenic tree exported to: " << phylogenyFilename << std::endl;
+        std::cout << "Phylogenetic tree exported to: " << phylogenyFilename << std::endl;
     }
 
 }
@@ -222,7 +222,7 @@ void RunDataEngine::plotMutationWave() {
     }
 }
 
-void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
+void RunDataEngine::exportPhylogeneticTreeToGEXF(const std::string& filename)
 {
     std::string output_file = output_dir + filename;
     std::ofstream file(output_file);
@@ -243,7 +243,7 @@ void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
     file << R"(</attributes>)" << "\n";
     
     file << R"(<nodes>)" << "\n";
-    for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+    for (const auto& [node_id, node_data] : run->phylogenetic_tree) {
         CellMap::const_accessor cell_accessor;
         bool is_alive = run->cells.find(cell_accessor, node_id);
         std::string status = is_alive ? "ALIVE" : "DEAD";
@@ -260,7 +260,7 @@ void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
 
     file << R"(<edges>)" << "\n";
     uint32_t edge_id = 0;
-    for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+    for (const auto& [node_id, node_data] : run->phylogenetic_tree) {
         if (node_data.parent_id != 0) {
             file << R"(<edge id=")" << edge_id++ << R"(" source=")" 
                  << node_data.parent_id << R"(" target=")" << node_id << R"("/>)" << "\n";
