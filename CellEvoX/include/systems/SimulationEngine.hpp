@@ -19,6 +19,7 @@ struct SimulationConfig {
     size_t steps;
     uint32_t stat_res;
     uint32_t popul_res;
+    std::string output_path;
     std::vector<MutationType> mutations;
 };
 
@@ -26,6 +27,9 @@ struct StatSnapshot {
     double tau;
     double mean_fitness;
     double fitness_variance;
+    double mean_mutations;
+    double mutations_variance;
+
     size_t total_living_cells;
 };
 
@@ -48,12 +52,12 @@ private:
     Graveyard cells_graveyard; 
     std::unordered_map<uint8_t, MutationType> available_mutation_types;
     std::vector<StatSnapshot> generational_stat_report;
-    std::vector<CellMap> generational_popul_report;
+    std::vector<std::pair<int,CellMap>> generational_popul_report;
     size_t actual_population;
     size_t total_deaths;
     double tau;
     double total_mutation_probability;
-    int last_stat_snapshot_tau = -1;
-    int last_population_snapshot_tau = -1;
+    int last_stat_snapshot_tau = 0;
+    int last_population_snapshot_tau = 0;
     std::shared_ptr<SimulationConfig> config;
 };

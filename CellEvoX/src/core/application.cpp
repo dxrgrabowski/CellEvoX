@@ -33,8 +33,10 @@ void Application::initialize() {
 
         RunDataEngine data_engine(sim_config, runs[0], 0.005);
         data_engine.plotFitnessStatistics();
+        data_engine.plotMutationsStatistics();
         data_engine.plotLivingCellsOverGenerations();
         data_engine.plotMutationWave();
+        data_engine.exportToCSV();
         data_engine.exportPhylogenicTreeToGEXF("phylogeny.gexf");
     }
 

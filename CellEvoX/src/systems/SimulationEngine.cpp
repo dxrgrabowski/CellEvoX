@@ -85,6 +85,7 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
         std::move(available_mutation_types),
         std::move(cells_graveyard),
         std::move(generational_stat_report),
+        std::move(generational_popul_report),
         total_deaths, 
         tau
      );
@@ -219,24 +220,30 @@ void SimulationEngine::stochasticStep() {
         takePopulationSnapshot();
         last_population_snapshot_tau = current_tau;
     }
-    //spdlog::info("Step {:.3f} {} -> {} cells | New cells: {} | Dead cells: {} Total deaths: {}", tau,N, actual_population, new_cells_count, death_count, total_deaths);
 }
 
 void SimulationEngine::takeStatSnapshot() {
     double total_fitness = 0.0;
     double total_fitness_squared = 0.0;
+    double total_mutations = 0.0;
+    double total_mutations_squared = 0.0;
     size_t living_cells_count = 0;
 
     for (const auto& cell : cells) {
         total_fitness += cell.second.fitness;
         total_fitness_squared += cell.second.fitness * cell.second.fitness;
+        total_mutations += cell.second.mutations.size();
+        total_mutations_squared += cell.second.mutations.size() * cell.second.mutations.size();
         ++living_cells_count;
     }
 
     double mean_fitness = total_fitness / living_cells_count;
     double fitness_variance = (total_fitness_squared / living_cells_count) - (mean_fitness * mean_fitness);
 
-    generational_stat_report.push_back({tau ,mean_fitness, fitness_variance, living_cells_count});
+    double mean_mutations = total_mutations / living_cells_count;
+    double mutations_variance = (total_mutations_squared / living_cells_count) - (mean_mutations * mean_mutations);
+
+    generational_stat_report.push_back({tau ,mean_fitness, fitness_variance, mean_mutations, mutations_variance, living_cells_count});
 }
  
 void SimulationEngine::takePopulationSnapshot()
@@ -247,5 +254,5 @@ void SimulationEngine::takePopulationSnapshot()
         CellMap::accessor accessor;
         cells_copy.insert(accessor, {cell.first, cell.second});
     }
-    generational_popul_report.push_back(std::move(cells_copy));
+    generational_popul_report.push_back({tau, std::move(cells_copy)});
 }

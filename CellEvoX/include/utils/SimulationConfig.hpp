@@ -46,6 +46,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
         config.steps = j.at("steps");
         config.stat_res = j.at("statistics_resolution");
         config.popul_res = j.at("population_statistics_res");
+        config.output_path = j.at("output_path");
         for (const auto& mut : j.at("mutations")) {
             config.mutations.push_back({
                 mut.at("effect"),
@@ -71,6 +72,7 @@ inline void printConfig(const SimulationConfig& config) {
     spdlog::info("Number of steps: {}", config.steps);
     spdlog::info("Statistics resolution: {}", config.stat_res);
     spdlog::info("Population statistics resolution: {}", config.popul_res);
+    spdlog::info("Output path: {}", config.output_path);
     spdlog::info("Mutations:");
     for (const auto& mut : config.mutations) {
         spdlog::info("    {} mutation with id: {}, effect: {:.2f}, probability: {:.3f}", 

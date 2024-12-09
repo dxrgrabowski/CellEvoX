@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <tbb/concurrent_unordered_set.h>
+#include <filesystem>
 namespace CellEvoX::core {
 
 namespace plt = matplotlibcpp;
@@ -19,103 +20,215 @@ RunDataEngine::RunDataEngine(
     std::shared_ptr<ecs::Run> run, 
     double generation_step)
     : config(config), run(run), 
-    generation_step(generation_step) {}
+    generation_step(generation_step) {
+        prepareOutputDir();
+    }
 
-void RunDataEngine::exportToCharts() 
+void RunDataEngine::prepareOutputDir()
 {
+    output_dir = config->output_path;
+    if (!std::filesystem::exists(output_dir) && output_dir != "") {
+        std::filesystem::create_directories(output_dir);
+        output_dir += "/";
+    }
+}
+void RunDataEngine::exportToCSV() 
+{
+    // Export Generational Statistics
+    {
+        std::string statFilename = output_dir + "generational_statistics.csv";
+        std::ofstream file(statFilename);
+        if (!file.is_open()) {
+            std::cerr << "Cannot open file: " << statFilename << std::endl;
+        } else {
+            file << "Generation,MeanFitness,FitnessVariance,MeanMutations,MutationsVariance,TotalLivingCells\n";
+            for (size_t generation = 0; generation < run->generational_stat_report.size(); ++generation) {
+                const auto& stat = run->generational_stat_report[generation];
+                file << stat.tau << ","
+                     << stat.mean_fitness << ","
+                     << stat.fitness_variance << ","
+                     << stat.mean_mutations << ","
+                     << stat.mutations_variance << ","
+                     << stat.total_living_cells << "\n";
+            }
+            file.close();
+            std::cout << "Generational stats exported to: " << statFilename << std::endl;
+        }
+    }
+
+
+    // Export Generational Population
+    {
+        std::string populFilename = output_dir + "generational_population.csv";
+        std::ofstream file(populFilename);
+        if (!file.is_open()) {
+            std::cerr << "Cannot open file: " << populFilename << std::endl;
+        } else {
+            file << "Generation,CellID,ParentID,Fitness,DeathTime,Mutations\n";
+            for (const auto& [generation, cell_map] : run->generational_popul_report) {
+                for (const auto& [cell_id, cell_data] : cell_map) {
+                    // Retrieve mutations as a string
+                    std::string mutations_str;
+                    for (const auto& [mutation_id, mutation_type] : cell_data.mutations) {
+                        mutations_str += "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+                    }
+
+                    // Trim the trailing space
+                    if (!mutations_str.empty()) {
+                        mutations_str.pop_back();
+                    }
+
+                    file << generation << "," 
+                        << cell_id << "," 
+                        << cell_data.parent_id << "," 
+                        << cell_data.fitness << "," 
+                        << cell_data.death_time << ","
+                        << "\"" << mutations_str << "\"\n"; 
+                }
+            }
+            file.close();
+            std::cout << "Generational population exported to: " << populFilename << std::endl;
+        }
+    }
+    {
+        std::string phylogenyFilename = output_dir + "phylogenic_tree.csv";
+        std::ofstream file(phylogenyFilename);
+
+        if (!file.is_open()) {
+            std::cerr << "Cannot open file: " << phylogenyFilename << std::endl;
+            return;
+        }
+
+        file << "NodeID,ParentID,ChildSum,DeathTime\n";
+
+        for (const auto& [node_id, node_data] : run->phylogenic_tree) {
+            file << node_id << "," 
+                << node_data.parent_id << "," 
+                << node_data.child_sum << "," 
+                << node_data.death_time << "\n";
+        }
+
+        file.close();
+        std::cout << "Phylogenic tree exported to: " << phylogenyFilename << std::endl;
+    }
 
 }
 void RunDataEngine::plotLivingCellsOverGenerations() {
-    // Przygotowanie danych
-    std::vector<double> generations; // Oś X - numer generacji (tau)
-    std::vector<size_t> living_cells; // Oś Y - liczba żyjących komórek
+    std::vector<double> generations;
+    std::vector<size_t> living_cells; 
     
     for (const auto& snapshot : run->generational_stat_report) {
-        generations.push_back(snapshot.tau);                // Generacja (tau)
-        living_cells.push_back(snapshot.total_living_cells); // Liczba komórek
+        generations.push_back(snapshot.tau);               
+        living_cells.push_back(snapshot.total_living_cells); 
     }
     
-    // Rysowanie wykresu
-    plt::figure_size(800, 600); // Ustaw rozmiar wykresu
-    plt::plot(generations, living_cells, "g-"); // "g-" oznacza zieloną linię
+    plt::figure_size(800, 600); 
+    plt::plot(generations, living_cells, "g-"); 
     plt::xlabel("Generation");
     plt::ylabel("Total Living Cells");
     plt::title("Number of Living Cells Over Generations");
     plt::grid(true); // Dodaj siatkę
-    plt::save("living_cells_over_generations.png"); // Zapisz wykres do pliku
-    plt::show(); // Wyświetl wykres
+    plt::save(output_dir + "living_cells_over_generations.png");
 }
 
 void RunDataEngine::plotFitnessStatistics() {
-    // Przygotowanie danych
-    std::vector<double> generations;    // Oś X - numer generacji (tau)
-    std::vector<double> mean_fitness;   // Oś Y dla średniej wartości fitness
-    std::vector<double> fitness_variance; // Oś Y dla wariancji fitness
+    std::vector<double> generations;    
+    std::vector<double> mean_fitness;   
+    std::vector<double> fitness_variance; 
     
     for (const auto& snapshot : run->generational_stat_report) {
-        generations.push_back(snapshot.tau);              // Generacja (tau)
-        mean_fitness.push_back(snapshot.mean_fitness);    // Średnia fitness
-        fitness_variance.push_back(snapshot.fitness_variance); // Wariancja fitness
+        generations.push_back(snapshot.tau);              
+        mean_fitness.push_back(snapshot.mean_fitness);    
+        fitness_variance.push_back(snapshot.fitness_variance); 
     }
     
-    // Wykres średniej fitness (χs(t))
     plt::figure_size(800, 600);
-    plt::plot(generations, mean_fitness, {{"label", "Mean Fitness (χs(t))"}}); // "r-" oznacza czerwoną linię
+    plt::plot(generations, mean_fitness, {{"label", "Mean Fitness (χs(t))"}}); 
     plt::xlabel("Generation");
     plt::ylabel("Mean Fitness");
     plt::title("Mean Fitness Over Generations");
     plt::legend();
     plt::grid(true);
-    plt::save("mean_fitness_over_generations.png");
-    plt::show();
+    plt::save(output_dir + "mean_fitness_over_generations.png");
 
-    // Wykres wariancji fitness (σs^2(t))
     plt::figure_size(800, 600);
-    plt::plot(generations, fitness_variance, {{"label", "Fitness Variance (σs²(t))"}}); // "b-" oznacza niebieską linię
+    plt::plot(generations, fitness_variance, {{"label", "Fitness Variance (σs²(t))"}});
     plt::xlabel("Generation (tau)");
     plt::ylabel("Fitness Variance");
     plt::title("Fitness Variance Over Generations");
     plt::legend();
     plt::grid(true);
-    plt::save("fitness_variance_over_generations.png");
-    plt::show();
+    plt::save(output_dir + "fitness_variance_over_generations.png");
+}
+
+void RunDataEngine::plotMutationsStatistics() {
+    std::vector<double> generations;    
+    std::vector<double> mean_mutations;  
+    std::vector<double> mutations_variance; 
+    
+    for (const auto& snapshot : run->generational_stat_report) {
+        generations.push_back(snapshot.tau);              
+        mean_mutations.push_back(snapshot.mean_mutations);    
+        mutations_variance.push_back(snapshot.mutations_variance); 
+    }
+    
+    plt::figure_size(800, 600);
+    plt::plot(generations, mean_mutations, {{"label", "Mean Mutations (χs(t))"}});
+    plt::xlabel("Generation");
+    plt::ylabel("Mean Mutations");
+    plt::title("Mean Mutations Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "mean_mutations_over_generations.png");
+
+    // Wykres wariancji mutations (σs^2(t))
+    plt::figure_size(800, 600);
+    plt::plot(generations, mutations_variance, {{"label", "Mutations Variance (σs²(t))"}});
+    plt::xlabel("Generation (tau)");
+    plt::ylabel("Mutations Variance");
+    plt::title("Mutations Variance Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "mutations_variance_over_generations.png");
 }
 
 void RunDataEngine::plotMutationWave() {
-    std::map<size_t, size_t> mutation_counts; // <liczba mutacji, liczba komórek>
-    
-    // Zliczanie komórek dla każdej liczby mutacji
-    for (const auto& cell : run->cells) {
-        size_t num_mutations = cell.second.mutations.size();
-        mutation_counts[num_mutations]++;
+    for (const auto& [generation, cells] : run->generational_popul_report) {
+        std::map<size_t, size_t> mutation_counts; // <liczba mutacji, liczba komórek>
+        
+        // Zliczanie komórek dla każdej liczby mutacji
+        for (const auto& cell : cells) {
+            size_t num_mutations = cell.second.mutations.size();
+            mutation_counts[num_mutations]++;
+        }
+
+        // Przygotowanie danych do wykresu
+        std::vector<size_t> mutation_bins; // Oś X: liczba mutacji
+        std::vector<size_t> cell_counts;  // Oś Y: liczba komórek
+
+        for (const auto& [mutations, count] : mutation_counts) {
+            mutation_bins.push_back(mutations);
+            cell_counts.push_back(count);
+        }
+
+        // Tworzenie wykresu słupkowego
+        plt::figure_size(1000, 600); // Rozmiar wykresu
+        plt::bar(mutation_bins, cell_counts, "green"); // Słupki w kolorze zielonym
+        plt::xlabel("Number of Mutations");
+        plt::ylabel("Number of Cells");
+        plt::title("Mutation Wave: Distribution of Mutation Counts (Generation " + std::to_string(generation) + ")");
+        plt::grid(true); // Dodaj siatkę
+        plt::save(output_dir + "mutation_wave_histogram_generation_" + std::to_string(generation) + ".png"); // Zapisz wykres do pliku
     }
-
-    // Przygotowanie danych do wykresu
-    std::vector<size_t> mutation_bins; // Oś X: liczba mutacji
-    std::vector<size_t> cell_counts;  // Oś Y: liczba komórek
-
-    for (const auto& [mutations, count] : mutation_counts) {
-        mutation_bins.push_back(mutations);
-        cell_counts.push_back(count);
-    }
-
-    // Tworzenie wykresu słupkowego
-    plt::figure_size(1000, 600); // Rozmiar wykresu
-    plt::bar(mutation_bins, cell_counts, "green"); // Słupki w kolorze zielonym
-    plt::xlabel("Number of Mutations");
-    plt::ylabel("Number of Cells");
-    plt::title("Mutation Wave: Distribution of Mutation Counts");
-    plt::grid(true); // Dodaj siatkę
-    plt::save("mutation_wave_histogram.png"); // Zapisz wykres do pliku
-    plt::show(); // Wyświetl wykres
 }
 
 void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
 {
-    std::ofstream file(filename);
+    std::string output_file = output_dir + filename;
+    std::ofstream file(output_file);
 
     if (!file.is_open()) {
-        std::cerr << "Nie można otworzyć pliku: " << filename << std::endl;
+        std::cerr << "Nie można otworzyć pliku: " << output_file << std::endl;
         return;
     }
 
@@ -162,7 +275,7 @@ void RunDataEngine::exportPhylogenicTreeToGEXF(const std::string& filename)
     file << R"(</gexf>)" << "\n";
 
     file.close();
-    std::cout << "Graf zapisany do pliku: " << filename << std::endl;
+    std::cout << "Graf zapisany do pliku: " << output_file << std::endl;
 }
 
 void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename) {
