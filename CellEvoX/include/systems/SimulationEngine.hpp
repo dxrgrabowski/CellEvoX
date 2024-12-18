@@ -29,8 +29,11 @@ struct StatSnapshot {
     double fitness_variance;
     double mean_mutations;
     double mutations_variance;
-
     size_t total_living_cells;
+    double fitness_skewness;  
+    double fitness_kurtosis;  
+    double mutations_skewness;  
+    double mutations_kurtosis;  
 };
 
 class SimulationEngine {

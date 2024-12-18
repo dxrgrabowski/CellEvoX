@@ -51,24 +51,32 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
     auto last_update_time = std::chrono::steady_clock::now();
     const char* spinner = "|/-\\";
     int spinner_index = 0;
-    const int bar_width = 50; // Width of the progress bar
+    const int bar_width = 50; 
+
+    auto start_time = std::chrono::steady_clock::now(); 
 
     for (uint32_t i = 0; i < steps; ++i) {
         step();
         auto current_time = std::chrono::steady_clock::now();
         auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_update_time).count();
-        if (elapsed_time >= 100) { // Update progress every 100 milliseconds
+        if (elapsed_time >= 100) { 
             int progress = static_cast<int>((static_cast<double>(i + 1) / steps) * 100);
             int pos = static_cast<int>((static_cast<double>(i + 1) / steps) * bar_width);
+
+            auto total_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count();
+            double avg_time_per_step = static_cast<double>(total_elapsed) / (i + 1);
+            int remaining_steps = steps - (i + 1);
+            double estimated_remaining_time = remaining_steps * avg_time_per_step / 1000.0; 
 
             std::cout << "\r\033[1;32mProgress: [\033[35m";
             for (int j = 0; j < bar_width; ++j) {
                 if (j < pos) std::cout << "#";
                 else std::cout << " ";
             }
-            int steps_remaining = steps - (i + 1);
+
             std::cout << "\033[1;32m] " << progress << "% \033[34m" << spinner[spinner_index] 
-                      << " \033[0m" << steps_remaining << " steps remaining" << std::flush;
+                      << " \033[0m" << remaining_steps << " steps remaining, ~" 
+                      << std::fixed << std::setprecision(1) << estimated_remaining_time << "s left" << std::flush;
 
             spinner_index = (spinner_index + 1) % 4;
             last_update_time = current_time;
@@ -221,30 +229,86 @@ void SimulationEngine::stochasticStep() {
         last_population_snapshot_tau = current_tau;
     }
 }
-
 void SimulationEngine::takeStatSnapshot() {
     double total_fitness = 0.0;
     double total_fitness_squared = 0.0;
+    double total_fitness_cubed = 0.0;
+    double total_fitness_fourth = 0.0;
+
     double total_mutations = 0.0;
     double total_mutations_squared = 0.0;
-    size_t living_cells_count = 0;
+    double total_mutations_cubed = 0.0;
+    double total_mutations_fourth = 0.0;
 
+    size_t living_cells_count = cells.size();
+
+    // Single loop for calculations
     for (const auto& cell : cells) {
-        total_fitness += cell.second.fitness;
-        total_fitness_squared += cell.second.fitness * cell.second.fitness;
-        total_mutations += cell.second.mutations.size();
-        total_mutations_squared += cell.second.mutations.size() * cell.second.mutations.size();
-        ++living_cells_count;
+        double f = cell.second.fitness;
+        double f2 = f * f;
+        double f3 = f2 * f;
+        double f4 = f3 * f;
+
+        double m = static_cast<double>(cell.second.mutations.size());
+        double m2 = m * m;
+        double m3 = m2 * m;
+        double m4 = m3 * m;
+
+        total_fitness += f;
+        total_fitness_squared += f2;
+        total_fitness_cubed += f3;
+        total_fitness_fourth += f4;
+
+        total_mutations += m;
+        total_mutations_squared += m2;
+        total_mutations_cubed += m3;
+        total_mutations_fourth += m4;
     }
 
+    // Compute means
     double mean_fitness = total_fitness / living_cells_count;
-    double fitness_variance = (total_fitness_squared / living_cells_count) - (mean_fitness * mean_fitness);
-
     double mean_mutations = total_mutations / living_cells_count;
-    double mutations_variance = (total_mutations_squared / living_cells_count) - (mean_mutations * mean_mutations);
 
-    generational_stat_report.push_back({tau ,mean_fitness, fitness_variance, mean_mutations, mutations_variance, living_cells_count});
+    // Compute raw moments
+    double M2_fitness = total_fitness_squared / living_cells_count;
+    double M3_fitness = total_fitness_cubed / living_cells_count;
+    double M4_fitness = total_fitness_fourth / living_cells_count;
+
+    double M2_mutations = total_mutations_squared / living_cells_count;
+    double M3_mutations = total_mutations_cubed / living_cells_count;
+    double M4_mutations = total_mutations_fourth / living_cells_count;
+
+    // Compute variances
+    double fitness_variance = M2_fitness - mean_fitness * mean_fitness;
+    double mutations_variance = M2_mutations - mean_mutations * mean_mutations;
+
+    // Compute central moments (skewness and kurtosis components)
+    double fitness_skewness = M3_fitness - 3.0 * mean_fitness * M2_fitness + 2.0 * std::pow(mean_fitness, 3);
+    double fitness_kurtosis = M4_fitness - 4.0 * mean_fitness * M3_fitness 
+                         + 6.0 * mean_fitness * mean_fitness * M2_fitness 
+                         - 3.0 * std::pow(mean_fitness, 4);
+
+    double mutations_skewness = M3_mutations - 3.0 * mean_mutations * M2_mutations + 2.0 * std::pow(mean_mutations, 3);
+    double mutations_kurtosis = M4_mutations - 4.0 * mean_mutations * M3_mutations 
+                           + 6.0 * mean_mutations * mean_mutations * M2_mutations 
+                           - 3.0 * std::pow(mean_mutations, 4);
+
+    // Store the snapshot
+    generational_stat_report.push_back({
+        tau,
+        mean_fitness,
+        fitness_variance,
+        mean_mutations,
+        mutations_variance,
+        living_cells_count,
+        fitness_skewness,        
+        fitness_kurtosis,        
+        mutations_skewness,      
+        mutations_kurtosis,      
+    });
 }
+
+
  
 void SimulationEngine::takePopulationSnapshot()
 {

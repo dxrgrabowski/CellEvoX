@@ -29,8 +29,8 @@ void RunDataEngine::prepareOutputDir()
     output_dir = config->output_path;
     if (!std::filesystem::exists(output_dir) && output_dir != "") {
         std::filesystem::create_directories(output_dir);
-        output_dir += "/";
     }
+    output_dir += "/";
 }
 void RunDataEngine::exportToCSV() 
 {
@@ -41,55 +41,67 @@ void RunDataEngine::exportToCSV()
         if (!file.is_open()) {
             std::cerr << "Cannot open file: " << statFilename << std::endl;
         } else {
-            file << "Generation,MeanFitness,FitnessVariance,MeanMutations,MutationsVariance,TotalLivingCells\n";
+            // Write header row with all fields
+            file << "Generation,TotalLivingCells,MeanFitness,FitnessVariance,FitnessSkewness,FitnessKurtosis,"
+                << "MeanMutations,MutationsVariance,MutationsSkewness,MutationsKurtosis\n";
+
+            // Write data rows
             for (size_t generation = 0; generation < run->generational_stat_report.size(); ++generation) {
                 const auto& stat = run->generational_stat_report[generation];
                 file << stat.tau << ","
-                     << stat.mean_fitness << ","
-                     << stat.fitness_variance << ","
-                     << stat.mean_mutations << ","
-                     << stat.mutations_variance << ","
-                     << stat.total_living_cells << "\n";
+                    << stat.total_living_cells << ","
+                    << stat.mean_fitness << ","
+                    << stat.fitness_variance << ","
+                    << stat.fitness_skewness << ","
+                    << stat.fitness_kurtosis << ","
+                    << stat.mean_mutations << ","
+                    << stat.mutations_variance << ","
+                    << stat.mutations_skewness << ","
+                    << stat.mutations_kurtosis << "\n";
             }
+
             file.close();
             std::cout << "Generational stats exported to: " << statFilename << std::endl;
         }
     }
 
-
-    // Export Generational Population
+    // Export Generational Population (Separate Files for Each Generation)
     {
-        std::string populFilename = output_dir + "generational_population.csv";
-        std::ofstream file(populFilename);
-        if (!file.is_open()) {
-            std::cerr << "Cannot open file: " << populFilename << std::endl;
-        } else {
-            file << "Generation,CellID,ParentID,Fitness,DeathTime,Mutations\n";
-            for (const auto& [generation, cell_map] : run->generational_popul_report) {
-                for (const auto& [cell_id, cell_data] : cell_map) {
-                    // Retrieve mutations as a string
-                    std::string mutations_str;
-                    for (const auto& [mutation_id, mutation_type] : cell_data.mutations) {
-                        mutations_str += "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
-                    }
-
-                    // Trim the trailing space
-                    if (!mutations_str.empty()) {
-                        mutations_str.pop_back();
-                    }
-
-                    file << generation << "," 
-                        << cell_id << "," 
-                        << cell_data.parent_id << "," 
-                        << cell_data.fitness << "," 
-                        << cell_data.death_time << ","
-                        << "\"" << mutations_str << "\"\n"; 
-                }
+        for (const auto& [generation, cell_map] : run->generational_popul_report) {
+            std::string populFilename = output_dir + "population_generation_" + std::to_string(generation) + ".csv";
+            std::ofstream file(populFilename);
+            if (!file.is_open()) {
+                std::cerr << "Cannot open file: " << populFilename << std::endl;
+                continue;
             }
+
+            // Write the header
+            file << "CellID,ParentID,Fitness,Mutations\n";
+
+            // Write data for each cell in this generation
+            for (const auto& [cell_id, cell_data] : cell_map) {
+                // Retrieve mutations as a string
+                std::string mutations_str;
+                for (const auto& [mutation_id, mutation_type] : cell_data.mutations) {
+                    mutations_str += "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+                }
+
+                // Trim the trailing space
+                if (!mutations_str.empty()) {
+                    mutations_str.pop_back();
+                }
+
+                file << cell_id << ","
+                    << cell_data.parent_id << ","
+                    << cell_data.fitness << ","
+                    << "\"" << mutations_str << "\"\n";
+            }
+
             file.close();
-            std::cout << "Generational population exported to: " << populFilename << std::endl;
+            std::cout << "Population data exported to: " << populFilename << std::endl;
         }
     }
+
     {
         std::string phylogenyFilename = output_dir + "phylogenetic_tree.csv";
         std::ofstream file(phylogenyFilename);
@@ -130,18 +142,21 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
     plt::grid(true); // Dodaj siatkę
     plt::save(output_dir + "living_cells_over_generations.png");
 }
-
 void RunDataEngine::plotFitnessStatistics() {
     std::vector<double> generations;    
     std::vector<double> mean_fitness;   
     std::vector<double> fitness_variance; 
-    
+    std::vector<double> fitness_skewness;
+    std::vector<double> fitness_kurtosis;
+
     for (const auto& snapshot : run->generational_stat_report) {
         generations.push_back(snapshot.tau);              
         mean_fitness.push_back(snapshot.mean_fitness);    
         fitness_variance.push_back(snapshot.fitness_variance); 
+        fitness_skewness.push_back(snapshot.fitness_skewness); 
+        fitness_kurtosis.push_back(snapshot.fitness_kurtosis); 
     }
-    
+
     plt::figure_size(800, 600);
     plt::plot(generations, mean_fitness, {{"label", "Mean Fitness (χs(t))"}}); 
     plt::xlabel("Generation");
@@ -153,25 +168,47 @@ void RunDataEngine::plotFitnessStatistics() {
 
     plt::figure_size(800, 600);
     plt::plot(generations, fitness_variance, {{"label", "Fitness Variance (σs²(t))"}});
-    plt::xlabel("Generation (tau)");
+    plt::xlabel("Generation");
     plt::ylabel("Fitness Variance");
     plt::title("Fitness Variance Over Generations");
     plt::legend();
     plt::grid(true);
     plt::save(output_dir + "fitness_variance_over_generations.png");
+
+    plt::figure_size(800, 600);
+    plt::plot(generations, fitness_skewness, {{"label", "Fitness Skewness"}});
+    plt::xlabel("Generation");
+    plt::ylabel("Skewness");
+    plt::title("Fitness Skewness Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "fitness_skewness_over_generations.png");
+
+    plt::figure_size(800, 600);
+    plt::plot(generations, fitness_kurtosis, {{"label", "Fitness Kurtosis"}});
+    plt::xlabel("Generation");
+    plt::ylabel("Kurtosis");
+    plt::title("Fitness Kurtosis Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "fitness_kurtosis_over_generations.png");
 }
 
 void RunDataEngine::plotMutationsStatistics() {
     std::vector<double> generations;    
     std::vector<double> mean_mutations;  
     std::vector<double> mutations_variance; 
-    
+    std::vector<double> mutations_skewness;
+    std::vector<double> mutations_kurtosis;
+
     for (const auto& snapshot : run->generational_stat_report) {
         generations.push_back(snapshot.tau);              
         mean_mutations.push_back(snapshot.mean_mutations);    
         mutations_variance.push_back(snapshot.mutations_variance); 
+        mutations_skewness.push_back(snapshot.mutations_skewness);
+        mutations_kurtosis.push_back(snapshot.mutations_kurtosis);
     }
-    
+
     plt::figure_size(800, 600);
     plt::plot(generations, mean_mutations, {{"label", "Mean Mutations (χs(t))"}});
     plt::xlabel("Generation");
@@ -181,16 +218,36 @@ void RunDataEngine::plotMutationsStatistics() {
     plt::grid(true);
     plt::save(output_dir + "mean_mutations_over_generations.png");
 
-    // Wykres wariancji mutations (σs^2(t))
     plt::figure_size(800, 600);
     plt::plot(generations, mutations_variance, {{"label", "Mutations Variance (σs²(t))"}});
-    plt::xlabel("Generation (tau)");
+    plt::xlabel("Generation");
     plt::ylabel("Mutations Variance");
     plt::title("Mutations Variance Over Generations");
     plt::legend();
     plt::grid(true);
     plt::save(output_dir + "mutations_variance_over_generations.png");
+
+    // Plot Mutations Skewness
+    plt::figure_size(800, 600);
+    plt::plot(generations, mutations_skewness, {{"label", "Mutations Skewness"}});
+    plt::xlabel("Generation");
+    plt::ylabel("Skewness");
+    plt::title("Mutations Skewness Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "mutations_skewness_over_generations.png");
+
+    // Plot Mutations Kurtosis
+    plt::figure_size(800, 600);
+    plt::plot(generations, mutations_kurtosis, {{"label", "Mutations Kurtosis"}});
+    plt::xlabel("Generation");
+    plt::ylabel("Kurtosis");
+    plt::title("Mutations Kurtosis Over Generations");
+    plt::legend();
+    plt::grid(true);
+    plt::save(output_dir + "mutations_kurtosis_over_generations.png");
 }
+
 
 void RunDataEngine::plotMutationWave() {
     for (const auto& [generation, cells] : run->generational_popul_report) {
