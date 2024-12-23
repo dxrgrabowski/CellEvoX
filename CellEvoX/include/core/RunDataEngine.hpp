@@ -19,6 +19,7 @@ public:
     void plotFitnessStatistics();
     void plotMutationsStatistics();
     void plotMutationWave();
+    void plotMutationFrequency();
     void exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename);
     void exportPhylogeneticTreeToGEXF(const std::string& filename);
     //void exportToCSV(const tbb::concurrent_vector<Cell>& cells, const std::string& output_file);

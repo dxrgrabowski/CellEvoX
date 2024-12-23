@@ -251,31 +251,60 @@ void RunDataEngine::plotMutationsStatistics() {
 
 void RunDataEngine::plotMutationWave() {
     for (const auto& [generation, cells] : run->generational_popul_report) {
-        std::map<size_t, size_t> mutation_counts; // <liczba mutacji, liczba komórek>
+        std::map<size_t, size_t> mutation_counts; // <number of mutations, number of cells>
         
-        // Zliczanie komórek dla każdej liczby mutacji
         for (const auto& cell : cells) {
             size_t num_mutations = cell.second.mutations.size();
             mutation_counts[num_mutations]++;
         }
 
-        // Przygotowanie danych do wykresu
-        std::vector<size_t> mutation_bins; // Oś X: liczba mutacji
-        std::vector<size_t> cell_counts;  // Oś Y: liczba komórek
+        std::vector<size_t> mutation_bins;
+        std::vector<size_t> cell_counts;  
 
         for (const auto& [mutations, count] : mutation_counts) {
             mutation_bins.push_back(mutations);
             cell_counts.push_back(count);
         }
 
-        // Tworzenie wykresu słupkowego
-        plt::figure_size(1000, 600); // Rozmiar wykresu
-        plt::bar(mutation_bins, cell_counts, "green"); // Słupki w kolorze zielonym
+        plt::figure_size(1000, 600); 
+        plt::bar(mutation_bins, cell_counts, "green"); 
         plt::xlabel("Number of Mutations");
         plt::ylabel("Number of Cells");
         plt::title("Mutation Wave: Distribution of Mutation Counts (Generation " + std::to_string(generation) + ")");
-        plt::grid(true); // Dodaj siatkę
-        plt::save(output_dir + "mutation_wave_histogram_generation_" + std::to_string(generation) + ".png"); // Zapisz wykres do pliku
+        plt::grid(true);
+        plt::save(output_dir + "mutation_wave_histogram_generation_" + std::to_string(generation) + ".png");
+    }
+}
+
+void RunDataEngine::plotMutationFrequency() {
+    for (const auto& [generation, cells] : run->generational_popul_report) {
+        std::map<uint32_t, uint32_t> mutation_counts;
+        uint32_t total_cells = 0;
+
+        for (const auto& item : cells) {
+            const Cell& cell = item.second;
+            ++total_cells;
+
+            for (const auto& mutation : cell.mutations) {
+                uint32_t mutation_id = mutation.first;
+                mutation_counts[mutation_id]++;
+            }
+        }
+
+        std::vector<double> vafs;
+        for (const auto& [mutation_id, count] : mutation_counts) {
+            double vaf = static_cast<double>(count) / total_cells;
+            vafs.push_back(vaf);
+        }
+
+        int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
+
+        plt::figure();
+        plt::hist(vafs, num_bins); 
+        plt::title("VAF Histogram - Generation " + std::to_string(generation));
+        plt::xlabel("Variant Allele Frequency (VAF)");
+        plt::ylabel("Frequency");
+        plt::save(output_dir + "vaf_histogram_generation_" + std::to_string(generation) + ".png");
     }
 }
 
