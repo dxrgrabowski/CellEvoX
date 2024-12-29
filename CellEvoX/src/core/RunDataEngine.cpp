@@ -103,11 +103,11 @@ void RunDataEngine::exportToCSV()
     }
 
     {
-        std::string phylogenyFilename = output_dir + "phylogenetic_tree.csv";
-        std::ofstream file(phylogenyFilename);
+        std::string phylogeneticFilename = output_dir + "phylogenetic_tree.csv";
+        std::ofstream file(phylogeneticFilename);
 
         if (!file.is_open()) {
-            std::cerr << "Cannot open file: " << phylogenyFilename << std::endl;
+            std::cerr << "Cannot open file: " << phylogeneticFilename << std::endl;
             return;
         }
 
@@ -121,7 +121,6 @@ void RunDataEngine::exportToCSV()
         }
 
         file.close();
-        std::cout << "Phylogenetic tree exported to: " << phylogenyFilename << std::endl;
     }
 
 }

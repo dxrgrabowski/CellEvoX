@@ -38,14 +38,14 @@ void Application::initialize() {
         data_engine.plotMutationWave();
         data_engine.plotMutationFrequency();
         data_engine.exportToCSV();
-        data_engine.exportPhylogeneticTreeToGEXF("phylogeny.gexf");
+        data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
     }
 
 
     // Initialize the database manager
     // DatabaseManager db;
     
-    spdlog::info("CellEvoX Application initialized successfully");
+    spdlog::info("CellEvoX Application finished run successfully");
 }
 
 void Application::update() {
