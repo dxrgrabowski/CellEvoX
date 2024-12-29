@@ -39,28 +39,28 @@ set(QML_FILES
 
 qt6_standard_project_setup()
 
-qt6_add_executable(CellEvoX_GUI
+qt6_add_executable(CellEvoX
     ${SOURCES}
     ${HEADERS}
     MANUAL_FINALIZATION
 )
 
-qt6_add_qml_module(CellEvoX_GUI
+qt6_add_qml_module(CellEvoX
     URI CellEvoX
     VERSION 1.0
     QML_FILES ${QML_FILES}
 )
 
-target_sources(CellEvoX_GUI PRIVATE ${QML_RESOURCES})
+target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
 
-target_include_directories(CellEvoX_GUI
+target_include_directories(CellEvoX
     PRIVATE
     include
     ${Python3_INCLUDE_DIRS}
     ${NUMPY_INCLUDE_DIR}
 )
 
-target_link_libraries(CellEvoX_GUI
+target_link_libraries(CellEvoX
     PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
@@ -78,9 +78,9 @@ target_link_libraries(CellEvoX_GUI
     ${Python3_LIBRARIES}
 )
 
-install(TARGETS CellEvoX_GUI
+install(TARGETS CellEvoX
 	BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR}
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-qt_finalize_executable(CellEvoX_GUI)
+qt_finalize_executable(CellEvoX)
