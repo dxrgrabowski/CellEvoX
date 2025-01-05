@@ -49,8 +49,13 @@ RUN apt-get update && apt-get install -y \
     nlohmann-json3-dev \
     python3-matplotlib
 
+COPY ./CellEvoX /home/${USER}/CellEvoX
 
-ENV XDG_RUNTIME_DIR=/run/user/1000
+# Set permissions for the user
+RUN chown -R ${USER}:${USER} /home/${USER}/CellEvoX
 
-# Domyślny użytkownik w kontenerze
+# Switch to default user
 USER ${USER}
+
+# Set the working directory to the repository
+WORKDIR /home/${USER}/CellEvoX
