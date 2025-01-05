@@ -1,7 +1,7 @@
 FROM ubuntu:24.10
 
 ARG USER=defaultuser
-
+RUN useradd -m ${USER}
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
