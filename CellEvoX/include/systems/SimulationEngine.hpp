@@ -63,4 +63,4 @@ private:
     int last_stat_snapshot_tau = 0;
     int last_population_snapshot_tau = 0;
     std::shared_ptr<SimulationConfig> config;
-};
+    };

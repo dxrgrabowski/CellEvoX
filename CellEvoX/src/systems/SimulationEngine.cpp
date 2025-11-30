@@ -11,6 +11,9 @@
 #include <tbb/blocked_range.h>
 #include <tbb/tbb.h>
 #include <iostream>
+#include <spdlog/spdlog.h>
+#include <iomanip>
+#include <chrono>
 
 using namespace utils;
 
@@ -34,6 +37,10 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config) :
             [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
                 return sum + pair.second.probability;
             });
+    
+    spdlog::info("=== Simulation Engine Initialized ===");
+    spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
+    spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
 }
 
 void SimulationEngine::step() {
@@ -76,7 +83,7 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 
             std::cout << "\033[1;32m] " << progress << "% \033[34m" << spinner[spinner_index] 
                       << " \033[0m" << remaining_steps << " steps remaining, ~" 
-                      << std::fixed << std::setprecision(1) << estimated_remaining_time << "s left" << std::flush;
+                      << std::fixed << std::setprecision(1) << estimated_remaining_time << "s left" << cells.size() << " cells" << std::flush;
 
             spinner_index = (spinner_index + 1) % 4;
             last_update_time = current_time;
@@ -122,7 +129,7 @@ void SimulationEngine::stochasticStep() {
     const size_t N = actual_population;
     const size_t Nc = config->env_capacity;
     const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
-   
+    
     Eigen::VectorXd death_probs = 
     generateExponentialDistribution(N) / scaling_factor;
     std::vector<uint32_t> alive_cell_indices;

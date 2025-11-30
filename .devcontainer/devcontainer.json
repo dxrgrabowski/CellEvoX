@@ -9,6 +9,7 @@
     },
     "workspaceFolder": "${localWorkspaceFolder}",
 	"workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+    "initializeCommand": "mkdir -p ${localEnv:HOME}/.ssh && chmod 700 ${localEnv:HOME}/.ssh || true",
     "customizations": {
         "vscode": {
             "settings": {
@@ -30,19 +31,13 @@
     "privileged": true,
     "runArgs": [
         "--net=host",
-        "--env", "SSH_AUTH_SOCK=/ssh-agent",
-        "--volume", "${env:SSH_AUTH_SOCK}:/ssh-agent",
-        "-e"," QT_QPA_PLATFORM=wayland",
+        "-e", "QT_QPA_PLATFORM=wayland",
         "-e", "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
         "-e", "DISPLAY=${env:DISPLAY}",
-        "-e"," XDG_RUNTIME_DIR=/tmp"
-        //"-e", "QML2_IMPORT_PATH=/usr/lib/x86_64-linux-gnu/qt6/qml/"
+        "-e", "XDG_RUNTIME_DIR=/tmp"
     ],
     "mounts": [
-        "source=/run/user/1000/bus,target=/run/user/1000/bus,type=bind",
-        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
-        //"source=/run/user/1000/wayland-0,target=/run/user/1000/wayland-0,type=bind",
-        "source=/dev/dri,target=/dev/dri,type=bind"
+        "source=${localEnv:HOME}/.ssh,target=/home/${env:USER}/.ssh,type=bind,consistency=cached"
     ],
-    "postCreateCommand": "sudo chown -R $(whoami) /home/${env:USER}/ && git config --global user.email 'mdexor@gmail.com'"
+    "postCreateCommand": "sudo chown -R ${env:USER}:${env:USER} /home/${env:USER} 2>/dev/null || true && git config --global user.email 'mdexor@gmail.com' && git config --global user.name 'Dawid Grabowski' && if [ -d /home/${env:USER}/.ssh ]; then sudo chmod 700 /home/${env:USER}/.ssh 2>/dev/null || true; sudo find /home/${env:USER}/.ssh -type f -name 'id_*' ! -name '*.pub' -exec chmod 600 {} \\; 2>/dev/null || true; sudo find /home/${env:USER}/.ssh -type f -name '*.pub' -exec chmod 644 {} \\; 2>/dev/null || true; fi"
 }

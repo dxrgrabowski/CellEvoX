@@ -1,4 +1,4 @@
-FROM ubuntu:24.10
+FROM ubuntu:24.04
 
 ARG USER=defaultuser
 
@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     x11-apps \
     libxcb-cursor0 \
     openssh-server \
+    openssh-client \
     zsh \
     libspdlog-dev \
     build-essential \
@@ -51,17 +52,16 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qtquick-window \
     qml6-module-qtquick-dialogs \
     qml6-module-qtquick-layouts \
-    qml6-module-qtquick-effects \
     qml6-module-qtquick-particles \
     qml6-module-qtqml-workerscript \
     qml6-module-qtquick-templates \
     qml6-module-qtqml \
-    qml6-module-qt5compat-graphicaleffects \
-    qt6-5compat-dev \
     qml6-module-qt-labs-platform \
     qml6-module-qt-labs-folderlistmodel \
     nlohmann-json3-dev \
     gdb \
+    python3-dev \
+    python3-numpy \
     python3-matplotlib
 
 

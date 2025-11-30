@@ -1,4 +1,4 @@
-FROM ubuntu:24.10
+FROM ubuntu:24.04
 
 ARG USER=defaultuser
 RUN useradd -m ${USER}
