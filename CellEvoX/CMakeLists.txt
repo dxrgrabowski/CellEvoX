@@ -9,7 +9,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find required packages
-find_package(Qt6 6.6.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
+find_package(Qt6 6.4.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 execute_process(

@@ -7,8 +7,9 @@
             "USER": "${env:USER}"
         }
     },
-    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind",
+    "workspaceFolder": "${localWorkspaceFolder}",
+	"workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+    "initializeCommand": "mkdir -p ${localEnv:HOME}/.ssh && chmod 700 ${localEnv:HOME}/.ssh || true",
     "customizations": {
         "vscode": {
             "settings": {
@@ -30,17 +31,13 @@
     "privileged": true,
     "runArgs": [
         "--net=host",
-        "-e",
-        "QT_QPA_PLATFORM=wayland",
-        "-e",
-        "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
-        "-e",
-        "DISPLAY=${env:DISPLAY}",
-        "-e",
-        "XDG_RUNTIME_DIR=/tmp"
+        "-e", "QT_QPA_PLATFORM=wayland",
+        "-e", "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "-e", "XDG_RUNTIME_DIR=/tmp"
     ],
     "mounts": [
-        "source=${localEnv:USERPROFILE}/.ssh,target=/home/${env:USER}/.ssh,type=bind,consistency=cached"
+        "source=${localEnv:HOME}/.ssh,target=/home/${env:USER}/.ssh,type=bind,consistency=cached"
     ],
     "postCreateCommand": "sudo chown -R ${env:USER}:${env:USER} /home/${env:USER} 2>/dev/null || true && git config --global user.email 'mdexor@gmail.com' && git config --global user.name 'Dawid Grabowski' && if [ -d /home/${env:USER}/.ssh ]; then sudo chmod 700 /home/${env:USER}/.ssh 2>/dev/null || true; sudo find /home/${env:USER}/.ssh -type f -name 'id_*' ! -name '*.pub' -exec chmod 600 {} \\; 2>/dev/null || true; sudo find /home/${env:USER}/.ssh -type f -name '*.pub' -exec chmod 644 {} \\; 2>/dev/null || true; fi"
 }

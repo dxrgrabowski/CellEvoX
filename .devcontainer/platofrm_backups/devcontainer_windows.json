@@ -30,14 +30,10 @@
     "privileged": true,
     "runArgs": [
         "--net=host",
-        "-e",
-        "QT_QPA_PLATFORM=wayland",
-        "-e",
-        "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
-        "-e",
-        "DISPLAY=${env:DISPLAY}",
-        "-e",
-        "XDG_RUNTIME_DIR=/tmp"
+        "-e", "QT_QPA_PLATFORM=wayland",
+        "-e", "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "-e", "XDG_RUNTIME_DIR=/tmp"
     ],
     "mounts": [
         "source=${localEnv:USERPROFILE}/.ssh,target=/home/${env:USER}/.ssh,type=bind,consistency=cached"
