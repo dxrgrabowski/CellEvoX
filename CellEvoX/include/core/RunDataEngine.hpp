@@ -14,6 +14,7 @@ class RunDataEngine {
  public:
   RunDataEngine(std::shared_ptr<SimulationConfig>,
                 std::shared_ptr<ecs::Run>,
+                const std::string& config_file_path,
                 double generation_step = 0.005);
 
   // Generate a graph in Graphviz DOT format
@@ -32,6 +33,7 @@ class RunDataEngine {
   std::shared_ptr<SimulationConfig> config;
   std::shared_ptr<ecs::Run> run;
   std::string output_dir;
+  std::string config_file_path;
   // Helper to classify cells into layers by generation
   // std::vector<std::vector<const Cell*>> classifyByGeneration(const tbb::concurrent_vector<Cell>&
   // cells);

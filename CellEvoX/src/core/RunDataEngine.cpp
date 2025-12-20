@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <chrono>
+#include <iomanip>
 #include <map>
 #include <random>
 #include <sstream>
@@ -19,17 +21,42 @@ namespace plt = matplotlibcpp;
 
 RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
                              std::shared_ptr<ecs::Run> run,
+                             const std::string& config_file_path,
                              double generation_step)
-    : config(config), run(run), generation_step(generation_step) {
+    : config(config),
+      run(run),
+      config_file_path(config_file_path),
+      generation_step(generation_step) {
   prepareOutputDir();
 }
 
 void RunDataEngine::prepareOutputDir() {
-  output_dir = config->output_path;
+  auto now = std::chrono::system_clock::now();
+  auto in_time_t = std::chrono::system_clock::to_time_t(now);
+  std::stringstream ss;
+  ss << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S");
+  std::string timestamp = ss.str();
+
+  std::filesystem::path base_path = config->output_path;
+  std::filesystem::path timestamped_path = base_path / timestamp;
+
+  output_dir = timestamped_path.string();
+
   if (!std::filesystem::exists(output_dir) && output_dir != "") {
     std::filesystem::create_directories(output_dir);
   }
   output_dir += "/";
+
+  // Copy config file if it exists
+  if (!config_file_path.empty() && std::filesystem::exists(config_file_path)) {
+    try {
+      std::filesystem::copy(config_file_path, timestamped_path / "config.json",
+                            std::filesystem::copy_options::overwrite_existing);
+      spdlog::info("Copied config file to: {}", (timestamped_path / "config.json").string());
+    } catch (const std::filesystem::filesystem_error& e) {
+      spdlog::error("Failed to copy config file: {}", e.what());
+    }
+  }
 }
 void RunDataEngine::exportToCSV() {
   // Export Generational Statistics
