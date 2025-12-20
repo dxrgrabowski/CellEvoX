@@ -21,29 +21,6 @@ inline const char* toString(SimulationType type) {
   }
 }
 
-inline MutationVariant stringToMutationVariant(const std::string& type) {
-  static const std::unordered_map<std::string, MutationVariant> typeMap = {
-      {"DRIVER", MutationVariant::DRIVER},
-      {"POSITIVE", MutationVariant::POSITIVE},
-      {"NEUTRAL", MutationVariant::NEUTRAL},
-      {"NEGATIVE", MutationVariant::NEGATIVE}};
-  return typeMap.at(type);
-}
-inline std::string toString(MutationVariant type) {
-  switch (type) {
-    case MutationVariant::DRIVER:
-      return "DRIVER";
-    case MutationVariant::POSITIVE:
-      return "POSITIVE";
-    case MutationVariant::NEUTRAL:
-      return "NEUTRAL";
-    case MutationVariant::NEGATIVE:
-      return "NEGATIVE";
-    default:
-      return "UNKNOWN";
-  }
-}
-
 inline SimulationConfig fromJson(const nlohmann::json& j) {
   SimulationConfig config;
   spdlog::info("Parsing simulation configuration from JSON");
@@ -61,7 +38,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.mutations.push_back({mut.at("effect"),
                                   mut.at("probability"),
                                   mut.at("id"),
-                                  stringToMutationVariant(mut.at("type"))});
+                                  mut.at("is_driver")});
     }
   } catch (const nlohmann::json::exception& e) {
     spdlog::error("Error parsing JSON: {}", e.what());
@@ -83,8 +60,8 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
-    spdlog::info("    {} mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
-                 toString(mut.type),
+    spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
+                 mut.is_driver ? "DRIVER " : "",
                  mut.type_id,
                  mut.effect,
                  mut.probability);

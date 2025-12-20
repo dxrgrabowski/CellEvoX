@@ -3,30 +3,11 @@
 #include <memory>
 #include <vector>
 
-enum class MutationVariant : uint8_t { DRIVER = 0, POSITIVE = 1, NEUTRAL = 2, NEGATIVE = 3 };
-
-inline std::ostream& operator<<(std::ostream& os, MutationVariant type) {
-  switch (type) {
-    case MutationVariant::DRIVER:
-      os << "DRIVER";
-      break;
-    case MutationVariant::POSITIVE:
-      os << "POSITIVE";
-      break;
-    case MutationVariant::NEUTRAL:
-      os << "NEUTRAL";
-      break;
-    case MutationVariant::NEGATIVE:
-      os << "NEGATIVE";
-      break;
-  }
-  return os;
-}
 struct MutationType {
   double effect;
   double probability;
   uint8_t type_id;  // up to 256 mutationTypes
-  MutationVariant type;
+  bool is_driver;
 };
 
 class Cell {

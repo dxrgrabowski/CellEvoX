@@ -174,20 +174,17 @@ void Run::processRunInfo() {
   for (const auto& cell : cells) {
     total_mutations += cell.second.mutations.size();
     for (const auto& mutation_id : cell.second.mutations) {
-      MutationVariant type = mutation_id_to_type[mutation_id.second].type;
-      switch (type) {
-        case MutationVariant::DRIVER:
-          ++driver_mutations;
-          break;
-        case MutationVariant::POSITIVE:
-          ++positive_mutations;
-          break;
-        case MutationVariant::NEUTRAL:
-          ++neutral_mutations;
-          break;
-        case MutationVariant::NEGATIVE:
-          ++negative_mutations;
-          break;
+      const auto& mut_type = mutation_id_to_type[mutation_id.second];
+      if (mut_type.is_driver) {
+        ++driver_mutations;
+      }
+
+      if (mut_type.effect > 0) {
+        ++positive_mutations;
+      } else if (mut_type.effect < 0) {
+        ++negative_mutations;
+      } else {
+        ++neutral_mutations;
       }
     }
   }
