@@ -2,6 +2,9 @@
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
 
+#include <atomic>
+#include <csignal>
+
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
 
@@ -37,6 +40,9 @@ struct StatSnapshot {
 class SimulationEngine {
  public:
   SimulationEngine(std::shared_ptr<SimulationConfig>);
+
+  static std::atomic<bool> shutdown_requested;
+  static void signalHandler(int signum);
 
   void step();
   ecs::Run run(uint32_t steps);

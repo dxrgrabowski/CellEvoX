@@ -20,6 +20,13 @@
 
 using namespace utils;
 
+std::atomic<bool> SimulationEngine::shutdown_requested{false};
+
+void SimulationEngine::signalHandler(int signum) {
+  spdlog::warn("\nReceived interrupt signal ({}). Gracefully shutting down...", signum);
+  shutdown_requested.store(true);
+}
+
 SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
     : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0) {
   cells.rehash(config->initial_population);
@@ -68,6 +75,11 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
   auto start_time = std::chrono::steady_clock::now();
 
   for (uint32_t i = 0; i < steps; ++i) {
+    if (shutdown_requested.load()) {
+      spdlog::info("Shutdown requested at step {}/{}", i, steps);
+      std::cout << std::endl;
+      break;
+    }
     step();
     auto current_time = std::chrono::steady_clock::now();
     auto elapsed_time =

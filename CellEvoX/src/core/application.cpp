@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <fstream>
+#include <csignal>
 #include <nlohmann/json.hpp>
 
 #include "core/RunDataEngine.hpp"
@@ -29,6 +30,11 @@ void Application::initialize() {
     sim_config = std::make_shared<SimulationConfig>(utils::fromJson(config));
     utils::printConfig(*sim_config);
     sim_engine = std::make_unique<SimulationEngine>(sim_config);
+    
+    // Register signal handlers for graceful shutdown
+    std::signal(SIGINT, SimulationEngine::signalHandler);
+    std::signal(SIGTERM, SimulationEngine::signalHandler);
+    
     runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
 
     RunDataEngine data_engine(sim_config, runs[0], 0.005);
