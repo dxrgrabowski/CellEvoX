@@ -5,38 +5,32 @@
   "env_capacity": 10000,
   "steps": 1000010,
   "statistics_resolution": 1,
-  "population_statistics_res": 500,
+  "population_statistics_res": 25,
   "output_path": "/your/output/dir/path",
   "mutations": [
     {
-      "type": "DRIVER",
+      "is_driver": true,
       "effect": 0.05,
       "probability": 0.001,
       "id": 1
     },
     {
-      "type": "POSITIVE",
+      "is_driver": false,
       "effect": 0.001,
       "probability": 0.02,
       "id": 2
     },
     {
-      "type": "NEUTRAL",
+      "is_driver": false,
       "effect": 0,
       "probability": 0.0,
       "id": 3
     },
     {
-      "type": "NEGATIVE",
+      "is_driver": false,
       "effect": -0.001,
       "probability": 0.02,
       "id": 4
-    },
-    {
-      "type": "NEGATIVE",
-      "effect": -0.001,
-      "probability": 0.02,
-      "id": 5
     }
   ]
 }
