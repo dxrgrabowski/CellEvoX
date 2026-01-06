@@ -44,6 +44,14 @@ void RunDataEngine::prepareOutputDir() {
 
   if (!std::filesystem::exists(output_dir) && output_dir != "") {
     std::filesystem::create_directories(output_dir);
+    // Create subdirectories
+    std::vector<std::string> subdirs = {"vaf_diagrams",      "mutation_histograms",
+                                        "population_data",   "general_plots",
+                                        "muller_plots",      "phylogeny",
+                                        "statistics"};
+    for (const auto& subdir : subdirs) {
+      std::filesystem::create_directories(std::filesystem::path(output_dir) / subdir);
+    }
   }
   output_dir += "/";
 
@@ -61,7 +69,7 @@ void RunDataEngine::prepareOutputDir() {
 void RunDataEngine::exportToCSV() {
   // Export Generational Statistics
   {
-    std::string statFilename = output_dir + "generational_statistics.csv";
+    std::string statFilename = output_dir + "statistics/generational_statistics.csv";
     std::ofstream file(statFilename);
     if (!file.is_open()) {
       std::cerr << "Cannot open file: " << statFilename << std::endl;
@@ -90,7 +98,7 @@ void RunDataEngine::exportToCSV() {
   {
     for (const auto& [generation, cell_map] : run->generational_popul_report) {
       std::string populFilename =
-          output_dir + "population_generation_" + std::to_string(generation) + ".csv";
+          output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
       std::ofstream file(populFilename);
       if (!file.is_open()) {
         std::cerr << "Cannot open file: " << populFilename << std::endl;
@@ -124,7 +132,7 @@ void RunDataEngine::exportToCSV() {
   }
 
   {
-    std::string phylogeneticFilename = output_dir + "phylogenetic_tree.csv";
+    std::string phylogeneticFilename = output_dir + "phylogeny/phylogenetic_tree.csv";
     std::ofstream file(phylogeneticFilename);
 
     if (!file.is_open()) {
@@ -157,7 +165,7 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
   plt::ylabel("Total Living Cells");
   plt::title("Number of Living Cells Over Generations");
   plt::grid(true);  // Dodaj siatkę
-  plt::save(output_dir + "living_cells_over_generations.png");
+  plt::save(output_dir + "general_plots/living_cells_over_generations.png");
   plt::close();
 }
 void RunDataEngine::plotFitnessStatistics() {
@@ -182,7 +190,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::title("Mean Fitness Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "mean_fitness_over_generations.png");
+  plt::save(output_dir + "general_plots/mean_fitness_over_generations.png");
   plt::close();
 
   plt::figure_size(800, 600);
@@ -192,7 +200,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::title("Fitness Variance Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "fitness_variance_over_generations.png");
+  plt::save(output_dir + "general_plots/fitness_variance_over_generations.png");
   plt::close();
 
   plt::figure_size(800, 600);
@@ -202,7 +210,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::title("Fitness Skewness Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "fitness_skewness_over_generations.png");
+  plt::save(output_dir + "general_plots/fitness_skewness_over_generations.png");
   plt::close();
 
   plt::figure_size(800, 600);
@@ -212,7 +220,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::title("Fitness Kurtosis Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "fitness_kurtosis_over_generations.png");
+  plt::save(output_dir + "general_plots/fitness_kurtosis_over_generations.png");
   plt::close();
 }
 
@@ -238,7 +246,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::title("Mean Mutations Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "mean_mutations_over_generations.png");
+  plt::save(output_dir + "general_plots/mean_mutations_over_generations.png");
   plt::close();
 
   plt::figure_size(800, 600);
@@ -248,7 +256,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::title("Mutations Variance Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "mutations_variance_over_generations.png");
+  plt::save(output_dir + "general_plots/mutations_variance_over_generations.png");
   plt::close();
 
   // Plot Mutations Skewness
@@ -259,7 +267,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::title("Mutations Skewness Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "mutations_skewness_over_generations.png");
+  plt::save(output_dir + "general_plots/mutations_skewness_over_generations.png");
   plt::close();
 
   // Plot Mutations Kurtosis
@@ -270,7 +278,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::title("Mutations Kurtosis Over Generations");
   plt::legend();
   plt::grid(true);
-  plt::save(output_dir + "mutations_kurtosis_over_generations.png");
+  plt::save(output_dir + "general_plots/mutations_kurtosis_over_generations.png");
   plt::close();
 }
 
@@ -298,8 +306,8 @@ void RunDataEngine::plotMutationWave() {
     plt::title("Mutation Wave: Distribution of Mutation Counts (Generation " +
                std::to_string(generation) + ")");
     plt::grid(true);
-    plt::save(output_dir + "mutation_wave_histogram_generation_" + std::to_string(generation) +
-              ".png");
+    plt::save(output_dir + "mutation_histograms/mutation_wave_histogram_generation_" +
+              std::to_string(generation) + ".png");
     plt::close();
   }
 }
@@ -332,13 +340,14 @@ void RunDataEngine::plotMutationFrequency() {
     plt::title("VAF Histogram - Generation " + std::to_string(generation));
     plt::xlabel("Variant Allele Frequency (VAF)");
     plt::ylabel("Frequency");
-    plt::save(output_dir + "vaf_histogram_generation_" + std::to_string(generation) + ".png");
+    plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+              ".png");
     plt::close();
   }
 }
 
 void RunDataEngine::exportPhylogeneticTreeToGEXF(const std::string& filename) {
-  std::string output_file = output_dir + filename;
+  std::string output_file = output_dir + "phylogeny/" + filename;
   std::ofstream file(output_file);
 
   if (!file.is_open()) {
@@ -451,7 +460,7 @@ void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::
     }
   });
 
-  std::ofstream gexf_file(filename);
+  std::ofstream gexf_file(output_dir + "phylogeny/" + filename);
   if (!gexf_file.is_open()) {
     return;
   }
@@ -526,7 +535,7 @@ void RunDataEngine::plotMullerDiagram() {
   // 1. Generate Relative Plot (Standard)
   std::string command_relative = python_cmd + " " + script_path.string() + 
                                " --input " + output_dir +
-                               " --output " + output_dir + "muller_plot.png";
+                               " --output " + output_dir + "muller_plots/muller_plot.png";
   
   spdlog::info("Running relative plot: {}", command_relative);
   int result_rel = std::system(command_relative.c_str());
@@ -540,7 +549,7 @@ void RunDataEngine::plotMullerDiagram() {
   // 2. Generate Absolute Plot
   std::string command_absolute = python_cmd + " " + script_path.string() + 
                                " --input " + output_dir +
-                               " --output " + output_dir + "muller_plot_absolute.png" +
+                               " --output " + output_dir + "muller_plots/muller_plot_absolute.png" +
                                " --absolute";
                                
   spdlog::info("Running absolute plot: {}", command_absolute);

@@ -118,7 +118,13 @@ def load_population_files(output_dir: str) -> Dict[int, pd.DataFrame]:
     Load all population_generation_*.csv files.
     Returns dict mapping generation -> DataFrame.
     """
-    pattern = os.path.join(output_dir, "population_generation_*.csv")
+    # Check for population_data subdirectory
+    pop_dir = os.path.join(output_dir, "population_data")
+    if os.path.isdir(pop_dir):
+        pattern = os.path.join(pop_dir, "population_generation_*.csv")
+    else:
+        pattern = os.path.join(output_dir, "population_generation_*.csv")
+        
     files = glob.glob(pattern)
     
     populations = {}
