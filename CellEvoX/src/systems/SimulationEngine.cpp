@@ -105,7 +105,7 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 
       std::cout << "\033[1;32m] " << progress << "% \033[34m" << spinner[spinner_index]
                 << " \033[0m" << remaining_steps << " steps remaining, ~" << std::fixed
-                << std::setprecision(1) << estimated_remaining_time << "s left" << cells.size()
+                << std::setprecision(1) << estimated_remaining_time << "s left " << cells.size()
                 << " cells" << std::flush;
 
       spinner_index = (spinner_index + 1) % 4;

@@ -158,6 +158,7 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
   plt::title("Number of Living Cells Over Generations");
   plt::grid(true);  // Dodaj siatkę
   plt::save(output_dir + "living_cells_over_generations.png");
+  plt::close();
 }
 void RunDataEngine::plotFitnessStatistics() {
   std::vector<double> generations;
@@ -182,6 +183,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "mean_fitness_over_generations.png");
+  plt::close();
 
   plt::figure_size(800, 600);
   plt::plot(generations, fitness_variance, {{"label", "Fitness Variance (σs²(t))"}});
@@ -191,6 +193,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "fitness_variance_over_generations.png");
+  plt::close();
 
   plt::figure_size(800, 600);
   plt::plot(generations, fitness_skewness, {{"label", "Fitness Skewness"}});
@@ -200,6 +203,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "fitness_skewness_over_generations.png");
+  plt::close();
 
   plt::figure_size(800, 600);
   plt::plot(generations, fitness_kurtosis, {{"label", "Fitness Kurtosis"}});
@@ -209,6 +213,7 @@ void RunDataEngine::plotFitnessStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "fitness_kurtosis_over_generations.png");
+  plt::close();
 }
 
 void RunDataEngine::plotMutationsStatistics() {
@@ -234,6 +239,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "mean_mutations_over_generations.png");
+  plt::close();
 
   plt::figure_size(800, 600);
   plt::plot(generations, mutations_variance, {{"label", "Mutations Variance (σs²(t))"}});
@@ -243,6 +249,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "mutations_variance_over_generations.png");
+  plt::close();
 
   // Plot Mutations Skewness
   plt::figure_size(800, 600);
@@ -253,6 +260,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "mutations_skewness_over_generations.png");
+  plt::close();
 
   // Plot Mutations Kurtosis
   plt::figure_size(800, 600);
@@ -263,6 +271,7 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::legend();
   plt::grid(true);
   plt::save(output_dir + "mutations_kurtosis_over_generations.png");
+  plt::close();
 }
 
 void RunDataEngine::plotMutationWave() {
@@ -291,6 +300,7 @@ void RunDataEngine::plotMutationWave() {
     plt::grid(true);
     plt::save(output_dir + "mutation_wave_histogram_generation_" + std::to_string(generation) +
               ".png");
+    plt::close();
   }
 }
 
@@ -323,6 +333,7 @@ void RunDataEngine::plotMutationFrequency() {
     plt::xlabel("Variant Allele Frequency (VAF)");
     plt::ylabel("Frequency");
     plt::save(output_dir + "vaf_histogram_generation_" + std::to_string(generation) + ".png");
+    plt::close();
   }
 }
 
@@ -482,4 +493,64 @@ void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::
   gexf_file << "  </graph>\n";
   gexf_file << "</gexf>\n";
 }
+
+void RunDataEngine::plotMullerDiagram() {
+  spdlog::info("Generating Müller diagram...");
+  
+  // Get the path to the Python script (relative to project structure)
+  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_muller.py";
+  
+  // If not found, try relative to the executable
+  if (!std::filesystem::exists(script_path)) {
+    // Try finding it relative to the source directory
+    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_muller.py";
+  }
+  
+  // Fallback to absolute path if needed
+  if (!std::filesystem::exists(script_path)) {
+    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_muller.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("Müller plot script not found at: {}", script_path.string());
+    return;
+  }
+  
+  // Try to use virtual environment Python if available, otherwise fall back to system python3
+  std::string python_cmd = "python3";
+  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
+  if (std::filesystem::exists(venv_python)) {
+    python_cmd = venv_python.string();
+  }
+  
+  // 1. Generate Relative Plot (Standard)
+  std::string command_relative = python_cmd + " " + script_path.string() + 
+                               " --input " + output_dir +
+                               " --output " + output_dir + "muller_plot.png";
+  
+  spdlog::info("Running relative plot: {}", command_relative);
+  int result_rel = std::system(command_relative.c_str());
+  
+  if (result_rel == 0) {
+    spdlog::info("Relative Müller plot saved to: {}muller_plot.png", output_dir);
+  } else {
+    spdlog::warn("Relative Müller plot generation failed with code: {}", result_rel);
+  }
+
+  // 2. Generate Absolute Plot
+  std::string command_absolute = python_cmd + " " + script_path.string() + 
+                               " --input " + output_dir +
+                               " --output " + output_dir + "muller_plot_absolute.png" +
+                               " --absolute";
+                               
+  spdlog::info("Running absolute plot: {}", command_absolute);
+  int result_abs = std::system(command_absolute.c_str());
+  
+  if (result_abs == 0) {
+    spdlog::info("Absolute Müller plot saved to: {}muller_plot_absolute.png", output_dir);
+  } else {
+    spdlog::warn("Absolute Müller plot generation failed with code: {}", result_abs);
+  }
+}
+
 }  // namespace CellEvoX::core

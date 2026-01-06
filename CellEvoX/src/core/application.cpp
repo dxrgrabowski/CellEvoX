@@ -46,6 +46,7 @@ void Application::initialize() {
     data_engine.plotMutationFrequency();
     data_engine.exportToCSV();
     data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
+    data_engine.plotMullerDiagram();
   }
 
   // Initialize the database manager
