@@ -218,20 +218,6 @@ void Run::checkRunCorrectness() const {
       max_id = cell.first;
     }
   }
-
-  if (max_id + 1 != cells.size() + cells_graveyard.size()) {
-    spdlog::error("Mismatch in cell count and max ID: max ID {}, total cells {}",
-                  max_id,
-                  cells.size() + cells_graveyard.size());
-  } else {
-    spdlog::debug("Cell count matches max ID.");
-  }
-
-  if (total_deaths != cells_graveyard.size()) {
-    spdlog::error("Post Mismatch in graveyard count: expected {}, found {}",
-                  total_deaths,
-                  cells_graveyard.size());
-  }
 }
 
 }  // namespace ecs

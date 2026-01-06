@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <fstream>
 
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
@@ -20,6 +21,7 @@ struct SimulationConfig {
   size_t steps;
   uint32_t stat_res;
   uint32_t popul_res;
+  int graveyard_pruning_interval;
   std::string output_path;
   std::vector<MutationType> mutations;
 };
@@ -50,6 +52,7 @@ class SimulationEngine {
 
  private:
   void stochasticStep();
+  void pruneGraveyard();
   // void rk4DeterministicStep(double deltaTime);
   void takeStatSnapshot();
   void takePopulationSnapshot();
@@ -65,5 +68,10 @@ class SimulationEngine {
   double total_mutation_probability;
   int last_stat_snapshot_tau = 0;
   int last_population_snapshot_tau = 0;
+  int last_pruning_tau = -1;
   std::shared_ptr<SimulationConfig> config;
+  
+  std::ofstream memory_log_file;
+  void logMemoryUsage();
+  size_t getRSS();
 };

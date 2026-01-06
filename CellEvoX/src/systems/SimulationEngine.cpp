@@ -16,6 +16,7 @@
 #include <unordered_set>
 
 #include "utils/MathUtils.hpp"
+#include <unistd.h>
 #include "utils/SimulationConfig.hpp"
 
 using namespace utils;
@@ -53,6 +54,18 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
   spdlog::info("Tau step: {}, Total mutation probability: {:.6f}",
                config->tau_step,
                total_mutation_probability);
+
+  // Initialize memory logging
+  std::string memory_log_path = config->output_path + "/statistics/memory_log.csv";
+  // Maintain directory creation if needed, though RunDataEngine usually does it.
+  // But SimulationEngine might start before RunDataEngine finishes? No, RunDataEngine is first.
+  
+  memory_log_file.open(memory_log_path);
+  if (memory_log_file.is_open()) {
+      memory_log_file << "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB\n";
+  } else {
+      spdlog::warn("Failed to open memory log file at: {}", memory_log_path);
+  }
 }
 
 void SimulationEngine::step() {
@@ -242,6 +255,18 @@ void SimulationEngine::stochasticStep() {
     takePopulationSnapshot();
     last_population_snapshot_tau = current_tau;
   }
+
+  if (config->graveyard_pruning_interval > 0 && 
+      current_tau % config->graveyard_pruning_interval == 0 && 
+      current_tau != last_pruning_tau) {
+      pruneGraveyard();
+      last_pruning_tau = current_tau;
+  }
+  
+  // Log memory usage periodically (e.g. same as stats resolution or separate)
+  if (current_tau % config->stat_res == 0) {
+       logMemoryUsage();
+  }
 }
 void SimulationEngine::takeStatSnapshot() {
   double total_fitness = 0.0;
@@ -332,4 +357,116 @@ void SimulationEngine::takePopulationSnapshot() {
     cells_copy.insert(accessor, {cell.first, cell.second});
   }
   generational_popul_report.push_back({tau, std::move(cells_copy)});
+}
+
+void SimulationEngine::pruneGraveyard() {
+  spdlog::info("Pruning graveyard... Current size: {}", cells_graveyard.size());
+  
+  // 1. Identify all living cells (potential starting points)
+  std::unordered_set<uint32_t> living_ids;
+  for (const auto& cell : cells) {
+      living_ids.insert(cell.first);
+  }
+
+  // 2. Traverse up the lineage to mark all ancestors
+  std::unordered_set<uint32_t> reachable_dead_cells;
+  
+  // Use a stack for non-recursive traversal
+  // We need to check both living cells' parents and already reachable dead cells' parents
+  // But strictly, we only care about ancestors of currently living cells.
+  
+  for (uint32_t start_id : living_ids) {
+      uint32_t current_id = start_id;
+      
+      // Get parent of current cell
+      // Since it's living, we look in 'cells' map first to get its parent (not stored directly in cell?)
+      // Wait, Cell struct has parent_id?
+      // Let's check Cell definition. Run.hpp includes ecs/Cell.hpp
+      
+      // Assuming Cell has parent_id. 
+      // If the cell is alive, we get its parent.
+      
+      CellMap::const_accessor accessor;
+      if (cells.find(accessor, current_id)) {
+          uint32_t parent_id = accessor->second.parent_id;
+          
+          // Traverse up
+          while (parent_id != 0) {
+              // If we already visited this parent, we can stop this branch
+              if (reachable_dead_cells.count(parent_id) || living_ids.count(parent_id)) {
+                  break;
+              }
+              
+              // Check if parent is in graveyard
+              Graveyard::const_accessor grave_accessor;
+              if (cells_graveyard.find(grave_accessor, parent_id)) {
+                  reachable_dead_cells.insert(parent_id);
+                  parent_id = grave_accessor->second.first; // Get grandparent
+              } else if (cells.find(accessor, parent_id)) {
+                  // Parent is alive, no need to add to unreachable dead (obviously)
+                  // But we continue traversal from it? 
+                  // If parent is alive, it's already in living_ids, so it will be processed in outer loop.
+                  // So we can stop here.
+                  break;
+              } else {
+                  // Parent not found in living or graveyard? (Maybe deleted root or error)
+                  break;
+              }
+          }
+      }
+  }
+  
+  // 3. Remove unreachable dead cells
+  // tbb::concurrent_hash_map doesn't support easy iteration-deletion.
+  // We can collect IDs to remove or build a new map.
+  // Given we expect to remove a lot, building a new map might be better?
+  // Or just iterate and erase if not in set.
+  
+  std::vector<uint32_t> to_remove;
+  for (const auto& item : cells_graveyard) {
+      if (reachable_dead_cells.find(item.first) == reachable_dead_cells.end()) {
+          to_remove.push_back(item.first);
+      }
+  }
+  
+  for (uint32_t id : to_remove) {
+      cells_graveyard.erase(id);
+  }
+  
+  spdlog::info("Graveyard pruned. New size: {}. Removed: {} cells.", 
+               cells_graveyard.size(), to_remove.size());
+}
+
+size_t SimulationEngine::getRSS() {
+    size_t rss = 0;
+    std::ifstream statm("/proc/self/statm");
+    if (statm.is_open()) {
+        size_t ignore;
+        statm >> ignore >> rss; // 2nd value is RSS in pages
+    }
+    long page_size_kb = sysconf(_SC_PAGESIZE) / 1024;
+    return rss * page_size_kb;
+}
+
+void SimulationEngine::logMemoryUsage() {
+    if (!memory_log_file.is_open()) return;
+
+    size_t rss_kb = getRSS();
+    size_t cells_count = cells.size();
+    size_t graveyard_count = cells_graveyard.size();
+    
+    // Estimations
+    size_t estimated_cells_kb = (cells_count * sizeof(Cell)) / 1024;
+    // Graveyard value is pair<uint32_t, double> (12 bytes) + key (4 bytes) + overhead (~16-24 bytes node)
+    // bucket overhead etc. TBB map is complex. 
+    // Approx 32-48 bytes per entry?
+    size_t estimated_graveyard_kb = (graveyard_count * 48) / 1024; 
+
+    memory_log_file << tau << "," 
+                    << rss_kb << "," 
+                    << cells_count << "," 
+                    << graveyard_count << ","
+                    << estimated_cells_kb << ","
+                    << estimated_graveyard_kb << "\n";
+    memory_log_file.flush();
 }

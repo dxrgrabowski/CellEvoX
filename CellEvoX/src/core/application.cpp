@@ -29,6 +29,11 @@ void Application::initialize() {
     config_file >> config;
     sim_config = std::make_shared<SimulationConfig>(utils::fromJson(config));
     utils::printConfig(*sim_config);
+    std::string config_path = vm["config"].as<std::string>();
+    
+    // Initialize DataEngine first to prepare output directory
+    RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);
+    
     sim_engine = std::make_unique<SimulationEngine>(sim_config);
     
     // Register signal handlers for graceful shutdown
@@ -36,9 +41,10 @@ void Application::initialize() {
     std::signal(SIGTERM, SimulationEngine::signalHandler);
     
     runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
+    
+    // Set the run result in data engine
+    data_engine.setRun(runs[0]);
 
-    std::string config_path = vm["config"].as<std::string>();
-    RunDataEngine data_engine(sim_config, runs[0], config_path, 0.005);
     data_engine.plotFitnessStatistics();
     data_engine.plotMutationsStatistics();
     data_engine.plotLivingCellsOverGenerations();

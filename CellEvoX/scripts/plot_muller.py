@@ -240,7 +240,8 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return populations_df, parent_tree_df
 
 
-def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool = False):
+def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool = False, 
+                        dpi: int = 300, width: float = 20, height: float = 12):
     """
     Generate and save the Müller plot using pyfish.
     """
@@ -260,29 +261,72 @@ def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool
     if output_file is None:
         output_file = os.path.join(output_dir, 'muller_plot.png')
     
+    # Calculate dynamic width based on number of generations if using defaults
+    # If user provided explicit width via command line, we might want to respect it,
+    # but here we implement the dynamic logic as default behavior logic.
+    # Check max step for generation count estimate
+    max_step = populations_df['Step'].max()
+    min_step = populations_df['Step'].min()
+    num_gens = max_step - min_step
+    
+    # Dynamic width formula: 0.01 inches per generation, capped at 100 inches, min 20 inches.
+    dynamic_width = min(100.0, max(width, num_gens * 0.01))
+    
+    print(f"Image Resolution: {dpi} DPI")
+    print(f"Logic: {num_gens} generations -> Figure Width: {dynamic_width:.2f} inches (approx {int(dynamic_width*dpi)} pixels)")
+
     # Generate Müller plot using pyfish
     try:
         print(f"Populations DataFrame shape: {populations_df.shape}")
         print(f"Parent tree DataFrame shape: {parent_tree_df.shape}")
-        print(f"Sample populations:\n{populations_df.head(20)}")
-        print(f"Parent tree:\n{parent_tree_df.head(20)}")
         
         # Process data for pyfish
         data = process_data(populations_df, parent_tree_df, absolute=absolute)
         
-        # Create figure manually to avoid font size issues
-        fig, ax = plt.subplots(figsize=(14, 8))
+        # Create figure manually
+        fig, ax = plt.subplots(figsize=(dynamic_width, height))
         
         # Create fish plot
         fish_plot(*data, ax=ax)
         
-        ylabel = 'Absolute Population' if absolute else 'Relative Population'
-        ax.set_xlabel('Generation', fontsize=12)
-        ax.set_ylabel(ylabel, fontsize=12)
-        title = 'Müller Plot: Clone Evolution (Absolute Counts)' if absolute else 'Müller Plot: Clone Evolution'
-        ax.set_title(title, fontsize=14)
+        # Optimize X-axis labels
+        # Calculate tick interval based on number of generations to have dense but readable labels
+        # Target roughly 20-30 ticks per 20 inches, or ~1 tick per inch or more dense if possible with small font.
+        # For 15k generations, maybe every 250 or 500? 
+        # For 100 generations, maybe every 5 or 10.
         
-        fig.savefig(output_file, dpi=150)
+        import matplotlib.ticker as ticker
+        
+        # Target ~50-80 labels across the width
+        target_num_ticks = max(20, int(dynamic_width * 3)) # About 3 ticks per inch
+        tick_step = max(1, int(num_gens / target_num_ticks))
+        
+        # Round tick_step to nice number (1, 5, 10, 25, 50, 100, 250, 500, 1000)
+        nice_steps = [1, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000]
+        # Find closest larger nice step
+        for step in nice_steps:
+            if step >= tick_step:
+                tick_step = step
+                break
+        else:
+            tick_step = nice_steps[-1]
+
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(tick_step))
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%d')) # Integer formatting
+        
+        # Rotate labels and reduce font size
+        plt.setp(ax.get_xticklabels(), rotation=90, fontsize=8) 
+        
+        ylabel = 'Absolute Population' if absolute else 'Relative Population'
+        ax.set_xlabel('Generation', fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10)
+        title = 'Müller Plot: Clone Evolution (Absolute Counts)' if absolute else 'Müller Plot: Clone Evolution'
+        ax.set_title(title, fontsize=12)
+        
+        # Optimize layout to remove white margins
+        plt.tight_layout(pad=0.5)
+        
+        fig.savefig(output_file, dpi=dpi, bbox_inches='tight', pad_inches=0.1)
         plt.close()
         
         print(f"Müller plot saved to: {output_file}")
@@ -313,6 +357,9 @@ def main():
         action='store_true',
         help='Show absolute population counts instead of relative/stacked'
     )
+    parser.add_argument('--dpi', type=int, default=300, help='Image DPI (default: 300)')
+    parser.add_argument('--width', type=float, default=20, help='Base figure width in inches (default: 20)')
+    parser.add_argument('--height', type=float, default=12, help='Figure height in inches (default: 12)')
     
     args = parser.parse_args()
     
@@ -320,7 +367,7 @@ def main():
         print(f"Error: Input directory does not exist: {args.input}")
         sys.exit(1)
     
-    plot_muller_diagram(args.input, args.output, args.absolute)
+    plot_muller_diagram(args.input, args.output, args.absolute, args.dpi, args.width, args.height)
 
 
 if __name__ == '__main__':

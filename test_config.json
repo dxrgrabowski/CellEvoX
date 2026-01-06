@@ -1,0 +1,26 @@
+{
+    "stochastic": true,
+    "tau_step": 0.005,
+    "initial_population": 100,
+    "env_capacity": 200,
+    "steps": 1000,
+    "statistics_resolution": 1,
+    "population_statistics_res": 100,
+    "graveyard_pruning_interval": 100,
+    "output_path": "/workspaces/CellEvoX/output_test",
+    "log_level": "debug",
+    "mutations": [
+        {
+            "is_driver": true,
+            "effect": 0.01,
+            "probability": 0.0001,
+            "id": 1
+        },
+        {
+            "is_driver": false,
+            "effect": -0.01,
+            "probability": 0.01,
+            "id": 3
+        }
+    ]
+}

@@ -17,6 +17,8 @@ class RunDataEngine {
                 const std::string& config_file_path,
                 double generation_step = 0.005);
 
+  void setRun(std::shared_ptr<ecs::Run> run);
+
   // Generate a graph in Graphviz DOT format
   void prepareOutputDir();
   void exportToCSV();

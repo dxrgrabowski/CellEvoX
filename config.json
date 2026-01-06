@@ -3,9 +3,10 @@
   "tau_step": 0.005,
   "initial_population": 10000,
   "env_capacity": 10000,
-  "steps": 300000,
+  "steps": 1000000,
   "statistics_resolution": 10,
-  "population_statistics_res": 25,
+  "population_statistics_res": 50,
+  "graveyard_pruning_interval": 1000,
   "output_path": "./output",
   "log_level": "debug",
   "mutations": [

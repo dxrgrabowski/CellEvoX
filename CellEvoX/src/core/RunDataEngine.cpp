@@ -30,6 +30,10 @@ RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
   prepareOutputDir();
 }
 
+void RunDataEngine::setRun(std::shared_ptr<ecs::Run> r) {
+    this->run = r;
+}
+
 void RunDataEngine::prepareOutputDir() {
   auto now = std::chrono::system_clock::now();
   auto in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -41,6 +45,7 @@ void RunDataEngine::prepareOutputDir() {
   std::filesystem::path timestamped_path = base_path / timestamp;
 
   output_dir = timestamped_path.string();
+  config->output_path = output_dir;
 
   if (!std::filesystem::exists(output_dir) && output_dir != "") {
     std::filesystem::create_directories(output_dir);

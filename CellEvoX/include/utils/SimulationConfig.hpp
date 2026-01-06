@@ -32,7 +32,12 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     config.env_capacity = j.at("env_capacity");
     config.steps = j.at("steps");
     config.stat_res = j.at("statistics_resolution");
-    config.popul_res = j.at("population_statistics_res");
+  config.popul_res = j.at("population_statistics_res");
+    if (j.contains("graveyard_pruning_interval")) {
+      config.graveyard_pruning_interval = j.at("graveyard_pruning_interval");
+    } else {
+      config.graveyard_pruning_interval = 0;
+    }
     config.output_path = j.at("output_path");
     for (const auto& mut : j.at("mutations")) {
       config.mutations.push_back({mut.at("effect"),
@@ -56,7 +61,9 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Environment capacity: {}", config.env_capacity);
   spdlog::info("Number of steps: {}", config.steps);
   spdlog::info("Statistics resolution: {}", config.stat_res);
+  spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Population statistics resolution: {}", config.popul_res);
+  spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
