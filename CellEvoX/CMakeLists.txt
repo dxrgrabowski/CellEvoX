@@ -12,6 +12,16 @@ set(CMAKE_AUTOUIC ON)
 find_package(Qt6 6.4.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+include(FetchContent)
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.4.0
+)
+FetchContent_MakeAvailable(Catch2)
+
+enable_testing()
+
 execute_process(
     COMMAND python3 -c "import numpy; print(numpy.get_include())"
     OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
@@ -106,5 +116,36 @@ install(TARGETS CellEvoX
 	BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR}
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-
 qt_finalize_executable(CellEvoX)
+
+# Testing Executable
+add_executable(CellEvoXTests
+    src/core/application.cpp
+    src/systems/SimulationEngine.cpp
+    src/core/RunDataEngine.cpp
+    src/ecs/Run.cpp
+    tests/test_simulation.cpp
+    tests/bench_simulation.cpp
+)
+
+target_include_directories(CellEvoXTests
+    PRIVATE
+    include
+    ${Python3_INCLUDE_DIRS}
+    ${NUMPY_INCLUDE_DIR}
+)
+
+target_link_libraries(CellEvoXTests
+    PRIVATE
+    Boost::boost
+    Boost::program_options
+    spdlog::spdlog
+    Eigen3::Eigen
+    TBB::tbb
+    nlohmann_json::nlohmann_json
+    ${Python3_LIBRARIES}
+    Catch2::Catch2WithMain
+)
+
+include(Catch)
+catch_discover_tests(CellEvoXTests)
