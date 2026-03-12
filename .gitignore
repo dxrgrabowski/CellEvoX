@@ -39,3 +39,4 @@ output/
 
 # Other
 CMakeLists.txt.user
+CellEvoX/tests/benchmarks/baseline.json

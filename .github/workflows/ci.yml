@@ -1,0 +1,54 @@
+name: CellEvoX Performance-Critical CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  bench-regression-check:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout Head (Current PR or New Main Commit)
+      uses: actions/checkout@v4
+      with:
+        path: head
+
+    - name: Checkout Base (PR Base or Previous Main Commit)
+      uses: actions/checkout@v4
+      with:
+        # If PR: use base_ref. If Push to main: use event.before (previous commit).
+        ref: ${{ github.base_ref || github.event.before || 'main' }}
+        path: base
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qt6-tools-dev python3-numpy python3-matplotlib
+
+    - name: Build Base Baseline (ToT)
+    # We build the target branch first on this exact runner to get a 100% accurate baseline 
+      run: |
+        cmake -B base_build -S base/CellEvoX -DCMAKE_BUILD_TYPE=Release
+        cmake --build base_build --target CellEvoXTests -j$(nproc)
+        # Capture the baseline using the tool from the PR branch
+        python3 head/CellEvoX/tests/benchmarks/capture_baseline.py --binary base_build/bin/CellEvoXTests --out base_baseline.json
+
+    - name: Build Head (Current PR)
+      run: |
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release
+        cmake --build head_build --target CellEvoXTests -j$(nproc)
+
+    - name: Run Unit Tests
+      run: ./head_build/bin/CellEvoXTests "~[benchmark]"
+
+    - name: Strict Performance Check (10% Tolerance)
+      run: |
+        # Because we compared base and head on the SAME runner, 
+        # we can use a very strict 10% threshold.
+        python3 head/CellEvoX/tests/benchmarks/compare_benchmarks.py \
+          --binary head_build/bin/CellEvoXTests \
+          --baseline base_baseline.json \
+          --threshold 0.10

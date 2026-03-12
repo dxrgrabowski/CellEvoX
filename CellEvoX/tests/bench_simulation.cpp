@@ -28,54 +28,55 @@ static std::shared_ptr<SimulationConfig> makeConfig(
 }
 
 // ============================================================
-// 1. Population scaling — isolate raw stochasticStep throughput
-//    One step per bench isolates a single stochasticStep call.
+// 1. High-N Population Benchmarks — Primary Regression Targets
+//
+//    Why high N only?  Inter-run CV% at low N:
+//      N=100  → 10.4%  (too noisy — TBB/init overhead dominates)
+//      N=1k   →  3.4%
+//      N=50k  →  1.0%  ← reliable
+//      N=100k →  ~0.7% ← most reliable
+//
+//    Sweet spot: 10–80ms/iter so Catch2 collects ≥3 samples in its
+//    100ms internal budget. Beyond ~150ms/iter the sample count drops
+//    to 1-2 which makes the internal statistics unreliable.
+//
+//    Expected timings (single step, tau_step=0.005, Nc=1e6):
+//      N=50k  →  ~16 ms   (6 Catch2 samples)
+//      N=75k  →  ~24 ms   (4 Catch2 samples)
+//      N=100k →  ~32 ms   (3 Catch2 samples)
+//
+//    Tags: [scaling] for targeted runs, [benchmark] for full suite.
 // ============================================================
-TEST_CASE("stochasticStep: Population Scaling", "[stochasticStep][benchmark][scaling]") {
+TEST_CASE("stochasticStep: High-N Scaling (Primary Regression)", "[stochasticStep][benchmark][scaling]") {
     std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
 
-    BENCHMARK("stochasticStep N=100") {
-        auto cfg = makeConfig(100, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=500") {
-        auto cfg = makeConfig(500, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=1000") {
-        auto cfg = makeConfig(1000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=5000") {
-        auto cfg = makeConfig(5000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=10000") {
-        auto cfg = makeConfig(10000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
+    // N=50k — baseline anchor, CV ~1.0%, ~16ms
     BENCHMARK("stochasticStep N=50000") {
-        auto cfg = makeConfig(50000, 100000, 0.005);
+        auto cfg = makeConfig(50000, 1000000, 0.005);
+        SimulationEngine eng(cfg);
+        eng.run(1);
+        return 0;
+    };
+
+    // N=75k — medium stress, CV ~0.8%, ~24ms
+    BENCHMARK("stochasticStep N=75000") {
+        auto cfg = makeConfig(75000, 1000000, 0.005);
+        SimulationEngine eng(cfg);
+        eng.run(1);
+        return 0;
+    };
+
+    // N=100k — primary regression target, CV ~0.7%, ~32ms
+    // This is the benchmark to watch: if dimensionality extension adds
+    // O(N) overhead, it will show up clearly here with low noise.
+    BENCHMARK("stochasticStep N=100000") {
+        auto cfg = makeConfig(100000, 1000000, 0.005);
         SimulationEngine eng(cfg);
         eng.run(1);
         return 0;
     };
 }
+
 
 // ============================================================
 // 2. Mutation rate effect on stochasticStep
