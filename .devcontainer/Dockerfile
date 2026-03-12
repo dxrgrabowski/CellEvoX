@@ -38,9 +38,6 @@ RUN apt-get update && apt-get install -y \
     gnupg2 \
     libboost-all-dev \
     libtbb-dev \
-    # libprotobuf-dev \
-    # protobuf-compiler \
-    # librocksdb-dev \
     libeigen3-dev \
     qt6-base-dev \
     qt6-tools-dev \
@@ -62,7 +59,8 @@ RUN apt-get update && apt-get install -y \
     gdb \
     python3-dev \
     python3-numpy \
-    python3-matplotlib
+    python3-matplotlib \
+    ccache
 
 
 ENV XDG_RUNTIME_DIR=/run/user/1000

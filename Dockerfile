@@ -23,9 +23,6 @@ RUN apt-get update && apt-get install -y \
     gnupg2 \
     libboost-all-dev \
     libtbb-dev \
-    libprotobuf-dev \
-    protobuf-compiler \
-    librocksdb-dev \
     libeigen3-dev \
     qt6-base-dev \
     qt6-tools-dev \
@@ -37,7 +34,6 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qtquick-window \
     qml6-module-qtquick-dialogs \
     qml6-module-qtquick-layouts \
-    qml6-module-qtquick-effects \
     qml6-module-qtquick-particles \
     qml6-module-qtqml-workerscript \
     qml6-module-qtquick-templates \
@@ -47,7 +43,9 @@ RUN apt-get update && apt-get install -y \
     qml6-module-qt-labs-platform \
     qml6-module-qt-labs-folderlistmodel \
     nlohmann-json3-dev \
-    python3-matplotlib
+    python3-numpy \
+    python3-matplotlib \
+    ccache
 
 COPY ./CellEvoX /home/${USER}/CellEvoX
 

@@ -8,8 +8,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+option(SKIP_GUI "Skip GUI and Qt dependencies" OFF)
+
 # Find required packages
-find_package(Qt6 6.4.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
+if(NOT SKIP_GUI)
+    find_package(Qt6 6.4.2 COMPONENTS Quick QuickControls2 Qml Gui Core REQUIRED)
+endif()
 find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
@@ -73,50 +77,54 @@ set(QML_FILES
 
 qt6_standard_project_setup()
 
-qt6_add_executable(CellEvoX
-    ${SOURCES}
-    ${HEADERS}
-    MANUAL_FINALIZATION
-)
+if(NOT SKIP_GUI)
+    qt6_add_executable(CellEvoX
+        ${SOURCES}
+        ${HEADERS}
+        MANUAL_FINALIZATION
+    )
 
-qt6_add_qml_module(CellEvoX
-    URI CellEvoX
-    VERSION 1.0
-    QML_FILES ${QML_FILES}
-)
+    qt6_add_qml_module(CellEvoX
+        URI CellEvoX
+        VERSION 1.0
+        QML_FILES ${QML_FILES}
+    )
 
-target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
+    target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
 
-target_include_directories(CellEvoX
-    PRIVATE
-    include
-    ${Python3_INCLUDE_DIRS}
-    ${NUMPY_INCLUDE_DIR}
-)
+    target_include_directories(CellEvoX
+        PRIVATE
+        include
+        ${Python3_INCLUDE_DIRS}
+        ${NUMPY_INCLUDE_DIR}
+    )
 
-target_link_libraries(CellEvoX
-    PRIVATE
-    Qt6::Quick
-    Qt6::QuickControls2
-    Qt6::Qml
-    Qt6::Core
-    Qt6::Gui
-    Boost::boost
-    Boost::program_options
-    #protobuf::libprotobuf
-    #RocksDB::rocksdb
-    spdlog::spdlog
-    Eigen3::Eigen
-    TBB::tbb
-    nlohmann_json::nlohmann_json
-    ${Python3_LIBRARIES}
-)
+    target_link_libraries(CellEvoX
+        PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Qml
+        Qt6::Core
+        Qt6::Gui
+        Boost::boost
+        Boost::program_options
+        #protobuf::libprotobuf
+        #RocksDB::rocksdb
+        spdlog::spdlog
+        Eigen3::Eigen
+        TBB::tbb
+        nlohmann_json::nlohmann_json
+        ${Python3_LIBRARIES}
+    )
+endif()
 
-install(TARGETS CellEvoX
-	BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR}
-	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-qt_finalize_executable(CellEvoX)
+if(NOT SKIP_GUI)
+    install(TARGETS CellEvoX
+        BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+    qt_finalize_executable(CellEvoX)
+endif()
 
 # Testing Executable
 add_executable(CellEvoXTests

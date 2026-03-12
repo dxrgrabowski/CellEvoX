@@ -19,7 +19,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qt6-tools-dev python3-numpy python3-matplotlib ccache
+        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache
 
     - name: Setup Ccache
       uses: hendrikmuhs/ccache-action@v1.2
@@ -60,13 +60,13 @@ jobs:
       run: |
         # If cache missed, we MUST build the base to get a baseline
         git clone --depth 1 --branch ${{ github.base_ref || 'main' }} https://github.com/${{ github.repository }}.git base_repo
-        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build base_build --target CellEvoXTests -j$(nproc)
         python3 head/CellEvoX/tests/benchmarks/capture_baseline.py --binary base_build/bin/CellEvoXTests --out ci_baseline.json
 
     - name: Build Head (Current PR)
       run: |
-        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build head_build --target CellEvoXTests -j$(nproc)
 
     - name: Run Unit Tests
