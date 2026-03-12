@@ -1,5 +1,0 @@
-if(EXISTS "/workspaces/CellEvoX/CellEvoX/build_skip_gui/CellEvoXTests_tests-b12d07c.cmake")
-  include("/workspaces/CellEvoX/CellEvoX/build_skip_gui/CellEvoXTests_tests-b12d07c.cmake")
-else()
-  add_test(CellEvoXTests_NOT_BUILT-b12d07c CellEvoXTests_NOT_BUILT-b12d07c)
-endif()
