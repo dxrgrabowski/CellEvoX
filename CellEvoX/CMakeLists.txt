@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(CellEvoX VERSION 0.1.0 LANGUAGES CXX)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -75,7 +79,9 @@ set(QML_FILES
     qml/style/Themes.qml
 )
 
-qt6_standard_project_setup()
+if(NOT SKIP_GUI)
+    qt6_standard_project_setup()
+endif()
 
 if(NOT SKIP_GUI)
     qt6_add_executable(CellEvoX

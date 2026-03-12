@@ -1,0 +1,12 @@
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/CMakeFiles/CellEvoXTests.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/CMakeFiles/test.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/CMakeFiles/edit_cache.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/CMakeFiles/rebuild_cache.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/CMakeFiles/test.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/CMakeFiles/edit_cache.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/CMakeFiles/rebuild_cache.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/src/CMakeFiles/Catch2.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/src/CMakeFiles/Catch2WithMain.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/src/CMakeFiles/test.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/src/CMakeFiles/edit_cache.dir
+/workspaces/CellEvoX/CellEvoX/build_skip_gui/_deps/catch2-build/src/CMakeFiles/rebuild_cache.dir
