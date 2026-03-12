@@ -32,12 +32,21 @@ jobs:
       id: base_info
       run: |
         # Identify the commit we are comparing against
-        BASE_REF="${{ github.base_ref || github.event.before || 'main' }}"
-        # Resolve it to a full SHA
-        cd head && git fetch origin $BASE_REF --depth=1
-        BASE_SHA=$(git rev-parse origin/$BASE_REF)
+        # If PR: use base_ref. If Push: use event.before
+        BASE_REF="${{ github.base_ref || github.event.before }}"
+        
+        # Fallback to main if BASE_REF is missing or the null SHA (0000...)
+        if [ -z "$BASE_REF" ] || [ "$BASE_REF" == "0000000000000000000000000000000000000000" ]; then
+          BASE_REF="main"
+        fi
+
+        cd head
+        echo "Fetching base reference: $BASE_REF"
+        git fetch origin $BASE_REF --depth=1
+        # Resolve to a full SHA using FETCH_HEAD (works for both names and SHAs)
+        BASE_SHA=$(git rev-parse FETCH_HEAD)
         echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
-        echo "Comparing against: $BASE_SHA"
+        echo "Comparing against SHA: $BASE_SHA"
 
     - name: Restore Base Baseline Cache
       id: cache-baseline
