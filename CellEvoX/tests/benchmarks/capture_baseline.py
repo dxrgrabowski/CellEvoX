@@ -67,9 +67,9 @@ def main():
         xml_path = tmp.name
 
     try:
-        print(f"Running benchmarks: {binary} '{args.tag}' --reporter XML ...")
+        print(f"Running benchmarks with tag '{args.tag}' (--benchmark-samples 20)...")
         result = subprocess.run(
-            [binary, args.tag, "--reporter", "XML", f"--out={xml_path}"],
+            [binary, args.tag, "--reporter", "XML", f"--out={xml_path}", "--benchmark-samples", "20"],
             stderr=subprocess.DEVNULL,  # suppress spdlog noise
             timeout=600,
         )

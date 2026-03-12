@@ -44,11 +44,11 @@ jobs:
     - name: Run Unit Tests
       run: ./head_build/bin/CellEvoXTests "~[benchmark]"
 
-    - name: Strict Performance Check (10% Tolerance)
+    - name: Strict Performance Check (5% Tolerance)
       run: |
-        # Because we compared base and head on the SAME runner, 
-        # we can use a very strict 10% threshold.
+        # All benchmarks run at N≥10k where inter-run CV < 1.5%.
+        # A 5% threshold gives signal/noise ≈ 5x — clearly detectable regressions only.
         python3 head/CellEvoX/tests/benchmarks/compare_benchmarks.py \
           --binary head_build/bin/CellEvoXTests \
           --baseline base_baseline.json \
-          --threshold 0.10
+          --threshold 0.05

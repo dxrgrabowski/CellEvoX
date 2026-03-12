@@ -1,7 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <filesystem>
 #include "utils/SimulationConfig.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "ecs/Cell.hpp"
@@ -62,7 +61,10 @@ TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     config->stat_res = 1;
     config->popul_res = 1;
     config->output_path = "/tmp/test_sim";
-    
+
+    // Create output dirs to prevent memory log warning
+    std::filesystem::create_directories("/tmp/test_sim/statistics");
+
     SimulationEngine engine(config);
     auto runData = engine.run(10); // Runs 10 steps, tau goes from 1.0 to 10.0
     

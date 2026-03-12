@@ -6,229 +6,71 @@
 #include "systems/SimulationEngine.hpp"
 #include "utils/SimulationConfig.hpp"
 
-// Helper: builds a minimal config with no overhead (no stat/popul snapshots, no graveyard pruning)
+// Helper: minimal overhead config.
 static std::shared_ptr<SimulationConfig> makeConfig(
     size_t population,
     size_t env_capacity,
-    double tau_step,
     const std::vector<MutationType>& mutations = {}
 ) {
     auto c = std::make_shared<SimulationConfig>();
     c->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
-    c->tau_step = tau_step;
+    c->tau_step = 0.005;
     c->initial_population = population;
     c->env_capacity = env_capacity;
-    // High snapshot resolutions to avoid stat/popul-snapshot overhead polluting benchmark
-    c->stat_res = 100000;
-    c->popul_res = 100000;
-    c->graveyard_pruning_interval = 0;  // No pruning overhead
+    c->stat_res = 1000000;
+    c->popul_res = 1000000;
+    c->graveyard_pruning_interval = 0;
     c->output_path = "/tmp/test_bench_sim";
     c->mutations = mutations;
     return c;
 }
 
 // ============================================================
-// 1. High-N Population Benchmarks — Primary Regression Targets
+// Consolidated High-N Regression Suite (N=100,000)
 //
-//    Why high N only?  Inter-run CV% at low N:
-//      N=100  → 10.4%  (too noisy — TBB/init overhead dominates)
-//      N=1k   →  3.4%
-//      N=50k  →  1.0%  ← reliable
-//      N=100k →  ~0.7% ← most reliable
+// We only benchmark at N=100k because:
+//   1. Inter-run variance (CV%) is lowest (~0.7%).
+//   2. Sample count is high enough to be meaningful (~32ms/iter).
+//   3. TBB/Allocation overhead is amortized over the step.
 //
-//    Sweet spot: 10–80ms/iter so Catch2 collects ≥3 samples in its
-//    100ms internal budget. Beyond ~150ms/iter the sample count drops
-//    to 1-2 which makes the internal statistics unreliable.
-//
-//    Expected timings (single step, tau_step=0.005, Nc=1e6):
-//      N=50k  →  ~16 ms   (6 Catch2 samples)
-//      N=75k  →  ~24 ms   (4 Catch2 samples)
-//      N=100k →  ~32 ms   (3 Catch2 samples)
-//
-//    Tags: [scaling] for targeted runs, [benchmark] for full suite.
+// These 4 benchmarks cover all critical code paths.
 // ============================================================
-TEST_CASE("stochasticStep: High-N Scaling (Primary Regression)", "[stochasticStep][benchmark][scaling]") {
+
+TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
 
-    // N=50k — baseline anchor, CV ~1.0%, ~16ms
-    BENCHMARK("stochasticStep N=50000") {
-        auto cfg = makeConfig(50000, 1000000, 0.005);
+    // 1. RAW STEP (Minimum logic)
+    // Measures: TBB scheduling and raw birth/death compute.
+    BENCHMARK("stochasticStep N=100000 [baseline]") {
+        auto cfg = makeConfig(100000, 10000000); // Low death pressure
         SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
+        return eng.run(1); 
     };
 
-    // N=75k — medium stress, CV ~0.8%, ~24ms
-    BENCHMARK("stochasticStep N=75000") {
-        auto cfg = makeConfig(75000, 1000000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    // N=100k — primary regression target, CV ~0.7%, ~32ms
-    // This is the benchmark to watch: if dimensionality extension adds
-    // O(N) overhead, it will show up clearly here with low noise.
-    BENCHMARK("stochasticStep N=100000") {
-        auto cfg = makeConfig(100000, 1000000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-}
-
-
-// ============================================================
-// 2. Mutation rate effect on stochasticStep
-//    Mutations trigger branching + Cell copy, so rates matter.
-// ============================================================
-TEST_CASE("stochasticStep: Mutation Rate Impact", "[stochasticStep][benchmark][mutations]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-
-    // No mutations baseline
-    BENCHMARK("stochasticStep N=5000 no mutations") {
-        auto cfg = makeConfig(5000, 100000, 0.005, {});
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    // Low mutation pressure: 1 type, probability=0.01
-    BENCHMARK("stochasticStep N=5000 low mutation (p=0.01)") {
-        std::vector<MutationType> muts = {{ 0.05, 0.01, 1, false }};
-        auto cfg = makeConfig(5000, 100000, 0.005, muts);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    // High mutation pressure: 1 type, probability=0.5
-    BENCHMARK("stochasticStep N=5000 high mutation (p=0.5)") {
-        std::vector<MutationType> muts = {{ 0.05, 0.5, 1, false }};
-        auto cfg = makeConfig(5000, 100000, 0.005, muts);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    // Many mutation types (simulates future dimensionality extension)
-    BENCHMARK("stochasticStep N=5000 many mutation types (8 types, p=0.05 each)") {
+    // 2. MUTATION STRESS (Logic branching)
+    // Measures: Mutation probability checks and cell-copy overhead.
+    BENCHMARK("stochasticStep N=100000 [mutations: 8 types]") {
         std::vector<MutationType> muts;
         for (uint8_t i = 0; i < 8; ++i)
             muts.push_back({ 0.05 * (i + 1), 0.05, i, (i % 2 == 0) });
-        auto cfg = makeConfig(5000, 100000, 0.005, muts);
+        auto cfg = makeConfig(100000, 10000000, muts);
         SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-}
-
-// ============================================================
-// 3. Environmental pressure (death scaling factor = N/Nc)
-//    High pressure (N ≈ Nc) → many deaths → more graveyard ops
-// ============================================================
-TEST_CASE("stochasticStep: Environmental Pressure", "[stochasticStep][benchmark][pressure]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-
-    // Low pressure: N << Nc (cells mostly survive and replicate)
-    BENCHMARK("stochasticStep N=1000 low pressure (Nc=100000)") {
-        auto cfg = makeConfig(1000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
+        return eng.run(1);
     };
 
-    // Medium pressure: N ~ Nc/5
-    BENCHMARK("stochasticStep N=1000 medium pressure (Nc=5000)") {
-        auto cfg = makeConfig(1000, 5000, 0.005);
+    // 3. PRESSURE STRESS (Graveyard overhead)
+    // Measures: Death scaling (N/Nc) and high-frequency graveyard writes.
+    BENCHMARK("stochasticStep N=100000 [pressure: high]") {
+        auto cfg = makeConfig(100000, 100000); // N == Nc (Max death pressure)
         SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
+        return eng.run(1);
     };
 
-    // High pressure: N ≈ Nc (max death probability)
-    BENCHMARK("stochasticStep N=1000 high pressure (Nc=1000)") {
-        auto cfg = makeConfig(1000, 1000, 0.005);
+    // 4. MULTI-STEP STABILITY (Cumulative)
+    // Measures: Snapshot scheduling and generational overhead.
+    BENCHMARK("run() N=50000 x5 steps [stability]") {
+        auto cfg = makeConfig(50000, 1000000);
         SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    // Overcrowded: N > Nc (extreme death pressure)
-    BENCHMARK("stochasticStep N=2000 overcrowded (Nc=1000)") {
-        auto cfg = makeConfig(2000, 1000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-}
-
-// ============================================================
-// 4. tau_step sensitivity
-//    Larger tau_step → more birth/death events per step
-//    (probability threshold changes relative to tau_step)
-// ============================================================
-TEST_CASE("stochasticStep: tau_step Sensitivity", "[stochasticStep][benchmark][tau]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-
-    BENCHMARK("stochasticStep N=5000 tau=0.001 (very fine)") {
-        auto cfg = makeConfig(5000, 100000, 0.001);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=5000 tau=0.005") {
-        auto cfg = makeConfig(5000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=5000 tau=0.05") {
-        auto cfg = makeConfig(5000, 100000, 0.05);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-
-    BENCHMARK("stochasticStep N=5000 tau=0.5 (coarse)") {
-        auto cfg = makeConfig(5000, 100000, 0.5);
-        SimulationEngine eng(cfg);
-        eng.run(1);
-        return 0;
-    };
-}
-
-// ============================================================
-// 5. Multi-step simulation scalability (regression baseline)
-//    This is the key regression test: track run() wall time as
-//    code changes, since stochasticStep is called `steps` times.
-// ============================================================
-TEST_CASE("SimulationEngine run() Scalability", "[benchmark][regression]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-
-    BENCHMARK("run() N=1000 x10 steps (baseline)") {
-        auto cfg = makeConfig(1000, 10000, 0.005);
-        SimulationEngine eng(cfg);
-        return eng.run(10).cells.size();
-    };
-
-    BENCHMARK("run() N=1000 x100 steps") {
-        auto cfg = makeConfig(1000, 10000, 0.005);
-        SimulationEngine eng(cfg);
-        return eng.run(100).cells.size();
-    };
-
-    BENCHMARK("run() N=5000 x10 steps") {
-        auto cfg = makeConfig(5000, 50000, 0.005);
-        SimulationEngine eng(cfg);
-        return eng.run(10).cells.size();
-    };
-
-    BENCHMARK("run() N=10000 x5 steps") {
-        auto cfg = makeConfig(10000, 100000, 0.005);
-        SimulationEngine eng(cfg);
-        return eng.run(5).cells.size();
+        return eng.run(5);
     };
 }

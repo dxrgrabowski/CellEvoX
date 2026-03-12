@@ -135,6 +135,10 @@ target_include_directories(CellEvoXTests
     ${NUMPY_INCLUDE_DIR}
 )
 
+# Suppress deprecation warnings from external header matplotlibcpp.h
+# which uses Py_SetProgramName/PySys_SetArgv deprecated since Python 3.11
+target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
+
 target_link_libraries(CellEvoXTests
     PRIVATE
     Boost::boost
