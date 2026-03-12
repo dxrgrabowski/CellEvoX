@@ -30,6 +30,15 @@ void SimulationEngine::signalHandler(int signum) {
 
 SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
     : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0) {
+  
+  // Set global spdlog level based on config verbosity
+  // 0 = off, 1 = warnings only, 2 = full info/debug
+  switch (config->verbosity) {
+    case 0: spdlog::set_level(spdlog::level::off); break;
+    case 1: spdlog::set_level(spdlog::level::warn); break;
+    default: spdlog::set_level(spdlog::level::info); break;
+  }
+
   cells.rehash(config->initial_population);
 
   for (uint32_t i = 0; i < config->initial_population; ++i) {
@@ -48,17 +57,13 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
                         return sum + pair.second.probability;
                       });
 
+  // These are informational logs; they will be filtered by spdlog's level.
   spdlog::info("=== Simulation Engine Initialized ===");
-  spdlog::info(
-      "Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
-  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}",
-               config->tau_step,
-               total_mutation_probability);
+  spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
+  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
 
   // Initialize memory logging
   std::string memory_log_path = config->output_path + "/statistics/memory_log.csv";
-  // Maintain directory creation if needed, though RunDataEngine usually does it.
-  // But SimulationEngine might start before RunDataEngine finishes? No, RunDataEngine is first.
   
   memory_log_file.open(memory_log_path);
   if (memory_log_file.is_open()) {

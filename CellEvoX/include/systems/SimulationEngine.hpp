@@ -24,6 +24,7 @@ struct SimulationConfig {
   int graveyard_pruning_interval;
   std::string output_path;
   std::vector<MutationType> mutations;
+  int verbosity; // 0: off, 1: minimal, 2: full
 };
 
 struct StatSnapshot {

@@ -22,6 +22,7 @@ static std::shared_ptr<SimulationConfig> makeConfig(
     c->graveyard_pruning_interval = 0;
     c->output_path = "/tmp/test_bench_sim";
     c->mutations = mutations;
+    c->verbosity = 0;
     return c;
 }
 

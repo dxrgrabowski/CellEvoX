@@ -39,6 +39,12 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.graveyard_pruning_interval = 0;
     }
     config.output_path = j.at("output_path");
+    if (j.contains("verbosity")) {
+      config.verbosity = j.at("verbosity");
+    } else {
+      config.verbosity = 2; // Default to full logging
+    }
+
     for (const auto& mut : j.at("mutations")) {
       config.mutations.push_back({mut.at("effect"),
                                   mut.at("probability"),
