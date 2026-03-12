@@ -1,0 +1,26 @@
+{
+  "stochastic": true,
+  "tau_step": 0.005,
+  "initial_population": 1000,
+  "env_capacity": 1000,
+  "steps": 50000,
+  "statistics_resolution": 10,
+  "population_statistics_res": 50,
+  "graveyard_pruning_interval": 1000,
+  "output_path": "./output",
+  "log_level": "debug",
+  "mutations": [
+    {
+      "is_driver": true,
+      "effect": 0.01,
+      "probability": 0.0001,
+      "id": 1
+    },
+    {
+      "is_driver": false,
+      "effect": -0.01,
+      "probability": 0.01,
+      "id": 3
+    }
+  ]
+}

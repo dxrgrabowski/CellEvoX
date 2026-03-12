@@ -30,6 +30,17 @@ RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
   prepareOutputDir();
 }
 
+RunDataEngine::RunDataEngine(const std::string& analyze_directory)
+    : config(nullptr),
+      run(nullptr),
+      config_file_path(""),
+      generation_step(0.0) {
+  output_dir = analyze_directory;
+  if (!output_dir.empty() && output_dir.back() != '/') {
+    output_dir += '/';
+  }      
+}
+
 void RunDataEngine::setRun(std::shared_ptr<ecs::Run> r) {
     this->run = r;
 }
@@ -526,7 +537,11 @@ void RunDataEngine::plotMullerDiagram() {
   }
   
   if (!std::filesystem::exists(script_path)) {
-    spdlog::warn("Müller plot script not found at: {}", script_path.string());
+    script_path = std::filesystem::current_path() / "../scripts/plot_muller.py";
+  }
+
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("Müller plot script not found at any locations, last tried: {}", script_path.string());
     return;
   }
   
@@ -567,4 +582,127 @@ void RunDataEngine::plotMullerDiagram() {
   }
 }
 
+void RunDataEngine::plotClonePhylogenyTree() {
+  spdlog::info("Generating Clone Phylogeny Tree...");
+  
+  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_phylogeny.py";
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_phylogeny.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_phylogeny.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::current_path() / "../scripts/plot_phylogeny.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("Phylogeny plot script not found at any locations, last tried: {}", script_path.string());
+    return;
+  }
+  
+  std::string python_cmd = "python3";
+  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
+  if (std::filesystem::exists(venv_python)) {
+    python_cmd = venv_python.string();
+  }
+  
+  std::string command = python_cmd + " " + script_path.string() + 
+                      " --input " + output_dir +
+                      " --output " + output_dir + "phylogeny/clone_tree.png";
+                       
+  spdlog::info("Running phylogeny plot: {}", command);
+  int result = std::system(command.c_str());
+  
+  if (result == 0) {
+    spdlog::info("Clone Phylogeny Tree saved to: {}clones/clone_tree.png", output_dir);
+  } else {
+    spdlog::warn("Clone Phylogeny Tree generation failed with code: {}", result);
+  }
+}
+
+void RunDataEngine::plotCloneCounts() {
+  spdlog::info("Generating Clone Counts over time chart...");
+  
+  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_clone_counts.py";
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_clone_counts.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_clone_counts.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::current_path() / "../scripts/plot_clone_counts.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("Clone counts script not found at any locations, last tried: {}", script_path.string());
+    return;
+  }
+  
+  std::string python_cmd = "python3";
+  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
+  if (std::filesystem::exists(venv_python)) {
+    python_cmd = venv_python.string();
+  }
+  
+  std::string command = python_cmd + " " + script_path.string() + " --input " + output_dir;
+                       
+  spdlog::info("Running clone counts plot: {}", command);
+  int result = std::system(command.c_str());
+  
+  if (result == 0) {
+    spdlog::info("Clone counts chart saved to clones/ subdirectory.");
+  } else {
+    spdlog::warn("Clone counts chart generation failed with code: {}", result);
+  }
+}
+
+void RunDataEngine::plotCloneLifespans() {
+  spdlog::info("Generating Clone Lifespans Histogram Plot...");
+  
+  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_clone_lifespans.py";
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_clone_lifespans.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_clone_lifespans.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    script_path = std::filesystem::current_path() / "../scripts/plot_clone_lifespans.py";
+  }
+  
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("Clone lifespans script not found at any locations, last tried: {}", script_path.string());
+    return;
+  }
+  
+  std::string python_cmd = "python3";
+  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
+  if (std::filesystem::exists(venv_python)) {
+    python_cmd = venv_python.string();
+  }
+  
+  std::string command = python_cmd + " " + script_path.string() + " --input " + output_dir;
+                       
+  spdlog::info("Running clone lifespans plot: {}", command);
+  int result = std::system(command.c_str());
+  
+  if (result == 0) {
+    spdlog::info("Clone lifespans charts saved to clones/ subdirectory.");
+  } else {
+    spdlog::warn("Clone lifespans chart generation failed with code: {}", result);
+  }
+}
+
 }  // namespace CellEvoX::core
+  

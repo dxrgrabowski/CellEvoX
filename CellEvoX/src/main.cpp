@@ -10,7 +10,8 @@ namespace po = boost::program_options;
 int main(int argc, char *argv[]) {
   po::options_description desc("Allowed options");
   desc.add_options()("help", "produce help message")(
-      "config", po::value<std::string>(), "path to config file");
+      "config", po::value<std::string>(), "path to config file")(
+      "analyze", po::value<std::string>(), "path to existing output directory to analyze");
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);

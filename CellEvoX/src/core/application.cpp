@@ -23,7 +23,21 @@ void Application::initialize() {
   spdlog::info("CellEvoX Application starting...");
   spdlog::set_level(spdlog::level::trace);
   // Initialize the simulation engine
-  if (vm.count("config")) {
+  if (vm.count("analyze")) {
+    std::string analyze_path = vm["analyze"].as<std::string>();
+    spdlog::info("Running in analysis mode for directory: {}", analyze_path);
+    
+    // Initialize DataEngine in post-processing mode
+    RunDataEngine data_engine(analyze_path);
+    
+    // Generate only Python-based plots that handle existing CSVs directly
+    data_engine.plotMullerDiagram();
+    data_engine.plotClonePhylogenyTree();
+    data_engine.plotCloneCounts();
+    data_engine.plotCloneLifespans();
+    
+    spdlog::info("Analysis complete.");
+  } else if (vm.count("config")) {
     std::ifstream config_file(vm["config"].as<std::string>());
     nlohmann::json config;
     config_file >> config;
@@ -53,6 +67,11 @@ void Application::initialize() {
     data_engine.exportToCSV();
     data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
     data_engine.plotMullerDiagram();
+    data_engine.plotClonePhylogenyTree();
+    data_engine.plotCloneCounts();
+    data_engine.plotCloneLifespans();
+  } else {
+    spdlog::error("Neither --config nor --analyze flag was provided. Please provide one.");
   }
 
   // Initialize the database manager
