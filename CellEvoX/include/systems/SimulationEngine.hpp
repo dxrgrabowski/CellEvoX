@@ -25,6 +25,7 @@ struct SimulationConfig {
   std::string output_path;
   std::vector<MutationType> mutations;
   int verbosity; // 0: off, 1: minimal, 2: full
+  uint32_t phylogeny_num_cells_sampling;
 };
 
 struct StatSnapshot {

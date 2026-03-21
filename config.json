@@ -9,6 +9,7 @@
   "graveyard_pruning_interval": 1000,
   "output_path": "./output",
   "log_level": "debug",
+  "phylogeny_num_cells_sampling": 100,
   "mutations": [
     {
       "is_driver": true,

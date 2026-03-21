@@ -610,17 +610,37 @@ void RunDataEngine::plotClonePhylogenyTree() {
     python_cmd = venv_python.string();
   }
   
-  std::string command = python_cmd + " " + script_path.string() + 
-                      " --input " + output_dir +
-                      " --output " + output_dir + "phylogeny/clone_tree.png";
+  uint32_t num_cells = 100;
+  if (config) {
+    num_cells = config->phylogeny_num_cells_sampling;
+  }
+
+  // 1. Clone Phylogeny Tree (default mode)
+  std::string clone_command = python_cmd + " " + script_path.string() + 
+                            " --input " + output_dir +
+                            " --output " + output_dir + "phylogeny/clone_tree.png";
                        
-  spdlog::info("Running phylogeny plot: {}", command);
-  int result = std::system(command.c_str());
+  spdlog::info("Running clone phylogeny plot: {}", clone_command);
+  int result_clone = std::system(clone_command.c_str());
   
-  if (result == 0) {
-    spdlog::info("Clone Phylogeny Tree saved to: {}clones/clone_tree.png", output_dir);
+  if (result_clone == 0) {
+    spdlog::info("Clone Phylogeny Tree saved to: {}phylogeny/clone_tree.png", output_dir);
   } else {
-    spdlog::warn("Clone Phylogeny Tree generation failed with code: {}", result);
+    spdlog::warn("Clone Phylogeny Tree generation failed with code: {}", result_clone);
+  }
+
+  // 2. Cell Phylogeny Tree (with --cells)
+  std::string cell_command = python_cmd + " " + script_path.string() + 
+                           " --input " + output_dir +
+                           " --cells " + std::to_string(num_cells);
+  
+  spdlog::info("Running cell phylogeny plot: {}", cell_command);
+  int result_cell = std::system(cell_command.c_str());
+  
+  if (result_cell == 0) {
+    spdlog::info("Cell Phylogeny Tree (n={}) saved to: {}phylogeny/", num_cells, output_dir);
+  } else {
+    spdlog::warn("Cell Phylogeny Tree generation failed with code: {}", result_cell);
   }
 }
 

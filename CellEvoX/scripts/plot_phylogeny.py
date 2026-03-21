@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import random
 from typing import Dict, List, Set, Tuple
 
 import matplotlib.pyplot as plt
@@ -164,6 +165,38 @@ def export_tree_explainability(G: nx.DiGraph, output_dir: str):
             
     print(f"Clone phylogeny explainability saved to: {output_file}")
 
+
+def export_cell_tree_explainability(G: nx.DiGraph, depths: dict, output_dir: str, num_cells: int):
+    output_file = os.path.join(output_dir, 'phylogeny', f'cell_tree_{num_cells}_explainability.txt')
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    with open(output_file, 'w') as f:
+        f.write(f"=== Cell Phylogeny Tree Explainability ({num_cells} cells) ===\n")
+        f.write("This document describes the structure of the phylogenetic tree of individual cells sampled from the final population.\n")
+        f.write("Depths in this tree represent the Generation (Time) of branching points.\n\n")
+        
+        roots = [n for n, d in G.in_degree() if d == 0]
+        if not roots:
+            f.write("Error: No root found in the tree.\n")
+            return
+            
+        def dfs_print(node, depth_lvl=0):
+            indent = "  " * depth_lvl
+            time = depths.get(node, 0.0)
+            if G.out_degree(node) > 0:
+                label = f"Branch Point (Gen: {time:.2f}, ID: {node})"
+            else:
+                label = f"Cell {node} (Final Gen: {time:.2f})"
+            f.write(f"{indent}- {label}\n")
+            children = sorted(G.successors(node), key=lambda x: str(x))
+            for child in children:
+                dfs_print(child, depth_lvl + 1)
+                
+        for root in roots:
+            dfs_print(root)
+            
+    print(f"Cell phylogeny explainability saved to: {output_file}")
+
 def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 300):
     try:
         G = build_clone_tree(output_dir)
@@ -294,6 +327,184 @@ def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 30
     
     print(f"Clone phylogeny tree saved to: {output_file}")
 
+def build_cell_tree(output_dir: str, num_cells: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
+    tree_file = os.path.join(output_dir, "phylogeny", "phylogenetic_tree.csv")
+    if not os.path.isfile(tree_file):
+        raise ValueError(f"Required file {tree_file} not found.")
+        
+    pop_dir = os.path.join(output_dir, "population_data")
+    pattern = os.path.join(pop_dir, "population_generation_*.csv")
+    files = glob.glob(pattern)
+    if not files:
+        raise ValueError(f"No population_generation_*.csv files found in {pop_dir}")
+        
+    def get_gen(filepath):
+        match = re.search(r'population_generation_(\d+)\.csv', os.path.basename(filepath))
+        return int(match.group(1)) if match else -1
+        
+    files.sort(key=get_gen)
+    final_file = files[-1]
+    final_gen = get_gen(final_file)
+    
+    df_final = pd.read_csv(final_file)
+    if len(df_final) <= num_cells:
+        print(f"Warning: requested {num_cells} cells, but final population only has {len(df_final)}. Using all.")
+        sampled_cells = df_final['CellID'].tolist()
+    else:
+        sampled_cells = df_final.sample(n=num_cells, random_state=42)['CellID'].tolist()
+        
+    tree_df = pd.read_csv(tree_file)
+    id_to_parent = dict(zip(tree_df['NodeID'], tree_df['ParentID']))
+    id_to_death = dict(zip(tree_df['NodeID'], tree_df['DeathTime']))
+    
+    G = nx.DiGraph()
+    depths = {}
+    
+    visited = set()
+    for leaf_id in sampled_cells:
+        curr = leaf_id
+        depths[curr] = final_gen
+        
+        while curr != 0:
+            parent = id_to_parent.get(curr)
+            if parent is None:
+                # If parent not in tree, attach to root 0
+                parent = 0
+            
+            G.add_edge(parent, curr)
+            
+            if parent not in depths:
+                depths[parent] = id_to_death.get(parent, 0.0)
+                
+            if parent in visited:
+                break
+            
+            visited.add(parent)
+            curr = parent
+            
+    return G, depths
+
+def plot_cell_phylogeny(output_dir: str, num_cells: int, output_file: str = None, dpi: int = 300, use_topological: bool = True):
+    try:
+        G, node_generations = build_cell_tree(output_dir, num_cells)
+        export_cell_tree_explainability(G, node_generations, output_dir, num_cells)
+    except Exception as e:
+        print(f"Error building cell tree: {e}")
+        import traceback
+        traceback.print_exc()
+        return
+
+    if len(G.nodes) == 0:
+        print("Warning: No cells found to plot.")
+        return
+
+    if use_topological:
+        # Radial distance = topological depth (number of edges from root)
+        node_depths = nx.shortest_path_length(G, source=0)
+    else:
+        # Radial distance = generation (absolute time)
+        node_depths = node_generations
+
+    if output_file is None:
+        suffix = "topological" if use_topological else "linear"
+        output_file = os.path.join(output_dir, 'phylogeny', f'cell_tree_{num_cells}_{suffix}.png')
+        
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    roots = [n for n, d in G.in_degree() if d == 0]
+    if not roots:
+        print("Warning: No roots found.")
+        return
+    root = roots[0]
+    
+    sys.setrecursionlimit(500000)
+    
+    leaves = [n for n, d in G.out_degree() if d == 0]
+    num_leaves = len(leaves)
+    if num_leaves == 0:
+        return
+        
+    dtheta = 2 * np.pi / num_leaves
+    
+    thetas = {}
+    leaf_idx = 0
+    
+    def calc_theta(node):
+        nonlocal leaf_idx
+        children = list(G.successors(node))
+        if not children:
+            thetas[node] = leaf_idx * dtheta
+            leaf_idx += 1
+            return thetas[node]
+            
+        child_thetas = [calc_theta(c) for c in children]
+        thetas[node] = (min(child_thetas) + max(child_thetas)) / 2.0
+        return thetas[node]
+        
+    calc_theta(root)
+    
+    fig, ax = plt.subplots(figsize=(24, 24), subplot_kw=dict(polar=True))
+    ax.set_axis_off()
+    
+    try:
+        cmap = cm.get_cmap('hsv')
+    except AttributeError:
+        cmap = plt.get_cmap('hsv')
+        
+    node_colors = {}
+    for node in G.nodes():
+        if node == root:
+            node_colors[node] = 'black'
+        else:
+            node_colors[node] = cmap(thetas[node] / (2 * np.pi))
+            
+    for u, v in G.edges():
+        tu, r_u = thetas[u], node_depths[u]
+        tv, r_v = thetas[v], node_depths[v]
+        c = node_colors[v]
+        
+        t_min = min(tu, tv)
+        t_max = max(tu, tv)
+        if t_max - t_min > np.pi:
+            if tu > tv:
+                theta_vals = np.linspace(tu, tv + 2*np.pi, 50)
+            else:
+                theta_vals = np.linspace(tu + 2*np.pi, tv, 50)
+        else:
+            theta_vals = np.linspace(tu, tv, 50)
+            
+        r_vals = np.full_like(theta_vals, r_u)
+        
+        ax.plot(theta_vals, r_vals, color=c, linewidth=1.0, alpha=0.8)
+        ax.plot([tv, tv], [r_u, r_v], color=c, linewidth=1.0, alpha=0.8)
+        
+    nodes_list = list(G.nodes)
+    T = [thetas[n] for n in nodes_list]
+    R = [node_depths[n] for n in nodes_list]
+    C = [node_colors[n] for n in nodes_list]
+    
+    # Marker sizes: Branch points smaller, leaves slightly larger
+    nsizes = [30 if G.out_degree(n) == 0 else 10 for n in nodes_list]
+    
+    ax.scatter(T, R, s=nsizes, c=C, zorder=3, alpha=1.0, edgecolors='black', linewidth=0.3)
+    
+    depth_str = "Number of internal nodes from root (Topological Depth)." if use_topological else "Generation (Time) of the branching event or cell birth."
+    textstr = (
+        f"Circular Cell Phylogeny ({num_cells} Sampled Cells)\n\n"
+        "• Each outer leaf dot represents a currently living individual cell.\n"
+        "• Internal structure is a complete dendrogram where branching indicates cell splitting events.\n"
+        f"• Distance from Center: {depth_str}"
+    )
+    props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray')
+    ax.text(0.05, 0.95, textstr, transform=fig.transFigure, fontsize=20,
+            verticalalignment='top', bbox=props)
+    
+    plt.savefig(output_file, dpi=dpi, bbox_inches='tight', transparent=False, facecolor='white')
+    plt.close()
+    
+    print(f"Cell phylogeny tree saved to: {output_file}")
+
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -310,6 +521,8 @@ def main():
         help='Output file path for the tree plot'
     )
     parser.add_argument('--dpi', type=int, default=300, help='Image DPI (default: 300)')
+    parser.add_argument('--cells', type=int, default=None, help='Generate tree for N randomly sampled cells from final population instead of clones (default for cell mode is 100 if none provided)')
+    parser.add_argument('--linear_time', action='store_true', help='Use linear generation time for radial distance (default is topological depth for cells)')
     
     args = parser.parse_args()
     
@@ -317,10 +530,15 @@ def main():
         print(f"Error: Input directory does not exist: {args.input}")
         sys.exit(1)
         
-    if not args.output:
-        args.output = os.path.join(args.input, "clones", "clone_tree.png")
-        
-    plot_clone_phylogeny(args.input, args.output, args.dpi)
+    if args.cells is not None:
+        if not args.output:
+            suffix = "linear" if args.linear_time else "topological"
+            args.output = os.path.join(args.input, "phylogeny", f"cell_tree_{args.cells}_{suffix}.png")
+        plot_cell_phylogeny(args.input, args.cells, args.output, args.dpi, use_topological=not args.linear_time)
+    else:
+        if not args.output:
+            args.output = os.path.join(args.input, "phylogeny", "clone_tree.png")
+        plot_clone_phylogeny(args.input, args.output, args.dpi)
 
 if __name__ == '__main__':
     main()

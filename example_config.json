@@ -7,6 +7,7 @@
   "statistics_resolution": 1,
   "population_statistics_res": 25,
   "output_path": "/your/output/dir/path",
+  "phylogeny_num_cells_sampling": 100,
   "mutations": [
     {
       "is_driver": true,

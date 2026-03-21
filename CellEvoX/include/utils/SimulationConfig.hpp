@@ -44,6 +44,11 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     } else {
       config.verbosity = 2; // Default to full logging
     }
+    if (j.contains("phylogeny_num_cells_sampling")) {
+      config.phylogeny_num_cells_sampling = j.at("phylogeny_num_cells_sampling");
+    } else {
+      config.phylogeny_num_cells_sampling = 100;
+    }
 
     for (const auto& mut : j.at("mutations")) {
       config.mutations.push_back({mut.at("effect"),
@@ -71,6 +76,7 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
+  spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
     spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
