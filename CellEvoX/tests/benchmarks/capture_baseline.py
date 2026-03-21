@@ -18,6 +18,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 import tempfile
+import resource
 
 DEFAULT_BINARY = os.path.join(os.path.dirname(__file__), "..", "..", "build", "bin", "CellEvoXTests")
 DEFAULT_OUT = os.path.join(os.path.dirname(__file__), "baseline.json")
@@ -73,6 +74,8 @@ def main():
             stderr=subprocess.DEVNULL,  # suppress spdlog noise
             timeout=600,
         )
+        max_rss_kb = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        
         if result.returncode != 0 and result.returncode != 1:
             print(f"Benchmark run failed with exit code {result.returncode}", file=sys.stderr)
             sys.exit(1)
@@ -85,9 +88,9 @@ def main():
         out_path = os.path.abspath(args.out)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, "w") as f:
-            json.dump({"benchmarks": benchmarks}, f, indent=2)
+            json.dump({"max_rss_kb": max_rss_kb, "benchmarks": benchmarks}, f, indent=2)
 
-        print(f"\n✅ Captured {len(benchmarks)} benchmarks → {out_path}")
+        print(f"\n✅ Captured {len(benchmarks)} benchmarks (Max RSS: {max_rss_kb / 1024:.1f} MB) → {out_path}")
         print("\nBaseline summary (mean ms):")
         for name, v in sorted(benchmarks.items(), key=lambda x: x[1]["mean_ms"]):
             print(f"  {v['mean_ms']:>10.4f} ms  {name}")

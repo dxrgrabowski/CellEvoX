@@ -20,6 +20,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 import tempfile
+import resource
 
 DEFAULT_BINARY = os.path.join(os.path.dirname(__file__), "..", "..", "build", "bin", "CellEvoXTests")
 DEFAULT_BASELINE = os.path.join(os.path.dirname(__file__), "baseline.json")
@@ -49,7 +50,9 @@ def main():
     parser.add_argument("--binary", default=DEFAULT_BINARY)
     parser.add_argument("--baseline", default=DEFAULT_BASELINE)
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                        help="Max allowed regression as a fraction (default: 0.20 = 20%%)")
+                        help="Max allowed speed regression as a fraction (default: 0.30 = 30%%)")
+    parser.add_argument("--memory-threshold", type=float, default=0.10,
+                        help="Max allowed memory regression as a fraction (default: 0.10 = 10%%)")
     parser.add_argument("--tag", default="[benchmark]")
     args = parser.parse_args()
 
@@ -68,6 +71,7 @@ def main():
     with open(baseline_path) as f:
         baseline_data = json.load(f)
     baseline = baseline_data.get("benchmarks", {})
+    baseline_max_rss = baseline_data.get("max_rss_kb")
 
     # --- Run current benchmarks ---
     with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
@@ -80,6 +84,8 @@ def main():
             stderr=subprocess.DEVNULL,
             timeout=600,
         )
+        current_max_rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        
         if result.returncode not in (0, 1):
             print(f"Benchmark run failed (exit {result.returncode})", file=sys.stderr)
             sys.exit(2)
@@ -135,20 +141,40 @@ def main():
         print(f"  {name:<53} {'--':>12} {'--':>12} {'MISSING':>10}  {YELLOW}⚠ NOT RUN{RESET}")
 
     print("─" * 100)
+    
+    memory_regressed = False
+    if baseline_max_rss:
+        mem_delta = (current_max_rss - baseline_max_rss) / baseline_max_rss
+        mem_status = f"{GREEN}OK{RESET}"
+        if mem_delta > args.memory_threshold:
+            mem_status = f"{RED}REGRESSED  ▲{RESET}"
+            memory_regressed = True
+        elif mem_delta < -args.memory_threshold:
+            mem_status = f"{GREEN}IMPROVED   ▼{RESET}"
+            
+        print(f"\n{BOLD}Memory Usage (Max RSS){RESET}:")
+        print(f"  Baseline: {baseline_max_rss / 1024:.1f} MB  |  Current: {current_max_rss / 1024:.1f} MB  |  Change: {mem_delta:+.1%}  |  {mem_status}")
+
+    print("─" * 100)
     print(f"\nSummary: {len(current)} benchmarks run | "
           f"{GREEN}{len(improvements)} improved{RESET} | "
           f"{len(current) - len(regressions) - len(improvements) - len(new_benchmarks)} within threshold | "
           f"{RED}{len(regressions)} regressed{RESET} | "
           f"{YELLOW}{len(new_benchmarks)} new{RESET}")
 
-    if regressions:
-        print(f"\n{RED}{BOLD}REGRESSION FAILURES (>{args.threshold:.0%} slower than baseline):{RESET}")
-        for name, base, cur, delta in regressions:
-            print(f"  {RED}▲ {name}{RESET}: {base:.3f}ms → {cur:.3f}ms ({delta:+.1%})")
+    if regressions or memory_regressed:
+        if regressions:
+            print(f"\n{RED}{BOLD}SPEED REGRESSION FAILURES (>{args.threshold:.0%} slower than baseline):{RESET}")
+            for name, base, cur, delta in regressions:
+                print(f"  {RED}▲ {name}{RESET}: {base:.3f}ms → {cur:.3f}ms ({delta:+.1%})")
+        if memory_regressed:
+            print(f"\n{RED}{BOLD}MEMORY REGRESSION FAILURE (>{args.memory_threshold:.0%} higher RSS than baseline):{RESET}")
+            print(f"  {RED}▲ Max RSS{RESET}: {baseline_max_rss / 1024:.1f} MB → {current_max_rss / 1024:.1f} MB ({mem_delta:+.1%})")
+            
         print(f"\n{RED}❌ Benchmark regression detected. Investigate before merging.{RESET}")
         sys.exit(1)
     else:
-        print(f"\n{GREEN}✅ All benchmarks within {args.threshold:.0%} threshold.{RESET}")
+        print(f"\n{GREEN}✅ All benchmarks within thresholds (Speed: {args.threshold:.0%}, Memory: {args.memory_threshold:.0%}).{RESET}")
         sys.exit(0)
 
 
