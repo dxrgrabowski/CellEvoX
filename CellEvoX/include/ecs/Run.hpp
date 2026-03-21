@@ -32,7 +32,7 @@ class Run {
   int positive_mutations = 0;
   int neutral_mutations = 0;
   int negative_mutations = 0;
-  float average_mutations = 0.0;
+  double average_mutations = 0.0;
   size_t total_cell_memory_usage = 0;
   size_t total_mutations_memory = 0;
   size_t total_graveyard_memory = 0;
