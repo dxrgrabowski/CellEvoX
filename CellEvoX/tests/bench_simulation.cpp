@@ -3,6 +3,9 @@
 #include <catch2/benchmark/catch_benchmark_all.hpp>
 
 #include <filesystem>
+#include <chrono>
+#include <thread>
+#include <vector>
 #include "systems/SimulationEngine.hpp"
 #include "utils/SimulationConfig.hpp"
 
@@ -43,6 +46,11 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     // 1. RAW STEP (Minimum logic)
     // Measures: TBB scheduling and raw birth/death compute.
     BENCHMARK("stochasticStep N=100000 [baseline]") {
+        // --- FORCED REGRESSION FOR CI TESTING ---
+        volatile std::vector<char> regression_buffer(1024 * 1024 * 1024, 0); // 1GB
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // ----------------------------------------
+        
         auto cfg = makeConfig(100000, 10000000); // Low death pressure
         SimulationEngine eng(cfg);
         return eng.run(1); 
