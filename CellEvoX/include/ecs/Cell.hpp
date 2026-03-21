@@ -4,8 +4,8 @@
 #include <vector>
 
 struct MutationType {
-  double effect;
-  double probability;
+  float effect;
+  float probability;
   uint8_t type_id;  // up to 256 mutationTypes
   bool is_driver;
 };
@@ -15,7 +15,7 @@ class Cell {
   // using CellAllocator = boost::pool_allocator<Cell>;
   uint32_t parent_id{0};
   uint32_t id{0};
-  double fitness{1.0};
+  float fitness{1.0};
   double death_time{0.0};
 
   // <mutation_id> (id of parent where mutation was created), mutation_type_id>
