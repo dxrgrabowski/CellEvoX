@@ -7,14 +7,12 @@ Run::Run(CellMap&& cells,
          std::unordered_map<uint8_t, MutationType> mutation_id_to_type,
          Graveyard&& cells_graveyard,
          std::vector<StatSnapshot>&& generational_stat_report,
-         std::vector<std::pair<int, CellMap>> generational_popul_report,
          size_t deaths,
          double tau)
     : cells(std::move(cells)),
       mutation_id_to_type(std::move(mutation_id_to_type)),
       cells_graveyard(std::move(cells_graveyard)),
       generational_stat_report(std::move(generational_stat_report)),
-      generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau) {
   processRunInfo();
@@ -161,7 +159,6 @@ void Run::createPhylogeneticTree() {
       ++deleted_nodes_count;
     }
   }
-  // Add this at the end of your function
   auto end_time = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = end_time - start_time;
   spdlog::info("Phylogenetic tree postprocessing took {} seconds", elapsed.count());

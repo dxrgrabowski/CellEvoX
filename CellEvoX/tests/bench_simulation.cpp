@@ -6,7 +6,7 @@
 #include "systems/SimulationEngine.hpp"
 #include "utils/SimulationConfig.hpp"
 
-// Helper: minimal overhead config.
+// Helper: minimal overhead config for 3D spatial ABM.
 static std::shared_ptr<SimulationConfig> makeConfig(
     size_t population,
     size_t env_capacity,
@@ -23,25 +23,28 @@ static std::shared_ptr<SimulationConfig> makeConfig(
     c->output_path = "/tmp/test_bench_sim";
     c->mutations = mutations;
     c->verbosity = 0;
+    // Spatial ABM params — reduce mech iterations for benchmark speed
+    c->mech_iterations = 3;
+    c->mech_dt = 0.1f;
+    c->max_local_density = 10.0f;
+    c->sample_radius = 3.0f;
+    c->spawn_offset = 0.1f;
     return c;
 }
 
 // ============================================================
 // Consolidated High-N Regression Suite (N=100,000)
 //
-// We only benchmark at N=100k because:
-//   1. Inter-run variance (CV%) is lowest (~0.7%).
-//   2. Sample count is high enough to be meaningful (~32ms/iter).
-//   3. TBB/Allocation overhead is amortized over the step.
-//
-// These 4 benchmarks cover all critical code paths.
+// These benchmarks now exercise the full 3D spatial ABM code path
+// including SpatialHashGrid, local density, and mechanical relaxation.
 // ============================================================
 
 TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
+    std::filesystem::create_directories("/tmp/test_bench_sim/population_data");
 
     // 1. RAW STEP (Minimum logic)
-    // Measures: TBB scheduling and raw birth/death compute.
+    // Measures: TBB scheduling, grid build, force calc, birth/death compute.
     BENCHMARK("stochasticStep N=100000 [baseline]") {
         auto cfg = makeConfig(100000, 10000000); // Low death pressure
         SimulationEngine eng(cfg);
@@ -53,14 +56,14 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     BENCHMARK("stochasticStep N=100000 [mutations: 8 types]") {
         std::vector<MutationType> muts;
         for (uint8_t i = 0; i < 8; ++i)
-            muts.push_back({ 0.05 * (i + 1), 0.05, i, (i % 2 == 0) });
+            muts.push_back({ 0.05f * (i + 1), 0.05f, i, (i % 2 == 0) });
         auto cfg = makeConfig(100000, 10000000, muts);
         SimulationEngine eng(cfg);
         return eng.run(1);
     };
 
-    // 3. PRESSURE STRESS (Graveyard overhead)
-    // Measures: Death scaling (N/Nc) and high-frequency graveyard writes.
+    // 3. PRESSURE STRESS (High local density)
+    // Measures: Death scaling with local density and force calculations.
     BENCHMARK("stochasticStep N=100000 [pressure: high]") {
         auto cfg = makeConfig(100000, 100000); // N == Nc (Max death pressure)
         SimulationEngine eng(cfg);
@@ -68,7 +71,7 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     };
 
     // 4. MULTI-STEP STABILITY (Cumulative)
-    // Measures: Snapshot scheduling and generational overhead.
+    // Measures: Grid rebuild cost over multiple steps.
     BENCHMARK("run() N=50000 x5 steps [stability]") {
         auto cfg = makeConfig(50000, 1000000);
         SimulationEngine eng(cfg);

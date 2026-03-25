@@ -32,7 +32,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     config.env_capacity = j.at("env_capacity");
     config.steps = j.at("steps");
     config.stat_res = j.at("statistics_resolution");
-  config.popul_res = j.at("population_statistics_res");
+    config.popul_res = j.at("population_statistics_res");
     if (j.contains("graveyard_pruning_interval")) {
       config.graveyard_pruning_interval = j.at("graveyard_pruning_interval");
     } else {
@@ -48,6 +48,23 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.phylogeny_num_cells_sampling = j.at("phylogeny_num_cells_sampling");
     } else {
       config.phylogeny_num_cells_sampling = 100;
+    }
+
+    // --- 3D Spatial ABM parameters (all optional with defaults) ---
+    if (j.contains("max_local_density")) {
+      config.max_local_density = j.at("max_local_density").get<float>();
+    }
+    if (j.contains("sample_radius")) {
+      config.sample_radius = j.at("sample_radius").get<float>();
+    }
+    if (j.contains("mech_dt")) {
+      config.mech_dt = j.at("mech_dt").get<float>();
+    }
+    if (j.contains("mech_iterations")) {
+      config.mech_iterations = j.at("mech_iterations").get<int>();
+    }
+    if (j.contains("spawn_offset")) {
+      config.spawn_offset = j.at("spawn_offset").get<float>();
     }
 
     for (const auto& mut : j.at("mutations")) {
@@ -72,11 +89,16 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Environment capacity: {}", config.env_capacity);
   spdlog::info("Number of steps: {}", config.steps);
   spdlog::info("Statistics resolution: {}", config.stat_res);
-  spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
+  spdlog::info("--- 3D Spatial ABM ---");
+  spdlog::info("Max local density: {:.1f}", config.max_local_density);
+  spdlog::info("Sample radius: {:.2f}", config.sample_radius);
+  spdlog::info("Mech dt: {:.3f}", config.mech_dt);
+  spdlog::info("Mech iterations: {}", config.mech_iterations);
+  spdlog::info("Spawn offset: {:.3f}", config.spawn_offset);
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
     spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",

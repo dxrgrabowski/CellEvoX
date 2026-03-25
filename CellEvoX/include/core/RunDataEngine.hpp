@@ -27,8 +27,8 @@ class RunDataEngine {
   void plotLivingCellsOverGenerations();
   void plotFitnessStatistics();
   void plotMutationsStatistics();
-  void plotMutationWave();
-  void plotMutationFrequency();
+  // plotMutationWave() and plotMutationFrequency() removed — population data
+  // is now in binary snapshots.  Reimplementable by reading .bin files.
   void plotMullerDiagram();
   void plotClonePhylogenyTree();
   void plotCloneCounts();

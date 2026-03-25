@@ -62,8 +62,6 @@ void Application::initialize() {
     data_engine.plotFitnessStatistics();
     data_engine.plotMutationsStatistics();
     data_engine.plotLivingCellsOverGenerations();
-    data_engine.plotMutationWave();
-    data_engine.plotMutationFrequency();
     data_engine.exportToCSV();
     data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
     data_engine.plotMullerDiagram();
