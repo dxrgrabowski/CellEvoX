@@ -95,6 +95,10 @@ class SimulationEngine {
   std::vector<Eigen::Vector3f> positions_write;
   /// Contiguous array of active cell IDs (rebuilt each step).
   std::vector<uint32_t> active_cell_ids;
+  /// Fitness values extracted in single-pass with positions (avoids 2nd CellMap traversal).
+  std::vector<double> fitness_buf_;
+  /// Local density per cell (reused across sub-steps).
+  std::vector<float> local_density_buf_;
 
   size_t actual_population;
   size_t total_deaths;

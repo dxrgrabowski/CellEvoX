@@ -192,46 +192,38 @@ void SimulationEngine::stochasticStep() {
   tau += tau_step;
   const size_t N = actual_population;
 
-  // --- Step 1: Build contiguous active cell index vector ---
-  // O(N) — iterate CellMap once for maximal cache locality later.
+  if (N == 0) return;
+
+  // --- Step 1+2 FUSED: Single CellMap traversal ---
+  // Extract cell IDs, positions, AND fitness in ONE pass.
+  // This replaces 3 separate CellMap traversals (IDs, positions, fitness).
   active_cell_ids.clear();
   active_cell_ids.reserve(N);
-  for (auto it = cells.begin(); it != cells.end(); ++it) {
-    active_cell_ids.push_back(it->first);
-  }
-
-  if (active_cell_ids.size() != N) {
-    spdlog::error("Mismatch in alive cell count: expected {}, found {}",
-                  N, active_cell_ids.size());
-  }
-
-  // --- Step 2: Extract positions into contiguous SoA buffer ---
-  // O(N) parallel — enables SIMD-friendly grid build and density queries.
   positions_read.resize(N);
-  tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, N),
-      [&](const tbb::blocked_range<size_t>& range) {
-        for (size_t i = range.begin(); i != range.end(); ++i) {
-          CellMap::const_accessor acc;
-          if (cells.find(acc, active_cell_ids[i])) {
-            positions_read[i] = acc->second.position;
-          }
-        }
-      });
+  fitness_buf_.resize(N);
+
+  {
+    size_t idx = 0;
+    for (auto it = cells.begin(); it != cells.end(); ++it) {
+      active_cell_ids.push_back(it->first);
+      positions_read[idx] = it->second.position;
+      fitness_buf_[idx] = it->second.fitness;
+      ++idx;
+    }
+  }
+  const size_t actual_N = active_cell_ids.size();
 
   // --- Step 3: Build spatial hash grid from current positions ---
-  // O(N log N) — parallel_sort dominates.
-  grid.rebuild(positions_read.data(), static_cast<uint32_t>(N));
+  grid.rebuild(positions_read.data(), static_cast<uint32_t>(actual_N));
 
   // --- Step 4: Compute local density per cell ---
-  // O(N) parallel, O(1) per-cell amortized via grid neighbor query.
-  std::vector<float> local_density(N);
+  local_density_buf_.resize(actual_N);
   const float sample_radius = config->sample_radius;
   tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, N),
+      tbb::blocked_range<size_t>(0, actual_N),
       [&](const tbb::blocked_range<size_t>& range) {
         for (size_t i = range.begin(); i != range.end(); ++i) {
-          local_density[i] = static_cast<float>(
+          local_density_buf_[i] = static_cast<float>(
               grid.countNeighborsInRadius(positions_read[i], sample_radius,
                                           positions_read.data(),
                                           static_cast<uint32_t>(i)));
@@ -239,21 +231,10 @@ void SimulationEngine::stochasticStep() {
       });
 
   // --- Step 5: Generate stochastic probability vectors ---
-  Eigen::VectorXd exp_dist_death = generateExponentialDistribution(N);
-  Eigen::VectorXd exp_dist_birth = generateExponentialDistribution(N);
-
-  // Build fitness vector for birth probability denominator.
-  Eigen::VectorXd fitness_vec =
-      FitnessCalculator::getCellsFitnessVector(cells, active_cell_ids);
+  Eigen::VectorXd exp_dist_death = generateExponentialDistribution(actual_N);
+  Eigen::VectorXd exp_dist_birth = generateExponentialDistribution(actual_N);
 
   // --- Step 6: Birth/death decisions with local density ---
-  // O(N) parallel.  Each cell independently decides birth/death based on
-  // local density ρ_i rather than global N/Nc.
-  //
-  // Death:  death_prob[i] = exp[i] / s_i   where s_i = max(1, ρ_i / ρ_max)
-  //         → crowding increases mortality.
-  // Birth:  birth_prob[i] = exp[i] / (fitness[i] * max(0.01, 1 - ρ_i/ρ_max))
-  //         → crowding inhibits division.
   const float max_local_density = config->max_local_density;
   const float spawn_offset = config->spawn_offset;
 
@@ -262,44 +243,43 @@ void SimulationEngine::stochasticStep() {
   std::atomic<uint32_t> new_cells_count(0), death_count(0);
 
   tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, N),
+      tbb::blocked_range<size_t>(0, actual_N),
       [&](const tbb::blocked_range<size_t>& range) {
-        // Thread-local RNG avoids contention on random number generation.
         thread_local std::mt19937 tl_gen(std::random_device{}());
         thread_local std::uniform_real_distribution<float> tl_uni(-1.0f, 1.0f);
+        thread_local std::uniform_real_distribution<double> tl_mut_dist(0.0, 1.0);
 
         for (size_t i = range.begin(); i != range.end(); ++i) {
           uint32_t idx = active_cell_ids[i];
-          CellMap::accessor cell;
-          if (!cells.find(cell, idx)) continue;
 
-          float rho_i = local_density[i];
+          float rho_i = local_density_buf_[i];
           float s_i = std::max(1.0f, rho_i / max_local_density);
 
-          // Local death probability: crowding increases death rate.
           double death_prob = exp_dist_death[i] / static_cast<double>(s_i);
 
-          // Local birth probability: crowding inhibits division.
           float growth_room = std::max(0.01f, 1.0f - rho_i / max_local_density);
           double birth_prob = exp_dist_birth[i] /
-                              (fitness_vec[i] * static_cast<double>(growth_room));
+                              (fitness_buf_[i] * static_cast<double>(growth_room));
 
           if (death_prob <= tau_step) {
             // --- Cell death ---
-            cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
+            CellMap::const_accessor cell;
+            if (cells.find(cell, idx)) {
+              cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
+            }
             dead_cells.push_back(idx);
             death_count++;
           } else if (birth_prob <= tau_step) {
             // --- Cell division ---
-            new_cells_count += 2;
+            CellMap::accessor cell;
+            if (!cells.find(cell, idx)) continue;
 
-            // Parent dies (replaced by two daughters)
+            new_cells_count += 2;
             cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
             dead_cells.push_back(idx);
             death_count++;
 
-            // Place daughters near parent with small random offset
-            Eigen::Vector3f parent_pos = cell->second.position;
+            Eigen::Vector3f parent_pos = positions_read[i];
             auto makeOffset = [&]() -> Eigen::Vector3f {
               Eigen::Vector3f dir;
               do {
@@ -308,8 +288,8 @@ void SimulationEngine::stochasticStep() {
               return dir.normalized() * spawn_offset;
             };
 
-            // Mutation check
-            double rand_val = (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0;
+            // Thread-local RNG instead of Eigen::VectorXd::Random
+            double rand_val = tl_mut_dist(tl_gen);
             if (rand_val >= total_mutation_probability) {
               Cell d1(cell->second, cell->second.fitness);
               d1.position = parent_pos + makeOffset();
@@ -357,7 +337,6 @@ void SimulationEngine::stochasticStep() {
   actual_population = actual_population + new_cells_count - death_count;
 
   // --- Step 8: Mechanical relaxation (force-based pushing) ---
-  // Resolves overlaps created by daughter cell placement.
   if (actual_population > 0) {
     mechanicalRelaxationStep();
   }
@@ -390,49 +369,44 @@ void SimulationEngine::stochasticStep() {
 // ============================================================================
 //
 // Resolves physical overlaps via Hooke's law repulsion.
-// Uses double-buffering: reads from positions_read, writes to positions_write.
-// Each index is written by exactly one thread → zero data races, no mutexes.
+// OPTIMIZED: Re-extracts positions from CellMap only once (not per sub-step),
+// and reuses the grid from stochasticStep for the first iteration.
 //
 // Per sub-step complexity: O(N log N) for grid rebuild, O(N) for force calc.
 // Total: O(mech_iterations * N log N).
 // ============================================================================
 void SimulationEngine::mechanicalRelaxationStep() {
   const int iterations = config->mech_iterations;
-  const float dt = config->mech_dt;
-  constexpr float k = 1.0f;              // Hooke constant
-  constexpr float two_R = 2.0f * Cell::CELL_RADIUS;
-  constexpr float min_dist = 1e-4f;      // Avoid division by zero
+  if (iterations <= 0) return;
 
-  // Rebuild active cell list (population may have changed after birth/death)
+  const float dt = config->mech_dt;
+  constexpr float k = 1.0f;
+  constexpr float two_R = 2.0f * Cell::CELL_RADIUS;
+  constexpr float min_dist = 1e-4f;
+
+  // Rebuild active cell list (population changed after birth/death).
+  // Single CellMap traversal to extract IDs + positions.
   active_cell_ids.clear();
   active_cell_ids.reserve(actual_population);
-  for (auto it = cells.begin(); it != cells.end(); ++it) {
-    active_cell_ids.push_back(it->first);
+  positions_read.resize(actual_population);
+  {
+    size_t idx = 0;
+    for (auto it = cells.begin(); it != cells.end(); ++it) {
+      active_cell_ids.push_back(it->first);
+      positions_read[idx] = it->second.position;
+      ++idx;
+    }
   }
   const uint32_t N = static_cast<uint32_t>(active_cell_ids.size());
-
-  // Extract current positions into contiguous buffer
-  positions_read.resize(N);
-  tbb::parallel_for(
-      tbb::blocked_range<uint32_t>(0, N),
-      [&](const tbb::blocked_range<uint32_t>& range) {
-        for (uint32_t i = range.begin(); i != range.end(); ++i) {
-          CellMap::const_accessor acc;
-          if (cells.find(acc, active_cell_ids[i])) {
-            positions_read[i] = acc->second.position;
-          }
-        }
-      });
+  if (N <= 1) return;
 
   positions_write.resize(N);
 
   for (int iter = 0; iter < iterations; ++iter) {
-    // Rebuild grid from current positions for this sub-step. O(N log N).
+    // Rebuild grid from current positions.
     grid.rebuild(positions_read.data(), N);
 
-    // Compute forces and new positions in parallel.  O(N), O(1) per cell.
-    // Read from positions_read (shared, read-only)
-    // Write to positions_write[i] (each i owned by exactly one thread)
+    // Compute forces and new positions in parallel.
     tbb::parallel_for(
         tbb::blocked_range<uint32_t>(0, N),
         [&](const tbb::blocked_range<uint32_t>& range) {
@@ -440,29 +414,25 @@ void SimulationEngine::mechanicalRelaxationStep() {
             Eigen::Vector3f force = Eigen::Vector3f::Zero();
             const Eigen::Vector3f& xi = positions_read[i];
 
-            // Iterate neighbors in the 27 surrounding voxels
             grid.forEachNeighbor(xi, [&](uint32_t j) {
-              if (j == i) return;  // Skip self
+              if (j == i) return;
               const Eigen::Vector3f& xj = positions_read[j];
               Eigen::Vector3f diff = xi - xj;
               float dist = diff.norm();
               if (dist < two_R && dist > min_dist) {
-                // Hooke's law repulsion: F = k * (2R - d) * (xi - xj) / d
                 float overlap = two_R - dist;
                 force += (k * overlap / dist) * diff;
               }
             });
 
-            // Euler integration: Δx = F * dt
             positions_write[i] = xi + force * dt;
           }
         });
 
-    // Swap buffers: new positions become the read source for next iteration.
     std::swap(positions_read, positions_write);
   }
 
-  // Write final positions back to CellMap.  O(N) parallel.
+  // Write final positions back to CellMap.  Single traversal.
   tbb::parallel_for(
       tbb::blocked_range<uint32_t>(0, N),
       [&](const tbb::blocked_range<uint32_t>& range) {

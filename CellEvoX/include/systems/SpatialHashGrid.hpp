@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "ecs/Cell.hpp"
@@ -14,7 +13,7 @@
 /// Lock-free Uniform Spatial Hash Grid for O(1) amortized neighbor queries.
 ///
 /// Rebuilt from scratch each mechanical sub-step.  Uses parallel_sort + prefix
-/// scan to create a flat, cache-friendly structure with zero mutexes.
+/// scan over a *flat sorted vector* — no std::unordered_map, no heap churn.
 ///
 /// Voxel side length L = 2 * CELL_RADIUS so any two overlapping cells
 /// (distance < 2R) are guaranteed to be in the same or adjacent voxels.
@@ -23,14 +22,12 @@
 /// Query complexity:  O(1) amortized per cell (iterate 27 adjacent voxels)
 class SpatialHashGrid {
  public:
-  /// Voxel side length: 2 * CELL_RADIUS ensures overlapping cells share
-  /// adjacent voxels.
   static constexpr float VOXEL_SIZE = 2.0f * Cell::CELL_RADIUS;
   static constexpr float INV_VOXEL_SIZE = 1.0f / VOXEL_SIZE;
 
   SpatialHashGrid() = default;
 
-  /// Rebuild the grid from scratch.  Called once per mechanical sub-step.
+  /// Rebuild the grid from scratch.
   ///
   /// @param positions   Contiguous array of cell positions (indexed by active
   ///                    cell order, NOT by cell ID).
@@ -38,23 +35,23 @@ class SpatialHashGrid {
   ///
   /// Complexity: O(N log N) due to parallel_sort.
   void rebuild(const Eigen::Vector3f* positions, uint32_t num_cells) {
+    num_cells_ = num_cells;
     if (num_cells == 0) {
       sorted_indices_.clear();
-      hashes_.clear();
-      voxel_start_.clear();
-      voxel_end_.clear();
+      sorted_hashes_.clear();
+      voxel_boundaries_.clear();
       return;
     }
 
     sorted_indices_.resize(num_cells);
-    hashes_.resize(num_cells);
+    hashes_tmp_.resize(num_cells);
 
     // Step 1: Compute voxel hash for each cell.  O(N), fully parallel.
     tbb::parallel_for(
         tbb::blocked_range<uint32_t>(0, num_cells),
         [&](const tbb::blocked_range<uint32_t>& range) {
           for (uint32_t i = range.begin(); i != range.end(); ++i) {
-            hashes_[i] = hashPosition(positions[i]);
+            hashes_tmp_[i] = hashPosition(positions[i]);
             sorted_indices_[i] = i;
           }
         });
@@ -62,28 +59,39 @@ class SpatialHashGrid {
     // Step 2: Sort indices by voxel hash.  O(N log N), parallel.
     tbb::parallel_sort(sorted_indices_.begin(), sorted_indices_.end(),
                        [this](uint32_t a, uint32_t b) {
-                         return hashes_[a] < hashes_[b];
+                         return hashes_tmp_[a] < hashes_tmp_[b];
                        });
 
-    // Step 3: Single-pass prefix scan to record voxel boundaries.  O(N).
-    voxel_start_.clear();
-    voxel_end_.clear();
-    // Reserve capacity to reduce rehashing (expect ~N/8 occupied voxels)
-    voxel_start_.reserve(num_cells / 4);
-    voxel_end_.reserve(num_cells / 4);
+    // Step 3: Build sorted_hashes_ (hash value for each sorted position).
+    //         This allows O(log N) binary search for voxel lookups instead
+    //         of O(1)-amortized-but-slow unordered_map.
+    sorted_hashes_.resize(num_cells);
+    for (uint32_t i = 0; i < num_cells; ++i) {
+      sorted_hashes_[i] = hashes_tmp_[sorted_indices_[i]];
+    }
 
-    uint32_t prev_hash = hashes_[sorted_indices_[0]];
-    voxel_start_[prev_hash] = 0;
+    // Step 4: Build compact voxel boundary table (sorted by hash).
+    //         Each entry = {hash, start, end}.  O(N) scan, O(V) storage.
+    voxel_boundaries_.clear();
+    // Reserve conservatively; exact value depends on spatial distribution.
+    voxel_boundaries_.reserve(num_cells / 4 + 1);
+
+    uint32_t prev_hash = sorted_hashes_[0];
+    uint32_t start = 0;
 
     for (uint32_t i = 1; i < num_cells; ++i) {
-      uint32_t cur_hash = hashes_[sorted_indices_[i]];
+      uint32_t cur_hash = sorted_hashes_[i];
       if (cur_hash != prev_hash) {
-        voxel_end_[prev_hash] = i;
-        voxel_start_[cur_hash] = i;
+        voxel_boundaries_.push_back({prev_hash, start, i});
+        start = i;
         prev_hash = cur_hash;
       }
     }
-    voxel_end_[prev_hash] = num_cells;
+    voxel_boundaries_.push_back({prev_hash, start, num_cells});
+
+    // Sort boundaries by hash to enable binary search.
+    // (Already sorted because sorted_hashes_ is sorted, but be explicit.)
+    // No-op here because the loop above processes hashes in sorted order.
   }
 
   /// Invoke `callback(uint32_t neighbor_index)` for every cell in the 27
@@ -96,6 +104,8 @@ class SpatialHashGrid {
   /// Complexity: O(1) amortized (constant number of voxels × cells/voxel).
   template <typename Callback>
   void forEachNeighbor(const Eigen::Vector3f& pos, Callback&& callback) const {
+    if (voxel_boundaries_.empty()) return;
+
     int32_t cx = voxelCoord(pos.x());
     int32_t cy = voxelCoord(pos.y());
     int32_t cz = voxelCoord(pos.z());
@@ -104,10 +114,17 @@ class SpatialHashGrid {
       for (int32_t dy = -1; dy <= 1; ++dy) {
         for (int32_t dz = -1; dz <= 1; ++dz) {
           uint32_t h = hashCoords(cx + dx, cy + dy, cz + dz);
-          auto it_start = voxel_start_.find(h);
-          if (it_start == voxel_start_.end()) continue;
-          uint32_t begin = it_start->second;
-          uint32_t end = voxel_end_.find(h)->second;
+
+          // Binary search for this hash in the sorted voxel boundary table.
+          // O(log V) where V = number of occupied voxels.
+          auto it = std::lower_bound(
+              voxel_boundaries_.begin(), voxel_boundaries_.end(), h,
+              [](const VoxelBounds& vb, uint32_t hash) { return vb.hash < hash; });
+
+          if (it == voxel_boundaries_.end() || it->hash != h) continue;
+
+          uint32_t begin = it->start;
+          uint32_t end = it->end;
           for (uint32_t k = begin; k < end; ++k) {
             callback(sorted_indices_[k]);
           }
@@ -117,13 +134,6 @@ class SpatialHashGrid {
   }
 
   /// Count cells within a given radius of a position.
-  /// Useful for local density estimation.
-  ///
-  /// @param pos           Query position.
-  /// @param radius        Search radius.
-  /// @param positions     Array of all cell positions.
-  /// @param exclude_self  Index to exclude from the count (the cell itself).
-  /// @return Number of cells within radius (excluding self).
   uint32_t countNeighborsInRadius(const Eigen::Vector3f& pos,
                                   float radius,
                                   const Eigen::Vector3f* positions,
@@ -141,15 +151,11 @@ class SpatialHashGrid {
   }
 
  private:
-  /// Convert a world-space coordinate to a voxel integer coordinate.
   static int32_t voxelCoord(float x) {
     return static_cast<int32_t>(std::floor(x * INV_VOXEL_SIZE));
   }
 
-  /// Spatial hash from integer voxel coordinates.  Uses large primes to
-  /// distribute entries uniformly across the hash table.
   static uint32_t hashCoords(int32_t ix, int32_t iy, int32_t iz) {
-    // Large primes for spatial hashing (Teschner et al. 2003)
     constexpr uint32_t p1 = 73856093u;
     constexpr uint32_t p2 = 19349663u;
     constexpr uint32_t p3 = 83492791u;
@@ -158,23 +164,30 @@ class SpatialHashGrid {
            static_cast<uint32_t>(iz) * p3;
   }
 
-  /// Compute the hash for a world-space position.
   static uint32_t hashPosition(const Eigen::Vector3f& pos) {
     return hashCoords(voxelCoord(pos.x()), voxelCoord(pos.y()),
                       voxelCoord(pos.z()));
   }
 
-  // --- Storage (all flat, contiguous) ---
+  // --- Compact voxel boundary entry ---
+  struct VoxelBounds {
+    uint32_t hash;
+    uint32_t start;  // first index in sorted_indices_
+    uint32_t end;    // past-the-end index
+  };
+
+  uint32_t num_cells_ = 0;
 
   /// Cell indices sorted by their voxel hash.
   std::vector<uint32_t> sorted_indices_;
 
-  /// Voxel hash for each cell (indexed by original contiguous order).
-  std::vector<uint32_t> hashes_;
+  /// Hash values in sorted order (parallel to sorted_indices_).
+  std::vector<uint32_t> sorted_hashes_;
 
-  /// Maps voxel hash → index of first cell in sorted_indices_.
-  std::unordered_map<uint32_t, uint32_t> voxel_start_;
+  /// Temporary per-cell hashes (indexed by original order, used during build).
+  std::vector<uint32_t> hashes_tmp_;
 
-  /// Maps voxel hash → past-the-end index in sorted_indices_.
-  std::unordered_map<uint32_t, uint32_t> voxel_end_;
+  /// Sorted table of occupied voxels with [start, end) ranges.
+  /// Binary-searchable by hash.  No heap allocation per query.
+  std::vector<VoxelBounds> voxel_boundaries_;
 };
