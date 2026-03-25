@@ -110,42 +110,8 @@ void RunDataEngine::exportToCSV() {
     }
   }
 
-  // Export Generational Population (Separate Files for Each Generation)
-  {
-    for (const auto& [generation, cell_map] : run->generational_popul_report) {
-      std::string populFilename =
-          output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
-      std::ofstream file(populFilename);
-      if (!file.is_open()) {
-        std::cerr << "Cannot open file: " << populFilename << std::endl;
-        continue;
-      }
-
-      // Write the header
-      file << "CellID,ParentID,Fitness,Mutations\n";
-
-      // Write data for each cell in this generation
-      for (const auto& [cell_id, cell_data] : cell_map) {
-        // Retrieve mutations as a string
-        std::string mutations_str;
-        for (const auto& [mutation_id, mutation_type] : cell_data.mutations) {
-          mutations_str +=
-              "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
-        }
-
-        // Trim the trailing space
-        if (!mutations_str.empty()) {
-          mutations_str.pop_back();
-        }
-
-        file << cell_id << "," << cell_data.parent_id << "," << cell_data.fitness << "," << "\""
-             << mutations_str << "\"\n";
-      }
-
-      file.close();
-      std::cout << "Population data exported to: " << populFilename << std::endl;
-    }
-  }
+  // Population data is now written as binary snapshots during simulation.
+  // See SimulationEngine::writeBinarySnapshot() for the binary format.
 
   {
     std::string phylogeneticFilename = output_dir + "phylogeny/phylogenetic_tree.csv";
@@ -298,69 +264,9 @@ void RunDataEngine::plotMutationsStatistics() {
   plt::close();
 }
 
-void RunDataEngine::plotMutationWave() {
-  for (const auto& [generation, cells] : run->generational_popul_report) {
-    std::map<size_t, size_t> mutation_counts;  // <number of mutations, number of cells>
-
-    for (const auto& cell : cells) {
-      size_t num_mutations = cell.second.mutations.size();
-      mutation_counts[num_mutations]++;
-    }
-
-    std::vector<size_t> mutation_bins;
-    std::vector<size_t> cell_counts;
-
-    for (const auto& [mutations, count] : mutation_counts) {
-      mutation_bins.push_back(mutations);
-      cell_counts.push_back(count);
-    }
-
-    plt::figure_size(1000, 600);
-    plt::bar(mutation_bins, cell_counts, "green");
-    plt::xlabel("Number of Mutations");
-    plt::ylabel("Number of Cells");
-    plt::title("Mutation Wave: Distribution of Mutation Counts (Generation " +
-               std::to_string(generation) + ")");
-    plt::grid(true);
-    plt::save(output_dir + "mutation_histograms/mutation_wave_histogram_generation_" +
-              std::to_string(generation) + ".png");
-    plt::close();
-  }
-}
-
-void RunDataEngine::plotMutationFrequency() {
-  for (const auto& [generation, cells] : run->generational_popul_report) {
-    std::map<uint32_t, uint32_t> mutation_counts;
-    uint32_t total_cells = 0;
-
-    for (const auto& item : cells) {
-      const Cell& cell = item.second;
-      ++total_cells;
-
-      for (const auto& mutation : cell.mutations) {
-        uint32_t mutation_id = mutation.first;
-        mutation_counts[mutation_id]++;
-      }
-    }
-
-    std::vector<double> vafs;
-    for (const auto& [mutation_id, count] : mutation_counts) {
-      double vaf = static_cast<double>(count) / total_cells;
-      vafs.push_back(vaf);
-    }
-
-    int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
-
-    plt::figure();
-    plt::hist(vafs, num_bins);
-    plt::title("VAF Histogram - Generation " + std::to_string(generation));
-    plt::xlabel("Variant Allele Frequency (VAF)");
-    plt::ylabel("Frequency");
-    plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
-              ".png");
-    plt::close();
-  }
-}
+// plotMutationWave() and plotMutationFrequency() removed.
+// Population data is now in binary snapshots on disk.
+// These can be reimplemented to read from .bin files if needed.
 
 void RunDataEngine::exportPhylogeneticTreeToGEXF(const std::string& filename) {
   std::string output_file = output_dir + "phylogeny/" + filename;

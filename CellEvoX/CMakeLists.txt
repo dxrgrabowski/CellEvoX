@@ -8,7 +8,7 @@ endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -ffast-math")
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
@@ -54,6 +54,7 @@ set(HEADERS
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
     include/external/matplotlibcpp.h
+    include/systems/SpatialHashGrid.hpp
 )
 
 set(SOURCES

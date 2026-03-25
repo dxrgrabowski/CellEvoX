@@ -8,6 +8,7 @@
 
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
+#include "systems/SpatialHashGrid.hpp"
 
 using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
 using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>>;
@@ -26,7 +27,28 @@ struct SimulationConfig {
   std::vector<MutationType> mutations;
   int verbosity; // 0: off, 1: minimal, 2: full
   uint32_t phylogeny_num_cells_sampling;
+
+  // --- 3D Spatial ABM parameters ---
+  float max_local_density{10.0f};
+  float sample_radius{3.0f * Cell::CELL_RADIUS};
+  float mech_dt{0.1f};
+  int mech_iterations{5};
+  float spawn_offset{0.1f * Cell::CELL_RADIUS};
 };
+
+/// Packed binary snapshot for high-performance I/O.
+/// Size: 4+4+4+4+4+4+1 = 25 bytes per cell (no padding).
+#pragma pack(push, 1)
+struct CellSnapshotBinary {
+  uint32_t id;
+  uint32_t parent_id;
+  float fitness;
+  float x;
+  float y;
+  float z;
+  uint8_t mutations_count;
+};
+#pragma pack(pop)
 
 struct StatSnapshot {
   double tau;
@@ -54,16 +76,26 @@ class SimulationEngine {
 
  private:
   void stochasticStep();
+  void mechanicalRelaxationStep();
   void pruneGraveyard();
-  // void rk4DeterministicStep(double deltaTime);
   void takeStatSnapshot();
   void takePopulationSnapshot();
+  void writeBinarySnapshot(const std::string& path);
+
   CellMap cells;
-  // <id, <parent_id, death_time>>
   Graveyard cells_graveyard;
   std::unordered_map<uint8_t, MutationType> available_mutation_types;
   std::vector<StatSnapshot> generational_stat_report;
-  std::vector<std::pair<int, CellMap>> generational_popul_report;
+
+  // --- Spatial data structures ---
+  SpatialHashGrid grid;
+  /// Contiguous position buffer for the current step (read-only during force calc).
+  std::vector<Eigen::Vector3f> positions_read;
+  /// Write buffer for new positions (each element written by exactly one thread).
+  std::vector<Eigen::Vector3f> positions_write;
+  /// Contiguous array of active cell IDs (rebuilt each step).
+  std::vector<uint32_t> active_cell_ids;
+
   size_t actual_population;
   size_t total_deaths;
   double tau;
@@ -72,7 +104,7 @@ class SimulationEngine {
   int last_population_snapshot_tau = 0;
   int last_pruning_tau = -1;
   std::shared_ptr<SimulationConfig> config;
-  
+
   std::ofstream memory_log_file;
   void logMemoryUsage();
   size_t getRSS();

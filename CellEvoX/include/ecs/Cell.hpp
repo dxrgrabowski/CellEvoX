@@ -1,4 +1,5 @@
 #pragma once
+#include <Eigen/Dense>
 #include <boost/pool/pool_alloc.hpp>
 #include <memory>
 #include <vector>
@@ -12,11 +13,13 @@ struct MutationType {
 
 class Cell {
  public:
-  // using CellAllocator = boost::pool_allocator<Cell>;
+  static constexpr float CELL_RADIUS = 1.0f;
+
   uint32_t parent_id{0};
   uint32_t id{0};
   float fitness{1.0};
   double death_time{0.0};
+  Eigen::Vector3f position{0.f, 0.f, 0.f};
 
   // <mutation_id> (id of parent where mutation was created), mutation_type_id>
   std::vector<std::pair<uint32_t, uint8_t>> mutations;
@@ -24,7 +27,10 @@ class Cell {
   explicit Cell(uint32_t cellId) : id(cellId) {}
 
   explicit Cell(const Cell& parent, double cellFitness)
-      : parent_id(parent.id), fitness(cellFitness), mutations(parent.mutations) {}
+      : parent_id(parent.id),
+        fitness(cellFitness),
+        position(parent.position),
+        mutations(parent.mutations) {}
 
   // Move constructor
   Cell(Cell&& other) noexcept
@@ -32,6 +38,7 @@ class Cell {
         id(other.id),
         fitness(other.fitness),
         death_time(other.death_time),
+        position(other.position),
         mutations(std::move(other.mutations)) {}
 
   // Copy constructor
@@ -40,6 +47,7 @@ class Cell {
         id(other.id),
         fitness(other.fitness),
         death_time(other.death_time),
+        position(other.position),
         mutations(other.mutations) {}
 
   // Move assignment operator
@@ -49,6 +57,7 @@ class Cell {
       id = other.id;
       fitness = other.fitness;
       death_time = other.death_time;
+      position = other.position;
       mutations = std::move(other.mutations);
     }
     return *this;

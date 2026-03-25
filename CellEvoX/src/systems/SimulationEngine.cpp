@@ -9,7 +9,9 @@
 
 #include <Eigen/Dense>
 #include <chrono>
+#include <cmath>
 #include <execution>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -32,7 +34,6 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
     : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0) {
   
   // Set global spdlog level based on config verbosity
-  // 0 = off, 1 = warnings only, 2 = full info/debug
   switch (config->verbosity) {
     case 0: spdlog::set_level(spdlog::level::off); break;
     case 1: spdlog::set_level(spdlog::level::warn); break;
@@ -41,8 +42,22 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
 
   cells.rehash(config->initial_population);
 
+  // Initialize cells with random 3D positions inside a sphere.
+  // Sphere radius scales with cbrt(N) to avoid extreme initial density.
+  const float init_radius = std::cbrt(static_cast<float>(config->initial_population)) *
+                            Cell::CELL_RADIUS * 0.5f;
+  std::mt19937 pos_gen(42);  // Deterministic seed for reproducibility
+  std::uniform_real_distribution<float> uni(-1.0f, 1.0f);
+
   for (uint32_t i = 0; i < config->initial_population; ++i) {
-    cells.insert({i, Cell(i)});
+    Cell c(i);
+    // Rejection sampling for uniform distribution inside a sphere
+    Eigen::Vector3f pos;
+    do {
+      pos = Eigen::Vector3f(uni(pos_gen), uni(pos_gen), uni(pos_gen));
+    } while (pos.squaredNorm() > 1.0f);
+    c.position = pos * init_radius;
+    cells.insert({i, std::move(c)});
   }
 
   for (const auto& mutation : config->mutations) {
@@ -57,19 +72,18 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
                         return sum + pair.second.probability;
                       });
 
-  // These are informational logs; they will be filtered by spdlog's level.
-  spdlog::info("=== Simulation Engine Initialized ===");
+  spdlog::info("=== Simulation Engine Initialized (3D Spatial ABM) ===");
   spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
   spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
+  spdlog::info("Init sphere radius: {:.2f}, Max local density: {:.1f}", init_radius, config->max_local_density);
 
   // Initialize memory logging
   std::string memory_log_path = config->output_path + "/statistics/memory_log.csv";
-  
   memory_log_file.open(memory_log_path);
   if (memory_log_file.is_open()) {
-      memory_log_file << "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB\n";
+    memory_log_file << "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB\n";
   } else {
-      spdlog::warn("Failed to open memory log file at: {}", memory_log_path);
+    spdlog::warn("Failed to open memory log file at: {}", memory_log_path);
   }
 }
 
@@ -78,9 +92,6 @@ void SimulationEngine::step() {
     case SimulationType::STOCHASTIC_TAU_LEAP:
       stochasticStep();
       break;
-      // case SimulationType::DETERMINISTIC_RK4:
-      //     deterministicStep();
-      //     break;
   }
 }
 
@@ -140,14 +151,15 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
                   std::move(available_mutation_types),
                   std::move(cells_graveyard),
                   std::move(generational_stat_report),
-                  std::move(generational_popul_report),
                   total_deaths,
                   tau);
 }
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
 
-Eigen::VectorXd generateExponentialDistribution(int size) {
+/// Generate N exponentially-distributed random values (rate=1.0).
+/// Thread-local RNG avoids contention.
+static Eigen::VectorXd generateExponentialDistribution(int size) {
   std::random_device rd;
   std::mt19937 gen(rd());
   std::exponential_distribution<> exp_dist(1.0);
@@ -156,76 +168,169 @@ Eigen::VectorXd generateExponentialDistribution(int size) {
   for (int i = 0; i < size; ++i) {
     result(i) = exp_dist(gen);
   }
-
   return result;
 }
 
+// ============================================================================
+// stochasticStep() — 3D Spatial ABM with local density
+// ============================================================================
+//
+// Complexity breakdown:
+//   1. Build active_cell_ids:         O(N) sequential iteration over CellMap
+//   2. Extract positions:             O(N) parallel
+//   3. Build SpatialHashGrid:         O(N log N) parallel_sort
+//   4. Compute local density:         O(N) parallel, O(1) per-cell amortized
+//   5. Generate random vectors:       O(N)
+//   6. Birth/death parallel_for:      O(N) parallel
+//   7. Insert newborns / erase dead:  O(births + deaths) sequential on CellMap
+//   8. Mechanical relaxation:         O(mech_iterations * N log N)
+//
+// Total per tau-step: O(mech_iterations * N log N)
+// ============================================================================
 void SimulationEngine::stochasticStep() {
   double tau_step = config->tau_step;
   tau += tau_step;
   const size_t N = actual_population;
-  const size_t Nc = config->env_capacity;
-  const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
 
-  Eigen::VectorXd death_probs = generateExponentialDistribution(N) / scaling_factor;
-  std::vector<uint32_t> alive_cell_indices;
+  // --- Step 1: Build contiguous active cell index vector ---
+  // O(N) — iterate CellMap once for maximal cache locality later.
+  active_cell_ids.clear();
+  active_cell_ids.reserve(N);
   for (auto it = cells.begin(); it != cells.end(); ++it) {
-    alive_cell_indices.push_back(it->first);
+    active_cell_ids.push_back(it->first);
   }
 
-  Eigen::VectorXd birth_probs =
-      generateExponentialDistribution(N).array() /
-      FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices).array();
-
-  if (alive_cell_indices.size() != N) {
-    spdlog::error(
-        "Mismatch in alive cell count: expected {}, found {}", N, alive_cell_indices.size());
+  if (active_cell_ids.size() != N) {
+    spdlog::error("Mismatch in alive cell count: expected {}, found {}",
+                  N, active_cell_ids.size());
   }
 
-  if (death_probs.size() != N || birth_probs.size() != N) {
-    spdlog::error("Death arr: {} B: {} AP: {}", death_probs.size(), birth_probs.size(), N);
-  }
+  // --- Step 2: Extract positions into contiguous SoA buffer ---
+  // O(N) parallel — enables SIMD-friendly grid build and density queries.
+  positions_read.resize(N);
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, N),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          CellMap::const_accessor acc;
+          if (cells.find(acc, active_cell_ids[i])) {
+            positions_read[i] = acc->second.position;
+          }
+        }
+      });
+
+  // --- Step 3: Build spatial hash grid from current positions ---
+  // O(N log N) — parallel_sort dominates.
+  grid.rebuild(positions_read.data(), static_cast<uint32_t>(N));
+
+  // --- Step 4: Compute local density per cell ---
+  // O(N) parallel, O(1) per-cell amortized via grid neighbor query.
+  std::vector<float> local_density(N);
+  const float sample_radius = config->sample_radius;
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, N),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          local_density[i] = static_cast<float>(
+              grid.countNeighborsInRadius(positions_read[i], sample_radius,
+                                          positions_read.data(),
+                                          static_cast<uint32_t>(i)));
+        }
+      });
+
+  // --- Step 5: Generate stochastic probability vectors ---
+  Eigen::VectorXd exp_dist_death = generateExponentialDistribution(N);
+  Eigen::VectorXd exp_dist_birth = generateExponentialDistribution(N);
+
+  // Build fitness vector for birth probability denominator.
+  Eigen::VectorXd fitness_vec =
+      FitnessCalculator::getCellsFitnessVector(cells, active_cell_ids);
+
+  // --- Step 6: Birth/death decisions with local density ---
+  // O(N) parallel.  Each cell independently decides birth/death based on
+  // local density ρ_i rather than global N/Nc.
+  //
+  // Death:  death_prob[i] = exp[i] / s_i   where s_i = max(1, ρ_i / ρ_max)
+  //         → crowding increases mortality.
+  // Birth:  birth_prob[i] = exp[i] / (fitness[i] * max(0.01, 1 - ρ_i/ρ_max))
+  //         → crowding inhibits division.
+  const float max_local_density = config->max_local_density;
+  const float spawn_offset = config->spawn_offset;
+
   tbb::concurrent_vector<Cell> new_cells;
   tbb::concurrent_vector<uint32_t> dead_cells;
   std::atomic<uint32_t> new_cells_count(0), death_count(0);
-  // printProbabilityVectors(death_probs, birth_probs);
+
   tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, alive_cell_indices.size()),
+      tbb::blocked_range<size_t>(0, N),
       [&](const tbb::blocked_range<size_t>& range) {
+        // Thread-local RNG avoids contention on random number generation.
+        thread_local std::mt19937 tl_gen(std::random_device{}());
+        thread_local std::uniform_real_distribution<float> tl_uni(-1.0f, 1.0f);
+
         for (size_t i = range.begin(); i != range.end(); ++i) {
-          // spdlog::info("Cell {} alive at {}", alive_cell_indices[i], i);
-          uint32_t idx = alive_cell_indices[i];
+          uint32_t idx = active_cell_ids[i];
           CellMap::accessor cell;
-          if (cells.find(cell, idx)) {
-            if (death_probs[i] <= tau_step) {
-              cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
-              dead_cells.push_back(idx);
-              death_count++;
-              // spdlog::trace("Cell {} died", cells[i].id);
-            } else if (birth_probs[i] <= tau_step) {
-              new_cells_count += 2;
+          if (!cells.find(cell, idx)) continue;
 
-              cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
-              dead_cells.push_back(idx);
-              death_count++;
-              double rand_val =
-                  (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0;  // Random val from 0.0 to 1.0
-              if (rand_val >= total_mutation_probability) {
-                new_cells.emplace_back(cell->second, cell->second.fitness);
-                new_cells.emplace_back(cell->second, cell->second.fitness);
-              } else {
-                double prob_sum = 0.0;
-                for (const auto& mut : available_mutation_types) {
-                  prob_sum += mut.second.probability;
-                  if (rand_val < prob_sum) {
-                    Cell daughter_cell1 =
-                        Cell(cell->second, cell->second.fitness * (1.0 + mut.second.effect));
-                    daughter_cell1.mutations.push_back({0, mut.second.type_id});
+          float rho_i = local_density[i];
+          float s_i = std::max(1.0f, rho_i / max_local_density);
 
-                    new_cells.push_back(std::move(daughter_cell1));
-                    new_cells.emplace_back(cell->second, cell->second.fitness);
-                    break;
-                  }
+          // Local death probability: crowding increases death rate.
+          double death_prob = exp_dist_death[i] / static_cast<double>(s_i);
+
+          // Local birth probability: crowding inhibits division.
+          float growth_room = std::max(0.01f, 1.0f - rho_i / max_local_density);
+          double birth_prob = exp_dist_birth[i] /
+                              (fitness_vec[i] * static_cast<double>(growth_room));
+
+          if (death_prob <= tau_step) {
+            // --- Cell death ---
+            cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
+            dead_cells.push_back(idx);
+            death_count++;
+          } else if (birth_prob <= tau_step) {
+            // --- Cell division ---
+            new_cells_count += 2;
+
+            // Parent dies (replaced by two daughters)
+            cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
+            dead_cells.push_back(idx);
+            death_count++;
+
+            // Place daughters near parent with small random offset
+            Eigen::Vector3f parent_pos = cell->second.position;
+            auto makeOffset = [&]() -> Eigen::Vector3f {
+              Eigen::Vector3f dir;
+              do {
+                dir = Eigen::Vector3f(tl_uni(tl_gen), tl_uni(tl_gen), tl_uni(tl_gen));
+              } while (dir.squaredNorm() < 1e-6f);
+              return dir.normalized() * spawn_offset;
+            };
+
+            // Mutation check
+            double rand_val = (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0;
+            if (rand_val >= total_mutation_probability) {
+              Cell d1(cell->second, cell->second.fitness);
+              d1.position = parent_pos + makeOffset();
+              Cell d2(cell->second, cell->second.fitness);
+              d2.position = parent_pos + makeOffset();
+              new_cells.push_back(std::move(d1));
+              new_cells.push_back(std::move(d2));
+            } else {
+              double prob_sum = 0.0;
+              for (const auto& mut : available_mutation_types) {
+                prob_sum += mut.second.probability;
+                if (rand_val < prob_sum) {
+                  Cell d1(cell->second,
+                          cell->second.fitness * (1.0 + mut.second.effect));
+                  d1.mutations.push_back({0, mut.second.type_id});
+                  d1.position = parent_pos + makeOffset();
+                  Cell d2(cell->second, cell->second.fitness);
+                  d2.position = parent_pos + makeOffset();
+                  new_cells.push_back(std::move(d1));
+                  new_cells.push_back(std::move(d2));
+                  break;
                 }
               }
             }
@@ -233,6 +338,7 @@ void SimulationEngine::stochasticStep() {
         }
       });
 
+  // --- Step 7: Sequential insert / erase on CellMap ---
   auto starting_id = N + total_deaths;
   for (size_t i = 0; i < new_cells.size(); ++i) {
     CellMap::accessor accessor;
@@ -240,7 +346,6 @@ void SimulationEngine::stochasticStep() {
     if (!cells.insert(accessor, {starting_id + i, std::move(new_cells[i])})) {
       spdlog::error("Failed to insert new cell {}", starting_id + i);
     }
-
     for (auto& mut : accessor->second.mutations) {
       if (mut.first == 0) mut.first = starting_id + i;
     }
@@ -251,6 +356,13 @@ void SimulationEngine::stochasticStep() {
   total_deaths += death_count;
   actual_population = actual_population + new_cells_count - death_count;
 
+  // --- Step 8: Mechanical relaxation (force-based pushing) ---
+  // Resolves overlaps created by daughter cell placement.
+  if (actual_population > 0) {
+    mechanicalRelaxationStep();
+  }
+
+  // --- Periodic snapshots & logging ---
   int current_tau = static_cast<int>(tau);
   if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {
     takeStatSnapshot();
@@ -261,18 +373,108 @@ void SimulationEngine::stochasticStep() {
     last_population_snapshot_tau = current_tau;
   }
 
-  if (config->graveyard_pruning_interval > 0 && 
-      current_tau % config->graveyard_pruning_interval == 0 && 
+  if (config->graveyard_pruning_interval > 0 &&
+      current_tau % config->graveyard_pruning_interval == 0 &&
       current_tau != last_pruning_tau) {
-      pruneGraveyard();
-      last_pruning_tau = current_tau;
+    pruneGraveyard();
+    last_pruning_tau = current_tau;
   }
-  
-  // Log memory usage periodically (e.g. same as stats resolution or separate)
+
   if (current_tau % config->stat_res == 0) {
-       logMemoryUsage();
+    logMemoryUsage();
   }
 }
+
+// ============================================================================
+// mechanicalRelaxationStep() — Lock-free double-buffered pushing
+// ============================================================================
+//
+// Resolves physical overlaps via Hooke's law repulsion.
+// Uses double-buffering: reads from positions_read, writes to positions_write.
+// Each index is written by exactly one thread → zero data races, no mutexes.
+//
+// Per sub-step complexity: O(N log N) for grid rebuild, O(N) for force calc.
+// Total: O(mech_iterations * N log N).
+// ============================================================================
+void SimulationEngine::mechanicalRelaxationStep() {
+  const int iterations = config->mech_iterations;
+  const float dt = config->mech_dt;
+  constexpr float k = 1.0f;              // Hooke constant
+  constexpr float two_R = 2.0f * Cell::CELL_RADIUS;
+  constexpr float min_dist = 1e-4f;      // Avoid division by zero
+
+  // Rebuild active cell list (population may have changed after birth/death)
+  active_cell_ids.clear();
+  active_cell_ids.reserve(actual_population);
+  for (auto it = cells.begin(); it != cells.end(); ++it) {
+    active_cell_ids.push_back(it->first);
+  }
+  const uint32_t N = static_cast<uint32_t>(active_cell_ids.size());
+
+  // Extract current positions into contiguous buffer
+  positions_read.resize(N);
+  tbb::parallel_for(
+      tbb::blocked_range<uint32_t>(0, N),
+      [&](const tbb::blocked_range<uint32_t>& range) {
+        for (uint32_t i = range.begin(); i != range.end(); ++i) {
+          CellMap::const_accessor acc;
+          if (cells.find(acc, active_cell_ids[i])) {
+            positions_read[i] = acc->second.position;
+          }
+        }
+      });
+
+  positions_write.resize(N);
+
+  for (int iter = 0; iter < iterations; ++iter) {
+    // Rebuild grid from current positions for this sub-step. O(N log N).
+    grid.rebuild(positions_read.data(), N);
+
+    // Compute forces and new positions in parallel.  O(N), O(1) per cell.
+    // Read from positions_read (shared, read-only)
+    // Write to positions_write[i] (each i owned by exactly one thread)
+    tbb::parallel_for(
+        tbb::blocked_range<uint32_t>(0, N),
+        [&](const tbb::blocked_range<uint32_t>& range) {
+          for (uint32_t i = range.begin(); i != range.end(); ++i) {
+            Eigen::Vector3f force = Eigen::Vector3f::Zero();
+            const Eigen::Vector3f& xi = positions_read[i];
+
+            // Iterate neighbors in the 27 surrounding voxels
+            grid.forEachNeighbor(xi, [&](uint32_t j) {
+              if (j == i) return;  // Skip self
+              const Eigen::Vector3f& xj = positions_read[j];
+              Eigen::Vector3f diff = xi - xj;
+              float dist = diff.norm();
+              if (dist < two_R && dist > min_dist) {
+                // Hooke's law repulsion: F = k * (2R - d) * (xi - xj) / d
+                float overlap = two_R - dist;
+                force += (k * overlap / dist) * diff;
+              }
+            });
+
+            // Euler integration: Δx = F * dt
+            positions_write[i] = xi + force * dt;
+          }
+        });
+
+    // Swap buffers: new positions become the read source for next iteration.
+    std::swap(positions_read, positions_write);
+  }
+
+  // Write final positions back to CellMap.  O(N) parallel.
+  tbb::parallel_for(
+      tbb::blocked_range<uint32_t>(0, N),
+      [&](const tbb::blocked_range<uint32_t>& range) {
+        for (uint32_t i = range.begin(); i != range.end(); ++i) {
+          CellMap::accessor acc;
+          if (cells.find(acc, active_cell_ids[i])) {
+            acc->second.position = positions_read[i];
+          }
+        }
+      });
+}
+
 void SimulationEngine::takeStatSnapshot() {
   double total_fitness = 0.0;
   double total_fitness_squared = 0.0;
@@ -286,7 +488,12 @@ void SimulationEngine::takeStatSnapshot() {
 
   size_t living_cells_count = cells.size();
 
-  // Single loop for calculations
+  // Guard against zero population (all cells died this step)
+  if (living_cells_count == 0) {
+    generational_stat_report.push_back({tau, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0});
+    return;
+  }
+
   for (const auto& cell : cells) {
     double f = cell.second.fitness;
     double f2 = f * f;
@@ -309,11 +516,9 @@ void SimulationEngine::takeStatSnapshot() {
     total_mutations_fourth += m4;
   }
 
-  // Compute means
   double mean_fitness = total_fitness / living_cells_count;
   double mean_mutations = total_mutations / living_cells_count;
 
-  // Compute raw moments
   double M2_fitness = total_fitness_squared / living_cells_count;
   double M3_fitness = total_fitness_cubed / living_cells_count;
   double M4_fitness = total_fitness_fourth / living_cells_count;
@@ -322,11 +527,9 @@ void SimulationEngine::takeStatSnapshot() {
   double M3_mutations = total_mutations_cubed / living_cells_count;
   double M4_mutations = total_mutations_fourth / living_cells_count;
 
-  // Compute variances
   double fitness_variance = M2_fitness - mean_fitness * mean_fitness;
   double mutations_variance = M2_mutations - mean_mutations * mean_mutations;
 
-  // Compute central moments (skewness and kurtosis components)
   double fitness_skewness =
       M3_fitness - 3.0 * mean_fitness * M2_fitness + 2.0 * std::pow(mean_fitness, 3);
   double fitness_kurtosis = M4_fitness - 4.0 * mean_fitness * M3_fitness +
@@ -339,7 +542,6 @@ void SimulationEngine::takeStatSnapshot() {
                               6.0 * mean_mutations * mean_mutations * M2_mutations -
                               3.0 * std::pow(mean_mutations, 4);
 
-  // Store the snapshot
   generational_stat_report.push_back({
       tau,
       mean_fitness,
@@ -354,124 +556,134 @@ void SimulationEngine::takeStatSnapshot() {
   });
 }
 
+// ============================================================================
+// takePopulationSnapshot() — Binary snapshot written directly to disk
+// ============================================================================
+//
+// Replaces the old deep-copy-CellMap-to-vector approach.
+// Uses packed CellSnapshotBinary (25 bytes/cell) and raw ostream::write
+// for minimal I/O overhead.  10^6 cells → ~25 MB per snapshot.
+// ============================================================================
 void SimulationEngine::takePopulationSnapshot() {
-  CellMap cells_copy;
-  cells_copy.rehash(cells.size());
-  for (const auto& cell : cells) {
-    CellMap::accessor accessor;
-    cells_copy.insert(accessor, {cell.first, cell.second});
+  std::string path =
+      config->output_path + "/population_data/population_tau_" +
+      std::to_string(static_cast<int>(tau)) + ".bin";
+  writeBinarySnapshot(path);
+}
+
+void SimulationEngine::writeBinarySnapshot(const std::string& path) {
+  // Ensure directory exists
+  auto dir = std::filesystem::path(path).parent_path();
+  if (!dir.empty() && !std::filesystem::exists(dir)) {
+    std::filesystem::create_directories(dir);
   }
-  generational_popul_report.push_back({tau, std::move(cells_copy)});
+
+  std::ofstream out(path, std::ios::binary);
+  if (!out.is_open()) {
+    spdlog::warn("Failed to open binary snapshot file: {}", path);
+    return;
+  }
+
+  // Write header: cell count (uint32_t)
+  uint32_t count = static_cast<uint32_t>(cells.size());
+  out.write(reinterpret_cast<const char*>(&count), sizeof(count));
+
+  // Build flat snapshot buffer.  O(N) sequential.
+  std::vector<CellSnapshotBinary> buffer;
+  buffer.reserve(count);
+  for (const auto& [cell_id, cell] : cells) {
+    CellSnapshotBinary snap;
+    snap.id = cell.id;
+    snap.parent_id = cell.parent_id;
+    snap.fitness = cell.fitness;
+    snap.x = cell.position.x();
+    snap.y = cell.position.y();
+    snap.z = cell.position.z();
+    snap.mutations_count = static_cast<uint8_t>(
+        std::min(static_cast<size_t>(255), cell.mutations.size()));
+    buffer.push_back(snap);
+  }
+
+  // Single bulk write — much faster than per-cell I/O.
+  out.write(reinterpret_cast<const char*>(buffer.data()),
+            buffer.size() * sizeof(CellSnapshotBinary));
 }
 
 void SimulationEngine::pruneGraveyard() {
   spdlog::info("Pruning graveyard... Current size: {}", cells_graveyard.size());
   
-  // 1. Identify all living cells (potential starting points)
   std::unordered_set<uint32_t> living_ids;
   for (const auto& cell : cells) {
-      living_ids.insert(cell.first);
+    living_ids.insert(cell.first);
   }
 
-  // 2. Traverse up the lineage to mark all ancestors
   std::unordered_set<uint32_t> reachable_dead_cells;
   
-  // Use a stack for non-recursive traversal
-  // We need to check both living cells' parents and already reachable dead cells' parents
-  // But strictly, we only care about ancestors of currently living cells.
-  
   for (uint32_t start_id : living_ids) {
-      uint32_t current_id = start_id;
+    uint32_t current_id = start_id;
+    CellMap::const_accessor accessor;
+    if (cells.find(accessor, current_id)) {
+      uint32_t parent_id = accessor->second.parent_id;
       
-      // Get parent of current cell
-      // Since it's living, we look in 'cells' map first to get its parent (not stored directly in cell?)
-      // Wait, Cell struct has parent_id?
-      // Let's check Cell definition. Run.hpp includes ecs/Cell.hpp
-      
-      // Assuming Cell has parent_id. 
-      // If the cell is alive, we get its parent.
-      
-      CellMap::const_accessor accessor;
-      if (cells.find(accessor, current_id)) {
-          uint32_t parent_id = accessor->second.parent_id;
-          
-          // Traverse up
-          while (parent_id != 0) {
-              // If we already visited this parent, we can stop this branch
-              if (reachable_dead_cells.count(parent_id) || living_ids.count(parent_id)) {
-                  break;
-              }
-              
-              // Check if parent is in graveyard
-              Graveyard::const_accessor grave_accessor;
-              if (cells_graveyard.find(grave_accessor, parent_id)) {
-                  reachable_dead_cells.insert(parent_id);
-                  parent_id = grave_accessor->second.first; // Get grandparent
-              } else if (cells.find(accessor, parent_id)) {
-                  // Parent is alive, no need to add to unreachable dead (obviously)
-                  // But we continue traversal from it? 
-                  // If parent is alive, it's already in living_ids, so it will be processed in outer loop.
-                  // So we can stop here.
-                  break;
-              } else {
-                  // Parent not found in living or graveyard? (Maybe deleted root or error)
-                  break;
-              }
-          }
+      while (parent_id != 0) {
+        if (reachable_dead_cells.count(parent_id) || living_ids.count(parent_id)) {
+          break;
+        }
+        
+        Graveyard::const_accessor grave_accessor;
+        if (cells_graveyard.find(grave_accessor, parent_id)) {
+          reachable_dead_cells.insert(parent_id);
+          parent_id = grave_accessor->second.first;
+        } else if (cells.find(accessor, parent_id)) {
+          break;
+        } else {
+          break;
+        }
       }
+    }
   }
-  
-  // 3. Remove unreachable dead cells
-  // tbb::concurrent_hash_map doesn't support easy iteration-deletion.
-  // We can collect IDs to remove or build a new map.
-  // Given we expect to remove a lot, building a new map might be better?
-  // Or just iterate and erase if not in set.
   
   std::vector<uint32_t> to_remove;
   for (const auto& item : cells_graveyard) {
-      if (reachable_dead_cells.find(item.first) == reachable_dead_cells.end()) {
-          to_remove.push_back(item.first);
-      }
+    if (reachable_dead_cells.find(item.first) == reachable_dead_cells.end()) {
+      to_remove.push_back(item.first);
+    }
   }
   
   for (uint32_t id : to_remove) {
-      cells_graveyard.erase(id);
+    cells_graveyard.erase(id);
   }
   
-  spdlog::info("Graveyard pruned. New size: {}. Removed: {} cells.", 
+  spdlog::info("Graveyard pruned. New size: {}. Removed: {} cells.",
                cells_graveyard.size(), to_remove.size());
 }
 
 size_t SimulationEngine::getRSS() {
-    size_t rss = 0;
-    std::ifstream statm("/proc/self/statm");
-    if (statm.is_open()) {
-        size_t ignore;
-        statm >> ignore >> rss; // 2nd value is RSS in pages
-    }
-    long page_size_kb = sysconf(_SC_PAGESIZE) / 1024;
-    return rss * page_size_kb;
+  size_t rss = 0;
+  std::ifstream statm("/proc/self/statm");
+  if (statm.is_open()) {
+    size_t ignore;
+    statm >> ignore >> rss;
+  }
+  long page_size_kb = sysconf(_SC_PAGESIZE) / 1024;
+  return rss * page_size_kb;
 }
 
 void SimulationEngine::logMemoryUsage() {
-    if (!memory_log_file.is_open()) return;
+  if (!memory_log_file.is_open()) return;
 
-    size_t rss_kb = getRSS();
-    size_t cells_count = cells.size();
-    size_t graveyard_count = cells_graveyard.size();
-    
-    // Estimations
-    size_t estimated_cells_kb = (cells_count * sizeof(Cell)) / 1024;
-    // Graveyard value is pair<uint32_t, double> (12 bytes) + key (4 bytes) + overhead (~16-24 bytes node)
-    // bucket overhead etc. TBB map is complex. 
-    // Approx 32-48 bytes per entry?
-    size_t estimated_graveyard_kb = (graveyard_count * 48) / 1024; 
+  size_t rss_kb = getRSS();
+  size_t cells_count = cells.size();
+  size_t graveyard_count = cells_graveyard.size();
+  
+  size_t estimated_cells_kb = (cells_count * sizeof(Cell)) / 1024;
+  size_t estimated_graveyard_kb = (graveyard_count * 48) / 1024;
 
-    memory_log_file << tau << "," 
-                    << rss_kb << "," 
-                    << cells_count << "," 
-                    << graveyard_count << ","
-                    << estimated_cells_kb << ","
-                    << estimated_graveyard_kb << "\n";
-    memory_log_file.flush();
+  memory_log_file << tau << ","
+                  << rss_kb << ","
+                  << cells_count << ","
+                  << graveyard_count << ","
+                  << estimated_cells_kb << ","
+                  << estimated_graveyard_kb << "\n";
+  memory_log_file.flush();
 }

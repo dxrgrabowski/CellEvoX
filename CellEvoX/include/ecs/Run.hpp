@@ -25,7 +25,6 @@ class Run {
   tbb::concurrent_hash_map<uint32_t, NodeData> phylogenetic_tree;
   Graveyard cells_graveyard;
   std::vector<StatSnapshot> generational_stat_report;
-  std::vector<std::pair<int, CellMap>> generational_popul_report;
   size_t total_deaths = 0;
   size_t total_mutations = 0;
   int driver_mutations = 0;
@@ -42,7 +41,6 @@ class Run {
       std::unordered_map<uint8_t, MutationType> mutation_id_to_type,
       Graveyard &&cells_graveyard,
       std::vector<StatSnapshot> &&generational_stat_report,
-      std::vector<std::pair<int, CellMap>> generational_popul_report,
       size_t deaths,
       double tau);
 
