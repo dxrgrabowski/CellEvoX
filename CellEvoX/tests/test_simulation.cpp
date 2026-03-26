@@ -73,3 +73,36 @@ TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     REQUIRE(runData.generational_stat_report.size() == 10);
     REQUIRE(runData.generational_popul_report.size() == 10);
 }
+
+TEST_CASE("Simulation Determinism", "[Determinism]") {
+    auto config1 = std::make_shared<SimulationConfig>();
+    config1->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config1->tau_step = 0.05;
+    config1->seed = 42;
+    config1->initial_population = 100;
+    config1->env_capacity = 1000;
+    config1->steps = 100;
+    config1->stat_res = 1;
+    config1->popul_res = 10;
+    config1->output_path = "/tmp/test_sim1";
+    config1->mutations.push_back({0.1f, 0.05f, 1, false});
+
+    auto config2 = std::make_shared<SimulationConfig>();
+    *config2 = *config1; // exact copy
+    config2->output_path = "/tmp/test_sim2";
+
+    SimulationEngine engine1(config1);
+    auto runData1 = engine1.run(100);
+
+    SimulationEngine engine2(config2);
+    auto runData2 = engine2.run(100);
+
+    // Verify sizes
+    REQUIRE(runData1.generational_stat_report.size() == runData2.generational_stat_report.size());
+    
+    // Verify values
+    for(size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
+        REQUIRE(runData1.generational_stat_report[i].mean_fitness == runData2.generational_stat_report[i].mean_fitness);
+        REQUIRE(runData1.generational_stat_report[i].total_living_cells == runData2.generational_stat_report[i].total_living_cells);
+    }
+}

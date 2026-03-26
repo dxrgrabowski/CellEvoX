@@ -1,4 +1,5 @@
 {
+  "seed": 42,
   "stochastic": true,
   "tau_step": 0.005,
   "initial_population": 10000,

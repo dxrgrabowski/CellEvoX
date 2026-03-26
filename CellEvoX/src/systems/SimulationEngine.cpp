@@ -29,7 +29,7 @@ void SimulationEngine::signalHandler(int signum) {
 }
 
 SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
-    : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0) {
+    : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0), rng(config->seed) {
   
   // Set global spdlog level based on config verbosity
   // 0 = off, 1 = warnings only, 2 = full info/debug
@@ -147,14 +147,12 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
 
-Eigen::VectorXd generateExponentialDistribution(int size) {
-  std::random_device rd;
-  std::mt19937 gen(rd());
+Eigen::VectorXd generateExponentialDistribution(int size, std::mt19937& rng) {
   std::exponential_distribution<> exp_dist(1.0);
 
   Eigen::VectorXd result(size);
   for (int i = 0; i < size; ++i) {
-    result(i) = exp_dist(gen);
+    result(i) = exp_dist(rng);
   }
 
   return result;
@@ -167,14 +165,15 @@ void SimulationEngine::stochasticStep() {
   const size_t Nc = config->env_capacity;
   const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
 
-  Eigen::VectorXd death_probs = generateExponentialDistribution(N) / scaling_factor;
+  Eigen::VectorXd death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
   std::vector<uint32_t> alive_cell_indices;
   for (auto it = cells.begin(); it != cells.end(); ++it) {
     alive_cell_indices.push_back(it->first);
   }
+  std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
 
   Eigen::VectorXd birth_probs =
-      generateExponentialDistribution(N).array() /
+      generateExponentialDistribution(N, rng).array() /
       FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices).array();
 
   if (alive_cell_indices.size() != N) {
@@ -185,6 +184,13 @@ void SimulationEngine::stochasticStep() {
   if (death_probs.size() != N || birth_probs.size() != N) {
     spdlog::error("Death arr: {} B: {} AP: {}", death_probs.size(), birth_probs.size(), N);
   }
+
+  std::vector<double> mutation_rand_vals(N);
+  std::uniform_real_distribution<> unif_dist(0.0, 1.0);
+  for (size_t i = 0; i < N; ++i) {
+    mutation_rand_vals[i] = unif_dist(rng);
+  }
+
   tbb::concurrent_vector<Cell> new_cells;
   tbb::concurrent_vector<uint32_t> dead_cells;
   std::atomic<uint32_t> new_cells_count(0), death_count(0);
@@ -208,8 +214,7 @@ void SimulationEngine::stochasticStep() {
               cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
               dead_cells.push_back(idx);
               death_count++;
-              double rand_val =
-                  (Eigen::VectorXd::Random(1)(0) + 1.0) / 2.0;  // Random val from 0.0 to 1.0
+              double rand_val = mutation_rand_vals[i];
               if (rand_val >= total_mutation_probability) {
                 new_cells.emplace_back(cell->second, cell->second.fitness);
                 new_cells.emplace_back(cell->second, cell->second.fitness);
@@ -233,11 +238,25 @@ void SimulationEngine::stochasticStep() {
         }
       });
 
+  std::vector<Cell> sorted_new_cells;
+  sorted_new_cells.reserve(new_cells.size());
+  for (auto& c : new_cells) sorted_new_cells.push_back(std::move(c));
+
+  std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), [](const Cell& a, const Cell& b) {
+      if (a.parent_id != b.parent_id) return a.parent_id < b.parent_id;
+      if (a.fitness != b.fitness) return a.fitness < b.fitness;
+      if (a.mutations.size() != b.mutations.size()) return a.mutations.size() < b.mutations.size();
+      if (!a.mutations.empty() && !b.mutations.empty()) {
+          return a.mutations.back().second < b.mutations.back().second;
+      }
+      return false;
+  });
+
   auto starting_id = N + total_deaths;
-  for (size_t i = 0; i < new_cells.size(); ++i) {
+  for (size_t i = 0; i < sorted_new_cells.size(); ++i) {
     CellMap::accessor accessor;
-    new_cells[i].id = starting_id + i;
-    if (!cells.insert(accessor, {starting_id + i, std::move(new_cells[i])})) {
+    sorted_new_cells[i].id = starting_id + i;
+    if (!cells.insert(accessor, {starting_id + i, std::move(sorted_new_cells[i])})) {
       spdlog::error("Failed to insert new cell {}", starting_id + i);
     }
 
@@ -286,14 +305,24 @@ void SimulationEngine::takeStatSnapshot() {
 
   size_t living_cells_count = cells.size();
 
-  // Single loop for calculations
+  std::vector<uint32_t> sorted_keys;
+  sorted_keys.reserve(living_cells_count);
   for (const auto& cell : cells) {
-    double f = cell.second.fitness;
+    sorted_keys.push_back(cell.first);
+  }
+  std::sort(sorted_keys.begin(), sorted_keys.end());
+
+  for (uint32_t key : sorted_keys) {
+    CellMap::const_accessor accessor;
+    if (!cells.find(accessor, key)) continue;
+    const auto& cell_val = accessor->second;
+
+    double f = cell_val.fitness;
     double f2 = f * f;
     double f3 = f2 * f;
     double f4 = f3 * f;
 
-    double m = static_cast<double>(cell.second.mutations.size());
+    double m = static_cast<double>(cell_val.mutations.size());
     double m2 = m * m;
     double m3 = m2 * m;
     double m4 = m3 * m;

@@ -4,6 +4,7 @@
 #include <tbb/concurrent_hash_map.h>
 
 #include <random>
+#include <map>
 #include <unordered_set>
 #include <vector>
 
@@ -21,7 +22,7 @@ using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>
 class Run {
  public:
   CellMap cells;
-  std::unordered_map<uint8_t, MutationType> mutation_id_to_type;
+  std::map<uint8_t, MutationType> mutation_id_to_type;
   tbb::concurrent_hash_map<uint32_t, NodeData> phylogenetic_tree;
   Graveyard cells_graveyard;
   std::vector<StatSnapshot> generational_stat_report;
@@ -39,7 +40,7 @@ class Run {
   double tau = 0.0;
 
   Run(CellMap &&cells,
-      std::unordered_map<uint8_t, MutationType> mutation_id_to_type,
+      std::map<uint8_t, MutationType> mutation_id_to_type,
       Graveyard &&cells_graveyard,
       std::vector<StatSnapshot> &&generational_stat_report,
       std::vector<std::pair<int, CellMap>> generational_popul_report,
