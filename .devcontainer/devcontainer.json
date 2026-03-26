@@ -23,7 +23,9 @@
                 "ms-vscode.cpptools-themes",
                 "ms-vscode-remote.remote-containers",
                 "ms-azuretools.vscode-docker",
-                "bbenoist.QML"
+                "bbenoist.QML",
+                "GitHub.vscode-pull-request-github",
+                "GitHub.codespaces"
             ]
         }
     },

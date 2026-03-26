@@ -28,6 +28,11 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
                                          : SimulationType::DETERMINISTIC_RK4;
     config.tau_step = j.at("tau_step");
+    if (j.contains("seed")) {
+      config.seed = j.at("seed");
+    } else {
+      config.seed = 42;
+    }
     config.initial_population = j.at("initial_population");
     config.env_capacity = j.at("env_capacity");
     config.steps = j.at("steps");
@@ -66,6 +71,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
 
 inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Simulation configuration:");
+  spdlog::info("Seed: {}", config.seed);
   spdlog::info("Simulation type: {}", toString(config.sim_type));
   spdlog::info("Tau step: {:.3f}", config.tau_step);
   spdlog::info("Initial population: {}", config.initial_population);

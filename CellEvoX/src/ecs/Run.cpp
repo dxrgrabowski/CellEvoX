@@ -4,7 +4,7 @@
 namespace ecs {
 
 Run::Run(CellMap&& cells,
-         std::unordered_map<uint8_t, MutationType> mutation_id_to_type,
+         std::map<uint8_t, MutationType> mutation_id_to_type,
          Graveyard&& cells_graveyard,
          std::vector<StatSnapshot>&& generational_stat_report,
          std::vector<std::pair<int, CellMap>> generational_popul_report,

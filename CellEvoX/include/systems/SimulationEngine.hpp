@@ -5,6 +5,7 @@
 #include <atomic>
 #include <csignal>
 #include <fstream>
+#include <map>
 
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
@@ -16,6 +17,7 @@ enum class SimulationType { STOCHASTIC_TAU_LEAP, DETERMINISTIC_RK4 };
 struct SimulationConfig {
   SimulationType sim_type;
   double tau_step;
+  uint32_t seed = 42;
   size_t initial_population;
   size_t env_capacity;
   size_t steps;
@@ -61,7 +63,7 @@ class SimulationEngine {
   CellMap cells;
   // <id, <parent_id, death_time>>
   Graveyard cells_graveyard;
-  std::unordered_map<uint8_t, MutationType> available_mutation_types;
+  std::map<uint8_t, MutationType> available_mutation_types;
   std::vector<StatSnapshot> generational_stat_report;
   std::vector<std::pair<int, CellMap>> generational_popul_report;
   size_t actual_population;
@@ -72,6 +74,7 @@ class SimulationEngine {
   int last_population_snapshot_tau = 0;
   int last_pruning_tau = -1;
   std::shared_ptr<SimulationConfig> config;
+  std::mt19937 rng;
   
   std::ofstream memory_log_file;
   void logMemoryUsage();
