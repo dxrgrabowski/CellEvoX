@@ -132,11 +132,24 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     auto runData = engine.run(100);
 
     // Assuming tests are run from the build or project root directory
-    std::string baseline_path = "CellEvoX/tests/benchmarks/correctness_baseline.json";
-    
+    std::vector<std::string> possible_paths = {
+        "CellEvoX/tests/benchmarks/correctness_baseline.json",
+        "tests/benchmarks/correctness_baseline.json",
+        "../CellEvoX/tests/benchmarks/correctness_baseline.json",
+        "../tests/benchmarks/correctness_baseline.json"
+    };
+    std::string baseline_path = "";
+    for (const auto& p : possible_paths) {
+        if (std::filesystem::exists(p)) {
+            baseline_path = p;
+            break;
+        }
+    }
+
     // Check if we should update the baseline
     if (const char* update_flag = std::getenv("CELLEVOX_UPDATE_BASELINE")) {
         if (std::string(update_flag) == "1") {
+            if (baseline_path.empty()) baseline_path = "CellEvoX/tests/benchmarks/correctness_baseline.json";
             nlohmann::json j_array = nlohmann::json::array();
             for (const auto& stat : runData.generational_stat_report) {
                 j_array.push_back({
@@ -152,7 +165,7 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
                     {"mutations_kurtosis", stat.mutations_kurtosis}
                 });
             }
-            std::filesystem::create_directories("CellEvoX/tests/benchmarks");
+            std::filesystem::create_directories(std::filesystem::path(baseline_path).parent_path());
             std::ofstream out(baseline_path);
             out << j_array.dump(2);
             SUCCEED("Correctness baseline generated successfully.");
@@ -161,6 +174,7 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     }
 
     // Otherwise, compare against baseline
+    REQUIRE(!baseline_path.empty());
     REQUIRE(std::filesystem::exists(baseline_path));
     std::ifstream in(baseline_path);
     nlohmann::json j_baseline;
