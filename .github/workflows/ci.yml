@@ -7,26 +7,13 @@ on:
     branches: [ main ]
 
 jobs:
-  bench-regression-check:
+  build-base-baseline:
     runs-on: ubuntu-24.04
-
     steps:
     - name: Checkout Head (Current PR or New Main Commit)
       uses: actions/checkout@v4
       with:
         path: head
-
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache
-
-    - name: Setup Ccache
-      uses: hendrikmuhs/ccache-action@v1.2
-      with:
-        key: ${{ runner.os }}-ccache-${{ github.ref_name }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-main
 
     - name: Determine Base Commit
       id: base_info
@@ -55,6 +42,20 @@ jobs:
         path: ci_baseline.json
         key: baseline-${{ steps.base_info.outputs.base_sha }}
 
+    - name: Install Dependencies
+      if: steps.cache-baseline.outputs.cache-hit != 'true'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache
+
+    - name: Setup Ccache
+      if: steps.cache-baseline.outputs.cache-hit != 'true'
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-ccache-base-${{ steps.base_info.outputs.base_sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-main
+
     - name: Build Base Baseline (ToT)
       if: steps.cache-baseline.outputs.cache-hit != 'true'
       run: |
@@ -63,15 +64,81 @@ jobs:
         cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build base_build --target CellEvoXTests -j$(nproc)
         python3 head/CellEvoX/tests/benchmarks/capture_baseline.py --binary base_build/bin/CellEvoXTests --out ci_baseline.json
+        
+    - name: Upload Baseline Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci_baseline
+        path: ci_baseline.json
+        retention-days: 1
 
-    - name: Build Head (Current PR)
+  build-and-test-head:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout Head
+      uses: actions/checkout@v4
+      with:
+        path: head
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache
+
+    - name: Setup Ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-ccache-head-${{ github.ref_name }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-main
+
+    - name: Build Head
       run: |
         cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build head_build --target CellEvoXTests -j$(nproc)
 
     - name: Run Unit Tests
-      run: ./head_build/bin/CellEvoXTests "~[benchmark]"
+      run: |
+        cd head_build
+        # Run non-benchmark tests in parallel
+        ctest -j$(nproc) --output-on-failure -E "High-Performance Regression"
 
+    - name: Upload Head Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: head_binary
+        path: head_build/bin/CellEvoXTests
+        retention-days: 1
+
+  performance-regression:
+    needs: [build-base-baseline, build-and-test-head]
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout Head (For Scripts)
+      uses: actions/checkout@v4
+      with:
+        path: head
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib
+        
+    - name: Download Baseline Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ci_baseline
+        path: .
+
+    - name: Download Head Binary Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: head_binary
+        path: head_build/bin/
+        
+    - name: Set Permissions
+      run: chmod +x head_build/bin/CellEvoXTests
+      
     - name: Strict Performance Check (5% Tolerance)
       run: |
         python3 head/CellEvoX/tests/benchmarks/compare_benchmarks.py \
