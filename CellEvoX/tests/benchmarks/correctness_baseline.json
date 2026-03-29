@@ -1,0 +1,50 @@
+[
+  {
+    "fitness_kurtosis": 3.978746526467347e-06,
+    "fitness_skewness": 4.170303524597685e-05,
+    "fitness_variance": 0.0004618722157128108,
+    "mean_fitness": 1.0048543700894106,
+    "mean_mutations": 0.04854368932038835,
+    "mutations_kurtosis": 0.03978742734141726,
+    "mutations_skewness": 0.04170300541672348,
+    "mutations_variance": 0.046187199547553966,
+    "tau": 1.0000000000000002,
+    "total_living_cells": 206
+  },
+  {
+    "fitness_kurtosis": 2.7959076049910436e-05,
+    "fitness_skewness": 0.00017611037530995688,
+    "fitness_variance": 0.0014690971876691883,
+    "mean_fitness": 1.0129556679373304,
+    "mean_mutations": 0.12807881773399016,
+    "mutations_kurtosis": 0.23863966060531305,
+    "mutations_skewness": 0.16038153222782292,
+    "mutations_variance": 0.1412312844281589,
+    "tau": 2.000000000000001,
+    "total_living_cells": 406
+  },
+  {
+    "fitness_kurtosis": 2.76064596107517e-05,
+    "fitness_skewness": 0.00018470693572814056,
+    "fitness_variance": 0.001810023519039472,
+    "mean_fitness": 1.017709927704498,
+    "mean_mutations": 0.17557251908396945,
+    "mutations_kurtosis": 0.23694789378228728,
+    "mutations_skewness": 0.1694397602232294,
+    "mutations_variance": 0.17528116077151681,
+    "tau": 3.049999999999997,
+    "total_living_cells": 655
+  },
+  {
+    "fitness_kurtosis": 2.8536128568124042e-05,
+    "fitness_skewness": 0.00019355778732732531,
+    "fitness_variance": 0.002310927486841141,
+    "mean_fitness": 1.0251847348483325,
+    "mean_mutations": 0.25,
+    "mutations_kurtosis": 0.24366918103448276,
+    "mutations_skewness": 0.17687807881773396,
+    "mutations_variance": 0.22444581280788178,
+    "tau": 4.049999999999994,
+    "total_living_cells": 812
+  }
+]
