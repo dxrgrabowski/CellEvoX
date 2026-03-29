@@ -131,19 +131,20 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     SimulationEngine engine(config);
     auto runData = engine.run(100);
 
-    // Assuming tests are run from the build or project root directory
-    std::vector<std::string> possible_paths = {
-        "CellEvoX/tests/benchmarks/correctness_baseline.json",
-        "tests/benchmarks/correctness_baseline.json",
-        "../CellEvoX/tests/benchmarks/correctness_baseline.json",
-        "../tests/benchmarks/correctness_baseline.json"
-    };
     std::string baseline_path = "";
-    for (const auto& p : possible_paths) {
-        if (std::filesystem::exists(p)) {
-            baseline_path = p;
+    std::filesystem::path current_dir = std::filesystem::current_path();
+    while (current_dir != current_dir.parent_path()) {
+        std::filesystem::path test_path = current_dir / "tests" / "benchmarks" / "correctness_baseline.json";
+        if (std::filesystem::exists(test_path)) {
+            baseline_path = test_path.string();
             break;
         }
+        std::filesystem::path test_path_alt = current_dir / "CellEvoX" / "tests" / "benchmarks" / "correctness_baseline.json";
+        if (std::filesystem::exists(test_path_alt)) {
+            baseline_path = test_path_alt.string();
+            break;
+        }
+        current_dir = current_dir.parent_path();
     }
 
     // Check if we should update the baseline
