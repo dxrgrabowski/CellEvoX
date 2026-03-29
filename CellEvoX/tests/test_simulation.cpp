@@ -132,25 +132,33 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     auto runData = engine.run(100);
 
     std::string baseline_path = "";
-    std::filesystem::path current_dir = std::filesystem::current_path();
-    while (current_dir != current_dir.parent_path()) {
-        std::filesystem::path test_path = current_dir / "tests" / "benchmarks" / "correctness_baseline.json";
-        if (std::filesystem::exists(test_path)) {
-            baseline_path = test_path.string();
-            break;
+#ifdef CELLEVOX_SOURCE_DIR
+    std::filesystem::path source_dir(CELLEVOX_SOURCE_DIR);
+    std::filesystem::path macro_path = source_dir / "tests" / "benchmarks" / "correctness_baseline.json";
+    baseline_path = macro_path.string();
+#endif
+
+    if (baseline_path.empty() || !std::filesystem::exists(std::filesystem::path(baseline_path).parent_path())) {
+        std::filesystem::path current_dir = std::filesystem::current_path();
+        while (current_dir != current_dir.parent_path()) {
+            std::filesystem::path test_path = current_dir / "tests" / "benchmarks" / "correctness_baseline.json";
+            if (std::filesystem::exists(test_path.parent_path())) {
+                baseline_path = test_path.string();
+                break;
+            }
+            std::filesystem::path test_path_alt = current_dir / "CellEvoX" / "tests" / "benchmarks" / "correctness_baseline.json";
+            if (std::filesystem::exists(test_path_alt.parent_path())) {
+                baseline_path = test_path_alt.string();
+                break;
+            }
+            current_dir = current_dir.parent_path();
         }
-        std::filesystem::path test_path_alt = current_dir / "CellEvoX" / "tests" / "benchmarks" / "correctness_baseline.json";
-        if (std::filesystem::exists(test_path_alt)) {
-            baseline_path = test_path_alt.string();
-            break;
-        }
-        current_dir = current_dir.parent_path();
     }
 
     // Check if we should update the baseline
     if (const char* update_flag = std::getenv("CELLEVOX_UPDATE_BASELINE")) {
         if (std::string(update_flag) == "1") {
-            if (baseline_path.empty()) baseline_path = "CellEvoX/tests/benchmarks/correctness_baseline.json";
+            if (baseline_path.empty()) baseline_path = "tests/benchmarks/correctness_baseline.json";
             nlohmann::json j_array = nlohmann::json::array();
             for (const auto& stat : runData.generational_stat_report) {
                 j_array.push_back({

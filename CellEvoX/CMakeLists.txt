@@ -153,6 +153,9 @@ target_include_directories(CellEvoXTests
 # which uses Py_SetProgramName/PySys_SetArgv deprecated since Python 3.11
 target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
 
+# Inject repo source directory for robust test data discovery (e.g. JSON baselines)
+target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+
 target_link_libraries(CellEvoXTests
     PRIVATE
     Boost::boost
