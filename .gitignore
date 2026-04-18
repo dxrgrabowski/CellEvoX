@@ -30,8 +30,8 @@
 # Directories
 build/
 .vscode
-output/
-
+output*
+compare*
 # Keys
 *.gpg
 *.asc

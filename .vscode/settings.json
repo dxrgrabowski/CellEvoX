@@ -82,5 +82,6 @@
         "valarray": "cpp",
         "core": "cpp",
         "dense": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/workspaces/CellEvoX/CellEvoX"
 }

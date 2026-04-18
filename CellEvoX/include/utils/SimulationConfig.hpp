@@ -16,6 +16,8 @@ inline const char* toString(SimulationType type) {
       return "STOCHASTIC_TAU_LEAP";
     case SimulationType::DETERMINISTIC_RK4:
       return "DETERMINISTIC_RK4";
+    case SimulationType::SPATIAL_3D_ABM:
+      return "SPATIAL_3D_ABM";
     default:
       return "UNKNOWN";
   }
@@ -27,6 +29,9 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
   try {
     config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
                                          : SimulationType::DETERMINISTIC_RK4;
+    if (j.contains("simulation_mode") && j["simulation_mode"] == "spatial_3d") {
+      config.sim_type = SimulationType::SPATIAL_3D_ABM;
+    }
     config.tau_step = j.at("tau_step");
     if (j.contains("seed")) {
       config.seed = j.at("seed");
@@ -53,6 +58,27 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.phylogeny_num_cells_sampling = j.at("phylogeny_num_cells_sampling");
     } else {
       config.phylogeny_num_cells_sampling = 100;
+    }
+    if (j.contains("spatial_domain_size")) {
+      config.spatial_domain_size = j.at("spatial_domain_size");
+    }
+    if (j.contains("max_local_density")) {
+      config.max_local_density = j.at("max_local_density");
+    }
+    if (j.contains("sample_radius")) {
+      config.sample_radius = j.at("sample_radius");
+    }
+    if (j.contains("spring_constant")) {
+      config.spring_constant = j.at("spring_constant");
+    }
+    if (j.contains("mech_dt")) {
+      config.mech_dt = j.at("mech_dt");
+    }
+    if (j.contains("mech_substeps")) {
+      config.mech_substeps = j.at("mech_substeps");
+    }
+    if (j.contains("epsilon")) {
+      config.epsilon = j.at("epsilon");
     }
 
     for (const auto& mut : j.at("mutations")) {
@@ -83,6 +109,15 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
+  if (config.sim_type == SimulationType::SPATIAL_3D_ABM) {
+    spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);
+    spdlog::info("Max local density: {:.2f}", config.max_local_density);
+    spdlog::info("Sample radius: {:.2f}", config.sample_radius);
+    spdlog::info("Spring constant: {:.2f}", config.spring_constant);
+    spdlog::info("Mechanical dt: {:.3f}", config.mech_dt);
+    spdlog::info("Mechanical substeps: {}", config.mech_substeps);
+    spdlog::info("Division epsilon: {:.3f}", config.epsilon);
+  }
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
     spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",

@@ -12,22 +12,29 @@
 
 using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
 using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>>;
-enum class SimulationType { STOCHASTIC_TAU_LEAP, DETERMINISTIC_RK4 };
+enum class SimulationType { STOCHASTIC_TAU_LEAP, DETERMINISTIC_RK4, SPATIAL_3D_ABM };
 
 struct SimulationConfig {
-  SimulationType sim_type;
-  double tau_step;
+  SimulationType sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+  double tau_step = 0.005;
   uint32_t seed = 42;
-  size_t initial_population;
-  size_t env_capacity;
-  size_t steps;
-  uint32_t stat_res;
-  uint32_t popul_res;
-  int graveyard_pruning_interval;
+  size_t initial_population = 0;
+  size_t env_capacity = 0;
+  size_t steps = 0;
+  uint32_t stat_res = 1;
+  uint32_t popul_res = 1;
+  int graveyard_pruning_interval = 0;
   std::string output_path;
   std::vector<MutationType> mutations;
-  int verbosity; // 0: off, 1: minimal, 2: full
-  uint32_t phylogeny_num_cells_sampling;
+  int verbosity = 2; // 0: off, 1: minimal, 2: full
+  uint32_t phylogeny_num_cells_sampling = 100;
+  float spatial_domain_size = 200.0f;
+  float max_local_density = 8.0f;
+  float sample_radius = 3.0f;
+  float spring_constant = 0.5f;
+  float mech_dt = 0.1f;
+  int mech_substeps = 5;
+  float epsilon = 0.1f;
 };
 
 struct StatSnapshot {
