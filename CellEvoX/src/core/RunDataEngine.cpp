@@ -6,15 +6,148 @@
 #include <tbb/concurrent_unordered_set.h>
 #include <tbb/parallel_for.h>
 
+#include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <chrono>
 #include <iomanip>
+#include <iostream>
+#include <limits>
 #include <map>
 #include <random>
+#include <regex>
 #include <sstream>
+
+#include "io/PopulationSnapshotIO.hpp"
+
+namespace {
+
+namespace fs = std::filesystem;
+
+constexpr const char* kPopulationCsvHeader =
+    "CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimensions\n";
+
+int extractGenerationFromFilename(const fs::path& path) {
+  static const std::regex pattern(R"(population_generation_(\d+)\.(csv|bin))");
+  std::smatch match;
+  const std::string filename = path.filename().string();
+  if (std::regex_match(filename, match, pattern)) {
+    return std::stoi(match[1].str());
+  }
+  return -1;
+}
+
+std::string formatMutationsForCsv(const Cell& cell) {
+  std::string mutations_str;
+  for (const auto& [mutation_id, mutation_type] : cell.mutations) {
+    mutations_str +=
+        "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+  }
+
+  if (!mutations_str.empty()) {
+    mutations_str.pop_back();
+  }
+
+  return mutations_str;
+}
+
+bool isDriverMutationType(const std::map<uint8_t, MutationType>& mutation_types, uint8_t mutation_type) {
+  const auto it = mutation_types.find(mutation_type);
+  return it != mutation_types.end() && it->second.is_driver;
+}
+
+std::string formatDriverMutationsForCsv(const Cell& cell,
+                                        const std::map<uint8_t, MutationType>& mutation_types) {
+  std::string mutations_str;
+  for (const auto& [mutation_id, mutation_type] : cell.mutations) {
+    if (!isDriverMutationType(mutation_types, mutation_type)) {
+      continue;
+    }
+    mutations_str +=
+        "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+  }
+
+  if (!mutations_str.empty()) {
+    mutations_str.pop_back();
+  }
+
+  return mutations_str;
+}
+
+std::string formatDriverMutationsForCsv(
+    const CellEvoX::io::PopulationSnapshotRecord& record,
+    const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation>& driver_mutations) {
+  if (record.driver_mutation_count == 0) {
+    return "";
+  }
+
+  const size_t start = record.driver_mutation_offset;
+  const size_t end = start + record.driver_mutation_count;
+  if (start > driver_mutations.size() || end > driver_mutations.size()) {
+    return "";
+  }
+
+  std::string mutations_str;
+  for (size_t i = start; i < end; ++i) {
+    const auto& mutation = driver_mutations[i];
+    mutations_str +=
+        "(" + std::to_string(mutation.mutation_id) + "," + std::to_string(mutation.mutation_type) +
+        ") ";
+  }
+
+  if (!mutations_str.empty()) {
+    mutations_str.pop_back();
+  }
+
+  return mutations_str;
+}
+
+void writePopulationCsvRow(std::ofstream& file,
+                           uint32_t cell_id,
+                           uint32_t parent_id,
+                           float fitness,
+                           uint32_t mutation_count,
+                           const std::string& mutations,
+                           bool position_valid,
+                           float x,
+                           float y,
+                           float z,
+                           uint8_t spatial_dimensions) {
+  file << cell_id << "," << parent_id << "," << fitness << "," << mutation_count << ","
+       << "\"" << mutations << "\",";
+  if (position_valid) {
+    file << x << "," << y << "," << z;
+  } else {
+    file << ",,";
+  }
+  file << "," << (position_valid ? 1 : 0) << "," << static_cast<int>(spatial_dimensions) << "\n";
+}
+
+std::vector<fs::path> collectPopulationBinaryFiles(const std::string& output_dir) {
+  std::vector<fs::path> files;
+  const fs::path population_dir = fs::path(output_dir) / "population_data";
+  if (!fs::exists(population_dir)) {
+    return files;
+  }
+
+  for (const auto& entry : fs::directory_iterator(population_dir)) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".bin") {
+      continue;
+    }
+    if (extractGenerationFromFilename(entry.path()) >= 0) {
+      files.push_back(entry.path());
+    }
+  }
+
+  std::sort(files.begin(), files.end(), [](const fs::path& lhs, const fs::path& rhs) {
+    return extractGenerationFromFilename(lhs) < extractGenerationFromFilename(rhs);
+  });
+  return files;
+}
+
+}  // namespace
+
 namespace CellEvoX::core {
 
 namespace plt = matplotlibcpp;
@@ -110,42 +243,7 @@ void RunDataEngine::exportToCSV() {
     }
   }
 
-  // Export Generational Population (Separate Files for Each Generation)
-  {
-    for (const auto& [generation, cell_map] : run->generational_popul_report) {
-      std::string populFilename =
-          output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
-      std::ofstream file(populFilename);
-      if (!file.is_open()) {
-        std::cerr << "Cannot open file: " << populFilename << std::endl;
-        continue;
-      }
-
-      // Write the header
-      file << "CellID,ParentID,Fitness,Mutations\n";
-
-      // Write data for each cell in this generation
-      for (const auto& [cell_id, cell_data] : cell_map) {
-        // Retrieve mutations as a string
-        std::string mutations_str;
-        for (const auto& [mutation_id, mutation_type] : cell_data.mutations) {
-          mutations_str +=
-              "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
-        }
-
-        // Trim the trailing space
-        if (!mutations_str.empty()) {
-          mutations_str.pop_back();
-        }
-
-        file << cell_id << "," << cell_data.parent_id << "," << cell_data.fitness << "," << "\""
-             << mutations_str << "\"\n";
-      }
-
-      file.close();
-      std::cout << "Population data exported to: " << populFilename << std::endl;
-    }
-  }
+  exportPopulationSnapshotsToCSV();
 
   {
     std::string phylogeneticFilename = output_dir + "phylogeny/phylogenetic_tree.csv";
@@ -164,6 +262,76 @@ void RunDataEngine::exportToCSV() {
     }
 
     file.close();
+  }
+}
+
+void RunDataEngine::exportPopulationSnapshotsToCSV() {
+  if (run && !run->generational_popul_report.empty()) {
+    for (const auto& [generation, cell_map] : run->generational_popul_report) {
+      const std::string populFilename =
+          output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
+      std::ofstream file(populFilename);
+      if (!file.is_open()) {
+        std::cerr << "Cannot open file: " << populFilename << std::endl;
+        continue;
+      }
+
+      file << kPopulationCsvHeader;
+      for (const auto& [cell_id, cell_data] : cell_map) {
+        writePopulationCsvRow(
+            file,
+            cell_id,
+            cell_data.parent_id,
+            cell_data.fitness,
+            static_cast<uint32_t>(
+                std::min<size_t>(cell_data.mutations.size(), std::numeric_limits<uint32_t>::max())),
+            formatDriverMutationsForCsv(cell_data, run->mutation_id_to_type),
+            false,
+            0.0f,
+            0.0f,
+            0.0f,
+            0);
+      }
+
+      std::cout << "Population data exported to: " << populFilename << std::endl;
+    }
+    return;
+  }
+
+  for (const auto& path : collectPopulationBinaryFiles(output_dir)) {
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations;
+    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, driver_mutations)) {
+      spdlog::error("Failed to read population snapshot file: {}", path.string());
+      continue;
+    }
+
+    const int generation = extractGenerationFromFilename(path);
+    const std::string csv_filename =
+        (path.parent_path() / ("population_generation_" + std::to_string(generation) + ".csv")).string();
+    std::ofstream file(csv_filename);
+    if (!file.is_open()) {
+      std::cerr << "Cannot open file: " << csv_filename << std::endl;
+      continue;
+    }
+
+    file << kPopulationCsvHeader;
+    for (const auto& record : records) {
+      writePopulationCsvRow(file,
+                            record.id,
+                            record.parent_id,
+                            record.fitness,
+                            record.mutations_count,
+                            formatDriverMutationsForCsv(record, driver_mutations),
+                            record.position_valid != 0,
+                            record.x,
+                            record.y,
+                            record.z,
+                            header.spatial_dimensions);
+    }
+
+    std::cout << "Population data exported to: " << csv_filename << std::endl;
   }
 }
 void RunDataEngine::plotLivingCellsOverGenerations() {

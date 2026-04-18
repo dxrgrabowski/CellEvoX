@@ -91,4 +91,3 @@ Contributions are welcome! Please fork the repository and submit a pull request 
 ## Contact
 
 For questions or support, contact Dawid Grabowski at dxrsoftware@gmail.com.
-

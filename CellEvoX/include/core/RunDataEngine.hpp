@@ -24,6 +24,7 @@ class RunDataEngine {
   // Generate a graph in Graphviz DOT format
   void prepareOutputDir();
   void exportToCSV();
+  void exportPopulationSnapshotsToCSV();
   void plotLivingCellsOverGenerations();
   void plotFitnessStatistics();
   void plotMutationsStatistics();

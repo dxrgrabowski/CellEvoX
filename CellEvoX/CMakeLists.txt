@@ -47,9 +47,11 @@ file(COPY qml DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 set(HEADERS
     include/core/application.hpp
     include/systems/SimulationEngine.hpp
+    include/systems/SimulationEngine3D.hpp
    # include/core/DatabaseManager.hpp
     include/ecs/Cell.hpp
     include/ecs/Run.hpp
+    include/spatial/SpatialHashGrid.hpp
     include/utils/MathUtils.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
@@ -97,13 +99,20 @@ if(NOT SKIP_GUI)
     )
 
     target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
+    target_sources(CellEvoX PRIVATE
+        src/systems/SimulationEngine3D.cpp
+        src/spatial/SpatialHashGrid.cpp
+    )
 
     target_include_directories(CellEvoX
         PRIVATE
         include
+        include/spatial
         ${Python3_INCLUDE_DIRS}
         ${NUMPY_INCLUDE_DIR}
     )
+
+    target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math)
 
     target_link_libraries(CellEvoX
         PRIVATE
@@ -136,8 +145,10 @@ endif()
 add_executable(CellEvoXTests
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
+    src/systems/SimulationEngine3D.cpp
     src/core/RunDataEngine.cpp
     src/ecs/Run.cpp
+    src/spatial/SpatialHashGrid.cpp
     tests/test_simulation.cpp
     tests/bench_simulation.cpp
 )
@@ -145,6 +156,7 @@ add_executable(CellEvoXTests
 target_include_directories(CellEvoXTests
     PRIVATE
     include
+    include/spatial
     ${Python3_INCLUDE_DIRS}
     ${NUMPY_INCLUDE_DIR}
 )
