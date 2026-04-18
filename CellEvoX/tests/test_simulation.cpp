@@ -448,6 +448,64 @@ TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEn
     REQUIRE(runData.generational_stat_report.back().total_living_cells > config->initial_population);
 }
 
+TEST_CASE("SimulationEngine3D deterministic smoke test", "[SimulationEngine3D][Determinism][CI]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    auto make_config = [](const std::string& output_path) {
+        auto config = std::make_shared<SimulationConfig>();
+        config->sim_type = SimulationType::SPATIAL_3D_ABM;
+        config->tau_step = 1.0;
+        config->seed = 321;
+        config->initial_population = 16;
+        config->env_capacity = 128;
+        config->steps = 3;
+        config->stat_res = 1;
+        config->popul_res = 1;
+        config->output_path = output_path;
+        config->spatial_domain_size = 20.0f;
+        config->sample_radius = 3.0f;
+        config->max_local_density = 8.0f;
+        config->spring_constant = 0.2f;
+        config->mech_dt = 0.05f;
+        config->mech_substeps = 2;
+        config->epsilon = 0.1f;
+        config->verbosity = 0;
+        return config;
+    };
+
+    auto config1 = make_config("/tmp/test_sim_3d_smoke_1");
+    auto config2 = make_config("/tmp/test_sim_3d_smoke_2");
+
+    std::filesystem::remove_all(config1->output_path);
+    std::filesystem::remove_all(config2->output_path);
+    std::filesystem::create_directories(config1->output_path);
+    std::filesystem::create_directories(config2->output_path);
+
+    SimulationEngine3D engine1(config1);
+    auto runData1 = engine1.run(3);
+
+    SimulationEngine3D engine2(config2);
+    auto runData2 = engine2.run(3);
+
+    REQUIRE(runData1.generational_stat_report.size() == runData2.generational_stat_report.size());
+    REQUIRE(runData1.generational_stat_report.size() == 3);
+
+    for (size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
+        const auto& lhs = runData1.generational_stat_report[i];
+        const auto& rhs = runData2.generational_stat_report[i];
+        require_approx(lhs.tau, rhs.tau);
+        require_approx(lhs.mean_fitness, rhs.mean_fitness);
+        require_approx(lhs.mean_mutations, rhs.mean_mutations);
+        REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
+    }
+
+    const auto snapshot1 = read_binary_file(
+        std::filesystem::path(config1->output_path) / "population_data" / "population_generation_1.bin");
+    const auto snapshot2 = read_binary_file(
+        std::filesystem::path(config2->output_path) / "population_data" / "population_generation_1.bin");
+    REQUIRE(snapshot1 == snapshot2);
+}
+
 TEST_CASE("SimulationEngine3D is repeatable with the same seed", "[SimulationEngine3D][Determinism]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
