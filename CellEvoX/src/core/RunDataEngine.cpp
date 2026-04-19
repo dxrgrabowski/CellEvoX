@@ -146,6 +146,35 @@ std::vector<fs::path> collectPopulationBinaryFiles(const std::string& output_dir
   return files;
 }
 
+std::string quoteForShell(const std::string& value) { return "\"" + value + "\""; }
+
+fs::path resolvePythonScriptPath(const char* script_name) {
+  fs::path script_path = fs::current_path() / "scripts" / script_name;
+  if (fs::exists(script_path)) {
+    return script_path;
+  }
+
+  script_path = fs::path(__FILE__).parent_path().parent_path() / "scripts" / script_name;
+  if (fs::exists(script_path)) {
+    return script_path;
+  }
+
+  script_path = fs::path("/workspaces/CellEvoX/CellEvoX/scripts") / script_name;
+  if (fs::exists(script_path)) {
+    return script_path;
+  }
+
+  return fs::current_path() / "../scripts" / script_name;
+}
+
+std::string resolvePythonCommand() {
+  fs::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
+  if (fs::exists(venv_python)) {
+    return venv_python.string();
+  }
+  return "python3";
+}
+
 }  // namespace
 
 namespace CellEvoX::core {
@@ -889,6 +918,57 @@ void RunDataEngine::plotCloneLifespans() {
     spdlog::info("Clone lifespans charts saved to clones/ subdirectory.");
   } else {
     spdlog::warn("Clone lifespans chart generation failed with code: {}", result);
+  }
+}
+
+void RunDataEngine::plotCloneGrowthAnimation() {
+  spdlog::info("Generating animated 2D clone growth visualization...");
+
+  std::filesystem::path script_path = resolvePythonScriptPath("animate_clone_growth_2d.py");
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("2D clone growth script not found at any locations, last tried: {}",
+                 script_path.string());
+    return;
+  }
+
+  const std::string python_cmd = resolvePythonCommand();
+  const std::string command =
+      python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
+      quoteForShell(output_dir) + " --output " +
+      quoteForShell(output_dir + "visualizations/clone_growth_2d.mp4");
+
+  spdlog::info("Running 2D clone growth animation: {}", command);
+  const int result = std::system(command.c_str());
+  if (result == 0) {
+    spdlog::info("2D clone growth animation saved to: {}visualizations/clone_growth_2d.mp4",
+                 output_dir);
+  } else {
+    spdlog::warn("2D clone growth animation failed with code: {}", result);
+  }
+}
+
+void RunDataEngine::plotTumorReplay3D() {
+  spdlog::info("Generating 3D tumor replay...");
+
+  std::filesystem::path script_path = resolvePythonScriptPath("visualize_tumor_3d.py");
+  if (!std::filesystem::exists(script_path)) {
+    spdlog::warn("3D tumor replay script not found at any locations, last tried: {}",
+                 script_path.string());
+    return;
+  }
+
+  const std::string python_cmd = resolvePythonCommand();
+  const std::string command =
+      python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
+      quoteForShell(output_dir) + " --output " +
+      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4");
+
+  spdlog::info("Running 3D tumor replay: {}", command);
+  const int result = std::system(command.c_str());
+  if (result == 0) {
+    spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
+  } else {
+    spdlog::warn("3D tumor replay failed with code: {}", result);
   }
 }
 

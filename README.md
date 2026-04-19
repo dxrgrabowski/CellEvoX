@@ -77,6 +77,40 @@ CellEvoX is a simulation system for modeling population dynamics, incorporating 
 2. Run the simulation executable with --config pointing to config file localization.
 3. View the generated data and statistical reports created in output directory specified in config. (Docker needs a write permission to output dir)
 
+## Post-process Visualization
+
+CellEvoX can now generate two offline visualizations from an existing run directory:
+
+- `clone_growth_2d.mp4` - an animated clone-growth view built from clone counts over time.
+- `tumor_growth_3d.mp4` - a spatial replay of the 3D tumor with clone colors.
+
+Both outputs are written under `visualizations/` inside the run directory.
+
+### Recommended Python extras
+
+The existing analysis scripts use `matplotlib`, `numpy`, `pandas`, and `networkx`. For the new 3D replay, `pyvista` is recommended but optional because the script falls back to a Matplotlib renderer when PyVista is unavailable.
+
+Example:
+
+```bash
+pip install pandas networkx pyvista
+```
+
+For MP4 export, make sure `ffmpeg` is available in the environment. If it is missing, the scripts fall back to GIF output.
+
+### Run on an existing output directory
+
+```bash
+./bin/CellEvoX --analyze /path/to/run_dir
+```
+
+### Run the visualization scripts manually
+
+```bash
+python CellEvoX/scripts/animate_clone_growth_2d.py --input /path/to/run_dir
+python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
+```
+
 ## File Structure
 
 - **include/**: Header files defining core components.

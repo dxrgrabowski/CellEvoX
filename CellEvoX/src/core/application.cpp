@@ -52,6 +52,8 @@ void Application::initialize() {
       data_engine.plotClonePhylogenyTree();
       data_engine.plotCloneCounts();
       data_engine.plotCloneLifespans();
+      data_engine.plotCloneGrowthAnimation();
+      data_engine.plotTumorReplay3D();
     } else if (has_population_bin) {
       data_engine.exportPopulationSnapshotsToCSV();
       spdlog::info(
@@ -60,6 +62,8 @@ void Application::initialize() {
       data_engine.plotClonePhylogenyTree();
       data_engine.plotCloneCounts();
       data_engine.plotCloneLifespans();
+      data_engine.plotCloneGrowthAnimation();
+      data_engine.plotTumorReplay3D();
     }
     
     spdlog::info("Analysis complete.");
@@ -105,6 +109,8 @@ void Application::initialize() {
     data_engine.plotClonePhylogenyTree();
     data_engine.plotCloneCounts();
     data_engine.plotCloneLifespans();
+    data_engine.plotCloneGrowthAnimation();
+    data_engine.plotTumorReplay3D();
   } else {
     spdlog::error("Neither --config nor --analyze flag was provided. Please provide one.");
   }
