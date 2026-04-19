@@ -61,7 +61,9 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
 
   // These are informational logs; they will be filtered by spdlog's level.
   spdlog::info("=== Simulation Engine Initialized ===");
-  spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
+  spdlog::info("Initial population: {}, Well-mixed carrying capacity: {}",
+               config->initial_population,
+               config->env_capacity);
   spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
 
   // Initialize memory logging
@@ -174,9 +176,17 @@ void SimulationEngine::stochasticStep() {
   }
   std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
 
+  const Eigen::VectorXd fitnesses =
+      FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices);
+  const double mean_fitness =
+      std::max(fitnesses.mean(), std::numeric_limits<double>::epsilon());
+  // In the well-mixed model, fitness should express relative clonal advantage.
+  // Normalizing by the population mean keeps env_capacity as the population-scale
+  // carrying capacity instead of letting mean fitness inflate total size.
+  const Eigen::ArrayXd effective_birth_rates =
+      (fitnesses.array() / mean_fitness).max(std::numeric_limits<double>::epsilon());
   Eigen::VectorXd birth_probs =
-      generateExponentialDistribution(N, rng).array() /
-      FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices).array();
+      generateExponentialDistribution(N, rng).array() / effective_birth_rates;
 
   if (alive_cell_indices.size() != N) {
     spdlog::error(

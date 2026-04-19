@@ -101,7 +101,13 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Simulation type: {}", toString(config.sim_type));
   spdlog::info("Tau step: {:.3f}", config.tau_step);
   spdlog::info("Initial population: {}", config.initial_population);
-  spdlog::info("Environment capacity: {}", config.env_capacity);
+  if (config.sim_type == SimulationType::SPATIAL_3D_ABM) {
+    spdlog::info("Environment capacity (parsed, unused by 3D crowding): {}",
+                 config.env_capacity);
+  } else {
+    spdlog::info("Environment capacity (well-mixed carrying-capacity scale): {}",
+                 config.env_capacity);
+  }
   spdlog::info("Number of steps: {}", config.steps);
   spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Statistics resolution: {}", config.stat_res);

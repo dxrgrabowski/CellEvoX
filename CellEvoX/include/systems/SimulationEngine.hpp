@@ -19,6 +19,8 @@ struct SimulationConfig {
   double tau_step = 0.005;
   uint32_t seed = 42;
   size_t initial_population = 0;
+  // Well-mixed carrying-capacity scale. Spatial 3D crowding is controlled by
+  // max_local_density instead.
   size_t env_capacity = 0;
   size_t steps = 0;
   uint32_t stat_res = 1;
@@ -29,6 +31,7 @@ struct SimulationConfig {
   int verbosity = 2; // 0: off, 1: minimal, 2: full
   uint32_t phylogeny_num_cells_sampling = 100;
   float spatial_domain_size = 200.0f;
+  // Local carrying-capacity proxy for the spatial 3D model.
   float max_local_density = 8.0f;
   float sample_radius = 3.0f;
   float spring_constant = 0.5f;

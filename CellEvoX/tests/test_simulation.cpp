@@ -293,6 +293,31 @@ inline bool snapshot_within_domain(
     });
 }
 
+inline std::shared_ptr<SimulationConfig> make_well_mixed_test_config(
+    size_t initial_population,
+    size_t env_capacity,
+    uint32_t steps,
+    const std::string& output_path
+) {
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 0.05;
+    config->seed = 42;
+    config->initial_population = initial_population;
+    config->env_capacity = env_capacity;
+    config->steps = steps;
+    config->stat_res = 1;
+    config->popul_res = 1000;
+    config->output_path = output_path;
+    config->verbosity = 0;
+    return config;
+}
+
+inline void prepare_output_dir(const std::string& output_path) {
+    std::filesystem::remove_all(output_path);
+    std::filesystem::create_directories(std::filesystem::path(output_path) / "statistics");
+}
+
 TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     auto config = std::make_shared<SimulationConfig>();
     config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
@@ -385,6 +410,66 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
         require_approx(actual.mutations_skewness, expected["mutations_skewness"].get<double>());
         require_approx(actual.mutations_kurtosis, expected["mutations_kurtosis"].get<double>());
     }
+}
+
+TEST_CASE("Well-mixed 2D neutral population stabilizes near environment capacity",
+          "[SimulationEngine][Capacity]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    auto config = make_well_mixed_test_config(100, 1000, 400, "/tmp/test_sim_capacity_neutral");
+    prepare_output_dir(config->output_path);
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(config->steps);
+
+    const auto& stats = runData.generational_stat_report;
+    REQUIRE(stats.size() >= 3);
+
+    const size_t final_population = stats.back().total_living_cells;
+    REQUIRE(final_population > static_cast<size_t>(0.85 * config->env_capacity));
+    REQUIRE(final_population < static_cast<size_t>(1.15 * config->env_capacity));
+    REQUIRE(stats.back().mean_fitness == Catch::Approx(1.0).margin(1e-6));
+
+    const auto tail_begin = stats.end() - 3;
+    const auto [tail_min_it, tail_max_it] = std::minmax_element(
+        tail_begin, stats.end(), [](const StatSnapshot& lhs, const StatSnapshot& rhs) {
+            return lhs.total_living_cells < rhs.total_living_cells;
+        });
+    REQUIRE(static_cast<double>(tail_max_it->total_living_cells - tail_min_it->total_living_cells) <
+            0.15 * static_cast<double>(config->env_capacity));
+}
+
+TEST_CASE("Well-mixed 2D keeps selection relative instead of inflating total population",
+          "[SimulationEngine][Capacity]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    auto neutral_config =
+        make_well_mixed_test_config(100, 1000, 400, "/tmp/test_sim_capacity_neutral_reference");
+    auto driver_config =
+        make_well_mixed_test_config(100, 1000, 400, "/tmp/test_sim_capacity_driver");
+    driver_config->mutations.push_back({0.1f, 0.05f, 1, true});
+
+    prepare_output_dir(neutral_config->output_path);
+    prepare_output_dir(driver_config->output_path);
+
+    SimulationEngine neutral_engine(neutral_config);
+    auto neutral_run = neutral_engine.run(neutral_config->steps);
+
+    SimulationEngine driver_engine(driver_config);
+    auto driver_run = driver_engine.run(driver_config->steps);
+
+    REQUIRE_FALSE(neutral_run.generational_stat_report.empty());
+    REQUIRE_FALSE(driver_run.generational_stat_report.empty());
+
+    const auto& neutral_final = neutral_run.generational_stat_report.back();
+    const auto& driver_final = driver_run.generational_stat_report.back();
+
+    REQUIRE(driver_final.mean_fitness > neutral_final.mean_fitness + 0.05);
+    REQUIRE(driver_final.total_living_cells > static_cast<size_t>(0.85 * driver_config->env_capacity));
+    REQUIRE(driver_final.total_living_cells < static_cast<size_t>(1.15 * driver_config->env_capacity));
+    REQUIRE(std::abs(static_cast<double>(driver_final.total_living_cells) -
+                     static_cast<double>(neutral_final.total_living_cells)) <
+            0.15 * static_cast<double>(driver_config->env_capacity));
 }
 
 TEST_CASE("SimulationEngine3D produces binary population snapshots", "[SimulationEngine3D]") {

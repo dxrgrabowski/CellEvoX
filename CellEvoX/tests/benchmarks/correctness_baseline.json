@@ -12,39 +12,39 @@
     "total_living_cells": 206
   },
   {
-    "fitness_kurtosis": 2.7959076049910436e-05,
-    "fitness_skewness": 0.00017611037530995688,
-    "fitness_variance": 0.0014690971876691883,
-    "mean_fitness": 1.0129556679373304,
-    "mean_mutations": 0.12807881773399016,
-    "mutations_kurtosis": 0.23863966060531305,
-    "mutations_skewness": 0.16038153222782292,
-    "mutations_variance": 0.1412312844281589,
+    "fitness_kurtosis": 1.4089077885248713e-05,
+    "fitness_skewness": 0.00010606775608223984,
+    "fitness_variance": 0.001038200699825298,
+    "mean_fitness": 1.010255104425002,
+    "mean_mutations": 0.10204081632653061,
+    "mutations_kurtosis": 0.12601241569310026,
+    "mutations_skewness": 0.10041734311383864,
+    "mutations_variance": 0.10183256976259891,
     "tau": 2.000000000000001,
-    "total_living_cells": 406
+    "total_living_cells": 392
   },
   {
-    "fitness_kurtosis": 2.76064596107517e-05,
-    "fitness_skewness": 0.00018470693572814056,
-    "fitness_variance": 0.001810023519039472,
-    "mean_fitness": 1.017709927704498,
-    "mean_mutations": 0.17557251908396945,
-    "mutations_kurtosis": 0.23694789378228728,
-    "mutations_skewness": 0.1694397602232294,
-    "mutations_variance": 0.17528116077151681,
+    "fitness_kurtosis": 3.2441674806538146e-05,
+    "fitness_skewness": 0.00018322393294534223,
+    "fitness_variance": 0.001726542047691293,
+    "mean_fitness": 1.0173490894276922,
+    "mean_mutations": 0.1722560975609756,
+    "mutations_kurtosis": 0.2548269520821134,
+    "mutations_skewness": 0.1631749986510824,
+    "mutations_variance": 0.1669741783164783,
     "tau": 3.049999999999997,
-    "total_living_cells": 655
+    "total_living_cells": 656
   },
   {
-    "fitness_kurtosis": 2.8536128568124042e-05,
-    "fitness_skewness": 0.00019355778732732531,
-    "fitness_variance": 0.002310927486841141,
-    "mean_fitness": 1.0251847348483325,
-    "mean_mutations": 0.25,
-    "mutations_kurtosis": 0.24366918103448276,
-    "mutations_skewness": 0.17687807881773396,
-    "mutations_variance": 0.22444581280788178,
+    "fitness_kurtosis": 4.723820307139803e-05,
+    "fitness_skewness": 0.00024901897624829417,
+    "fitness_variance": 0.002342778789857558,
+    "mean_fitness": 1.0233819498508065,
+    "mean_mutations": 0.23148148148148148,
+    "mutations_kurtosis": 0.36378577449095945,
+    "mutations_skewness": 0.21616528222323833,
+    "mutations_variance": 0.22419410150891633,
     "tau": 4.049999999999994,
-    "total_living_cells": 812
+    "total_living_cells": 864
   }
 ]
