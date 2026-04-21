@@ -3,6 +3,21 @@
 
 CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as Qt6, TBB, and Eigen3 for high performance and ease of extensibility.
 
+## Visualization
+
+CellEvoX is able to generate visualizations from existing runs:
+
+### 3D Tumor Growth
+![Tumor Growth 3D](assets/tumor_growth_3d.gif)
+
+### 2D Clone Growth
+![Clone Growth 2D](assets/clone_growth_2d.gif)
+
+- `clone_growth_2d.mp4` - an animated clone-growth view built from clone counts over time.
+- `tumor_growth_3d.mp4` - a spatial replay of the 3D tumor with clone colors.
+
+Both outputs are written under `visualizations/` inside the run directory.
+
 ## Features
 
 - **Stochastic and Deterministic Simulation**: Supports tau-leap simulation based on Gillespie's algorithm and provides extensibility for new methods.
@@ -76,6 +91,32 @@ CellEvoX is a simulation system for modeling population dynamics, incorporating 
 1. Configure the simulation by editing the provided configuration file.
 2. Run the simulation executable with --config pointing to config file localization.
 3. View the generated data and statistical reports created in output directory specified in config. (Docker needs a write permission to output dir)
+
+
+### Recommended Python extras
+
+The existing analysis scripts use `matplotlib`, `numpy`, `pandas`, and `networkx`. For the new 3D replay, `pyvista` is recommended but optional because the script falls back to a Matplotlib renderer when PyVista is unavailable.
+
+Example:
+
+```bash
+pip install pandas networkx pyvista
+```
+
+For MP4 export, make sure `ffmpeg` is available in the environment. If it is missing, the scripts fall back to GIF output.
+
+### Run on an existing output directory
+
+```bash
+./bin/CellEvoX --analyze /path/to/run_dir
+```
+
+### Run the visualization scripts manually
+
+```bash
+python CellEvoX/scripts/animate_clone_growth_2d.py --input /path/to/run_dir
+python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
+```
 
 ## File Structure
 

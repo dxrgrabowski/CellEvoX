@@ -279,25 +279,25 @@ TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison
 }
 
 TEST_CASE("Population snapshot serialization tradeoff", "[benchmark][snapshot-serialization]") {
-    const auto non_spatial_input = makeSyntheticSnapshotInput(20000, 4, false);
-    const auto spatial_input = makeSyntheticSnapshotInput(20000, 4, true);
+    const auto non_spatial_input = makeSyntheticSnapshotInput(2000000, 4, false);
+    const auto spatial_input = makeSyntheticSnapshotInput(2000000, 4, true);
 
     REQUIRE(extendedSnapshotBytes(non_spatial_input) > compactSnapshotBytes(non_spatial_input));
     REQUIRE(extendedSnapshotBytes(spatial_input) > compactSnapshotBytes(spatial_input));
 
-    BENCHMARK("2D snapshot serialize N=20000 mut=4 [compact]") {
+    BENCHMARK("2D snapshot serialize N=2000000 mut=4 [compact]") {
         return buildCompactSnapshot(non_spatial_input);
     };
 
-    BENCHMARK("2D snapshot serialize N=20000 mut=4 [full-mutations]") {
+    BENCHMARK("2D snapshot serialize N=2000000 mut=4 [full-mutations]") {
         return buildExtendedSnapshot(non_spatial_input);
     };
 
-    BENCHMARK("3D snapshot serialize N=20000 mut=4 [compact]") {
+    BENCHMARK("3D snapshot serialize N=2000000 mut=4 [compact]") {
         return buildCompactSnapshot(spatial_input);
     };
 
-    BENCHMARK("3D snapshot serialize N=20000 mut=4 [full-mutations]") {
+    BENCHMARK("3D snapshot serialize N=2000000 mut=4 [full-mutations]") {
         return buildExtendedSnapshot(spatial_input);
     };
 }

@@ -34,6 +34,8 @@ class RunDataEngine {
   void plotClonePhylogenyTree();
   void plotCloneCounts();
   void plotCloneLifespans();
+  void plotCloneGrowthAnimation();
+  void plotTumorReplay3D();
   void exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename);
   void exportPhylogeneticTreeToGEXF(const std::string& filename);
   // void exportToCSV(const tbb::concurrent_vector<Cell>& cells, const std::string& output_file);
