@@ -14,6 +14,12 @@ namespace CellEvoX::io {
 constexpr std::array<char, 8> kPopulationSnapshotMagic = {'C', 'E', 'L', 'X', 'P', 'O', 'P', '1'};
 constexpr uint32_t kPopulationSnapshotVersion = 2;
 constexpr uint8_t kPopulationSnapshotFlagHasDriverMutationPayload = 0x1;
+constexpr uint8_t kPopulationSnapshotFlagHasFullMutationPayload = 0x2;
+
+enum class MutationPayloadKind : uint8_t {
+  DriverOnly,
+  Full,
+};
 
 #pragma pack(push, 1)
 struct PopulationSnapshotFileHeaderV1 {
@@ -104,17 +110,22 @@ inline PopulationSnapshotFileHeader makePopulationSnapshotHeader(
     double tau,
     uint32_t record_count,
     uint8_t spatial_dimensions,
-    uint32_t driver_mutation_count = 0) {
+    uint32_t mutation_payload_count = 0,
+    MutationPayloadKind payload_kind = MutationPayloadKind::DriverOnly) {
   PopulationSnapshotFileHeader header{};
   std::copy(kPopulationSnapshotMagic.begin(), kPopulationSnapshotMagic.end(), header.magic);
   header.version = kPopulationSnapshotVersion;
   header.record_size = sizeof(PopulationSnapshotRecord);
   header.tau = tau;
   header.record_count = record_count;
-  header.driver_mutation_count = driver_mutation_count;
+  header.driver_mutation_count = mutation_payload_count;
   header.spatial_dimensions = spatial_dimensions;
   header.mutation_record_size = sizeof(PopulationSnapshotDriverMutation);
-  header.flags = driver_mutation_count > 0 ? kPopulationSnapshotFlagHasDriverMutationPayload : 0;
+  if (mutation_payload_count > 0) {
+    header.flags = payload_kind == MutationPayloadKind::Full
+                       ? kPopulationSnapshotFlagHasFullMutationPayload
+                       : kPopulationSnapshotFlagHasDriverMutationPayload;
+  }
   return header;
 }
 
@@ -127,12 +138,25 @@ inline bool hasDriverMutationPayload(const PopulationSnapshotFileHeader& header)
          header.driver_mutation_count > 0;
 }
 
+inline bool hasFullMutationPayload(const PopulationSnapshotFileHeader& header) {
+  return (header.flags & kPopulationSnapshotFlagHasFullMutationPayload) != 0 &&
+         header.driver_mutation_count > 0;
+}
+
+inline bool hasAnyMutationPayload(const PopulationSnapshotFileHeader& header) {
+  return (header.flags &
+          (kPopulationSnapshotFlagHasDriverMutationPayload |
+           kPopulationSnapshotFlagHasFullMutationPayload)) != 0 &&
+         header.driver_mutation_count > 0;
+}
+
 inline bool writePopulationSnapshot(
     const std::filesystem::path& path,
     double tau,
     uint8_t spatial_dimensions,
     const std::vector<PopulationSnapshotRecord>& records,
-    const std::vector<PopulationSnapshotDriverMutation>& driver_mutations = {}) {
+    const std::vector<PopulationSnapshotDriverMutation>& driver_mutations = {},
+    MutationPayloadKind payload_kind = MutationPayloadKind::DriverOnly) {
   std::filesystem::create_directories(path.parent_path());
 
   std::ofstream file(path, std::ios::binary);
@@ -144,7 +168,8 @@ inline bool writePopulationSnapshot(
       tau,
       static_cast<uint32_t>(records.size()),
       spatial_dimensions,
-      static_cast<uint32_t>(driver_mutations.size()));
+      static_cast<uint32_t>(driver_mutations.size()),
+      payload_kind);
 
   file.write(reinterpret_cast<const char*>(&header), sizeof(header));
   if (!records.empty()) {

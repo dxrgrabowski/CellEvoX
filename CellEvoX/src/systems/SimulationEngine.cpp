@@ -19,6 +19,7 @@
 #include "io/PopulationSnapshotIO.hpp"
 #include "utils/MathUtils.hpp"
 #include <unistd.h>
+#include "systems/GlobalPopulationStep.hpp"
 #include "utils/SimulationConfig.hpp"
 
 using namespace utils;
@@ -149,128 +150,17 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
 
-Eigen::VectorXd generateExponentialDistribution(int size, std::mt19937& rng) {
-  std::exponential_distribution<> exp_dist(1.0);
-
-  Eigen::VectorXd result(size);
-  for (int i = 0; i < size; ++i) {
-    result(i) = exp_dist(rng);
-  }
-
-  return result;
-}
-
 void SimulationEngine::stochasticStep() {
-  double tau_step = config->tau_step;
-  tau += tau_step;
-  const size_t N = actual_population;
-  const size_t Nc = config->env_capacity;
-  const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
-
-  Eigen::VectorXd death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
-  std::vector<uint32_t> alive_cell_indices;
-  for (auto it = cells.begin(); it != cells.end(); ++it) {
-    alive_cell_indices.push_back(it->first);
-  }
-  std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
-
-  Eigen::VectorXd birth_probs =
-      generateExponentialDistribution(N, rng).array() /
-      FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices).array();
-
-  if (alive_cell_indices.size() != N) {
-    spdlog::error(
-        "Mismatch in alive cell count: expected {}, found {}", N, alive_cell_indices.size());
-  }
-
-  if (death_probs.size() != N || birth_probs.size() != N) {
-    spdlog::error("Death arr: {} B: {} AP: {}", death_probs.size(), birth_probs.size(), N);
-  }
-
-  std::vector<double> mutation_rand_vals(N);
-  std::uniform_real_distribution<> unif_dist(0.0, 1.0);
-  for (size_t i = 0; i < N; ++i) {
-    mutation_rand_vals[i] = unif_dist(rng);
-  }
-
-  tbb::concurrent_vector<Cell> new_cells;
-  tbb::concurrent_vector<uint32_t> dead_cells;
-  std::atomic<uint32_t> new_cells_count(0), death_count(0);
-  // printProbabilityVectors(death_probs, birth_probs);
-  tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, alive_cell_indices.size()),
-      [&](const tbb::blocked_range<size_t>& range) {
-        for (size_t i = range.begin(); i != range.end(); ++i) {
-          // spdlog::info("Cell {} alive at {}", alive_cell_indices[i], i);
-          uint32_t idx = alive_cell_indices[i];
-          CellMap::accessor cell;
-          if (cells.find(cell, idx)) {
-            if (death_probs[i] <= tau_step) {
-              cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
-              dead_cells.push_back(idx);
-              death_count++;
-              // spdlog::trace("Cell {} died", cells[i].id);
-            } else if (birth_probs[i] <= tau_step) {
-              new_cells_count += 2;
-
-              cells_graveyard.insert({cell->first, {cell->second.parent_id, tau}});
-              dead_cells.push_back(idx);
-              death_count++;
-              double rand_val = mutation_rand_vals[i];
-              if (rand_val >= total_mutation_probability) {
-                new_cells.emplace_back(cell->second, cell->second.fitness);
-                new_cells.emplace_back(cell->second, cell->second.fitness);
-              } else {
-                double prob_sum = 0.0;
-                for (const auto& mut : available_mutation_types) {
-                  prob_sum += mut.second.probability;
-                  if (rand_val < prob_sum) {
-                    Cell daughter_cell1 =
-                        Cell(cell->second, cell->second.fitness * (1.0 + mut.second.effect));
-                    daughter_cell1.mutations.push_back({0, mut.second.type_id});
-
-                    new_cells.push_back(std::move(daughter_cell1));
-                    new_cells.emplace_back(cell->second, cell->second.fitness);
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-
-  std::vector<Cell> sorted_new_cells;
-  sorted_new_cells.reserve(new_cells.size());
-  for (auto& c : new_cells) sorted_new_cells.push_back(std::move(c));
-
-  std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), [](const Cell& a, const Cell& b) {
-      if (a.parent_id != b.parent_id) return a.parent_id < b.parent_id;
-      if (a.fitness != b.fitness) return a.fitness < b.fitness;
-      if (a.mutations.size() != b.mutations.size()) return a.mutations.size() < b.mutations.size();
-      if (!a.mutations.empty() && !b.mutations.empty()) {
-          return a.mutations.back().second < b.mutations.back().second;
-      }
-      return false;
-  });
-
-  auto starting_id = N + total_deaths;
-  for (size_t i = 0; i < sorted_new_cells.size(); ++i) {
-    CellMap::accessor accessor;
-    sorted_new_cells[i].id = starting_id + i;
-    if (!cells.insert(accessor, {starting_id + i, std::move(sorted_new_cells[i])})) {
-      spdlog::error("Failed to insert new cell {}", starting_id + i);
-    }
-
-    for (auto& mut : accessor->second.mutations) {
-      if (mut.first == 0) mut.first = starting_id + i;
-    }
-  }
-  for (const auto& dead_id : dead_cells) {
-    cells.erase(dead_id);
-  }
-  total_deaths += death_count;
-  actual_population = actual_population + new_cells_count - death_count;
+  tau += config->tau_step;
+  CellEvoX::systems::applyGlobalPopulationStep(cells,
+                                               cells_graveyard,
+                                               *config,
+                                               available_mutation_types,
+                                               total_mutation_probability,
+                                               actual_population,
+                                               total_deaths,
+                                               tau,
+                                               rng);
 
   int current_tau = static_cast<int>(tau);
   if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {

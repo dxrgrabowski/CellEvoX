@@ -18,6 +18,8 @@ inline const char* toString(SimulationType type) {
       return "DETERMINISTIC_RK4";
     case SimulationType::SPATIAL_3D_ABM:
       return "SPATIAL_3D_ABM";
+    case SimulationType::SPATIAL_3D_GLOBAL:
+      return "SPATIAL_3D_GLOBAL";
     default:
       return "UNKNOWN";
   }
@@ -29,8 +31,12 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
   try {
     config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
                                          : SimulationType::DETERMINISTIC_RK4;
-    if (j.contains("simulation_mode") && j["simulation_mode"] == "spatial_3d") {
-      config.sim_type = SimulationType::SPATIAL_3D_ABM;
+    if (j.contains("simulation_mode")) {
+      if (j["simulation_mode"] == "spatial_3d") {
+        config.sim_type = SimulationType::SPATIAL_3D_ABM;
+      } else if (j["simulation_mode"] == "spatial_3d_global") {
+        config.sim_type = SimulationType::SPATIAL_3D_GLOBAL;
+      }
     }
     config.tau_step = j.at("tau_step");
     if (j.contains("seed")) {
@@ -109,7 +115,8 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
-  if (config.sim_type == SimulationType::SPATIAL_3D_ABM) {
+  if (config.sim_type == SimulationType::SPATIAL_3D_ABM ||
+      config.sim_type == SimulationType::SPATIAL_3D_GLOBAL) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);
     spdlog::info("Max local density: {:.2f}", config.max_local_density);
     spdlog::info("Sample radius: {:.2f}", config.sample_radius);
