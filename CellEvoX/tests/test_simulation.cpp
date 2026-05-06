@@ -58,7 +58,7 @@ TEST_CASE("SimulationConfig parses correctly from default JSON", "[SimulationCon
 TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial3D]") {
     nlohmann::json j = {
         {"stochastic", true},
-        {"simulation_mode", "spatial_3d"},
+        {"simulation_mode", "spatial_3d_density"},
         {"tau_step", 0.05},
         {"initial_population", 32},
         {"env_capacity", 1000},
@@ -110,31 +110,6 @@ TEST_CASE("SimulationConfig parses spatial 3D capacity mode", "[SimulationConfig
     REQUIRE(config.env_capacity == 1000);
     REQUIRE(config.spatial_domain_size == Catch::Approx(256.0));
     REQUIRE(config.full_mutation_payload);
-}
-
-TEST_CASE("SimulationConfig accepts legacy spatial 3D mode aliases", "[SimulationConfig][Spatial3D]") {
-    auto parse_mode = [](const std::string& simulation_mode) {
-        nlohmann::json j = {
-            {"stochastic", true},
-            {"simulation_mode", simulation_mode},
-            {"tau_step", 0.05},
-            {"initial_population", 32},
-            {"env_capacity", 1000},
-            {"steps", 10},
-            {"statistics_resolution", 1},
-            {"population_statistics_res", 2},
-            {"output_path", "./output/"},
-            {"mutations", nlohmann::json::array()}
-        };
-        return utils::fromJson(j).sim_type;
-    };
-
-    REQUIRE(parse_mode("spatial_3d") == SimulationType::SPATIAL_3D_DENSITY);
-    REQUIRE(parse_mode("spatial_3d_density") == SimulationType::SPATIAL_3D_DENSITY);
-    REQUIRE(parse_mode("spatial_3d_abm") == SimulationType::SPATIAL_3D_DENSITY);
-    REQUIRE(parse_mode("spatial_3d_capacity") == SimulationType::SPATIAL_3D_CAPACITY);
-    REQUIRE(parse_mode("spatial_3d_common") == SimulationType::SPATIAL_3D_CAPACITY);
-    REQUIRE(parse_mode("spatial_3d_global") == SimulationType::SPATIAL_3D_CAPACITY);
 }
 
 TEST_CASE("SpatialHashGrid returns neighbors from nearby voxels", "[SpatialHashGrid]") {

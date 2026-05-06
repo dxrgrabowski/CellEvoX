@@ -33,13 +33,9 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
                                          : SimulationType::DETERMINISTIC_RK4;
     if (j.contains("simulation_mode")) {
       const std::string simulation_mode = j["simulation_mode"];
-      if (simulation_mode == "spatial_3d" ||
-          simulation_mode == "spatial_3d_density" ||
-          simulation_mode == "spatial_3d_abm") {
+      if (simulation_mode == "spatial_3d_density") {
         config.sim_type = SimulationType::SPATIAL_3D_DENSITY;
-      } else if (simulation_mode == "spatial_3d_capacity" ||
-                 simulation_mode == "spatial_3d_common" ||
-                 simulation_mode == "spatial_3d_global") {
+      } else if (simulation_mode == "spatial_3d_capacity") {
         config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
       }
     }
