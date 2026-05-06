@@ -16,8 +16,10 @@ inline const char* toString(SimulationType type) {
       return "STOCHASTIC_TAU_LEAP";
     case SimulationType::DETERMINISTIC_RK4:
       return "DETERMINISTIC_RK4";
-    case SimulationType::SPATIAL_3D_ABM:
-      return "SPATIAL_3D_ABM";
+    case SimulationType::SPATIAL_3D_DENSITY:
+      return "SPATIAL_3D_DENSITY";
+    case SimulationType::SPATIAL_3D_CAPACITY:
+      return "SPATIAL_3D_CAPACITY";
     default:
       return "UNKNOWN";
   }
@@ -29,8 +31,13 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
   try {
     config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
                                          : SimulationType::DETERMINISTIC_RK4;
-    if (j.contains("simulation_mode") && j["simulation_mode"] == "spatial_3d") {
-      config.sim_type = SimulationType::SPATIAL_3D_ABM;
+    if (j.contains("simulation_mode")) {
+      const std::string simulation_mode = j["simulation_mode"];
+      if (simulation_mode == "spatial_3d_density") {
+        config.sim_type = SimulationType::SPATIAL_3D_DENSITY;
+      } else if (simulation_mode == "spatial_3d_capacity") {
+        config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
+      }
     }
     config.tau_step = j.at("tau_step");
     if (j.contains("seed")) {
@@ -49,6 +56,11 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.graveyard_pruning_interval = 0;
     }
     config.output_path = j.at("output_path");
+    if (j.contains("full_mutation_payload")) {
+      config.full_mutation_payload = j.at("full_mutation_payload");
+    } else if (j.contains("snapshot_full_mutation_payload")) {
+      config.full_mutation_payload = j.at("snapshot_full_mutation_payload");
+    }
     if (j.contains("verbosity")) {
       config.verbosity = j.at("verbosity");
     } else {
@@ -108,8 +120,10 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
+  spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
-  if (config.sim_type == SimulationType::SPATIAL_3D_ABM) {
+  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY ||
+      config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);
     spdlog::info("Max local density: {:.2f}", config.max_local_density);
     spdlog::info("Sample radius: {:.2f}", config.sample_radius);

@@ -37,7 +37,7 @@ static std::shared_ptr<SimulationConfig> makeSpatial3DConfig(
     int mech_substeps = 2
 ) {
     auto c = std::make_shared<SimulationConfig>();
-    c->sim_type = SimulationType::SPATIAL_3D_ABM;
+    c->sim_type = SimulationType::SPATIAL_3D_DENSITY;
     c->tau_step = 0.005;
     c->initial_population = population;
     c->env_capacity = population * 8;

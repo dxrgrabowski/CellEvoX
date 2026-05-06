@@ -48,6 +48,8 @@ set(HEADERS
     include/core/application.hpp
     include/systems/SimulationEngine.hpp
     include/systems/SimulationEngine3D.hpp
+    include/systems/SimulationEngine3DCapacity.hpp
+    include/systems/CommonPopulationStep.hpp
    # include/core/DatabaseManager.hpp
     include/ecs/Cell.hpp
     include/ecs/Run.hpp
@@ -101,6 +103,7 @@ if(NOT SKIP_GUI)
     target_sources(CellEvoX PRIVATE ${QML_RESOURCES})
     target_sources(CellEvoX PRIVATE
         src/systems/SimulationEngine3D.cpp
+        src/systems/SimulationEngine3DCapacity.cpp
         src/spatial/SpatialHashGrid.cpp
     )
 
@@ -146,6 +149,7 @@ add_executable(CellEvoXTests
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
     src/systems/SimulationEngine3D.cpp
+    src/systems/SimulationEngine3DCapacity.cpp
     src/core/RunDataEngine.cpp
     src/ecs/Run.cpp
     src/spatial/SpatialHashGrid.cpp

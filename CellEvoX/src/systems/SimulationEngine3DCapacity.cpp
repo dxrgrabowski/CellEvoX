@@ -1,10 +1,8 @@
-#include "systems/SimulationEngine3D.hpp"
+#include "systems/SimulationEngine3DCapacity.hpp"
 
 #include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
-#include <tbb/combinable.h>
 #include <tbb/parallel_for.h>
-#include <tbb/task_arena.h>
 
 #include <algorithm>
 #include <chrono>
@@ -14,36 +12,33 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
-#include <random>
 #include <unordered_set>
 
 #include "io/PopulationSnapshotIO.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include <unistd.h>
 
 namespace {
 
 constexpr uint32_t kInvalidSpatialIndex = std::numeric_limits<uint32_t>::max();
-constexpr float kBirthSuppressionFloor = 0.01f;
-constexpr float kDeathRateFloor = 0.01f;
-constexpr float kCrowdingPenaltySplit = 0.5f;
 
 }  // namespace
 
-std::atomic<bool> SimulationEngine3D::shutdown_requested{false};
+std::atomic<bool> SimulationEngine3DCapacity::shutdown_requested{false};
 
-void SimulationEngine3D::signalHandler(int signum) {
+void SimulationEngine3DCapacity::signalHandler(int signum) {
   spdlog::warn("\nReceived interrupt signal ({}). Gracefully shutting down...", signum);
   shutdown_requested.store(true);
 }
 
-SimulationEngine3D::SimulationEngine3D(std::shared_ptr<SimulationConfig> config)
+SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<SimulationConfig> config)
     : actual_population(config->initial_population),
       total_deaths(0),
       tau(0.0),
       total_mutation_probability(0.0),
-      next_cell_id_(static_cast<uint32_t>(config->initial_population)),
       config(std::move(config)),
-      rng(this->config->seed),
+      event_rng_(this->config->seed),
+      spatial_rng_(this->config->seed ^ 0xA5A5A5A5u),
       spatial_grid_(2.0f * CELL_RADIUS, this->config->spatial_domain_size) {
   switch (this->config->verbosity) {
     case 0:
@@ -89,14 +84,15 @@ SimulationEngine3D::SimulationEngine3D(std::shared_ptr<SimulationConfig> config)
                        "Estimated_Graveyard_KB\n";
   }
 
-  spdlog::info("=== Spatial 3D Simulation Engine Initialized ===");
-  spdlog::info("Initial population: {}, Domain: {:.2f}, Tau step: {:.3f}",
+  spdlog::info("=== Spatial 3D Capacity Simulation Engine Initialized ===");
+  spdlog::info("Initial population: {}, Capacity: {}, Domain: {:.2f}, Tau step: {:.3f}",
                this->config->initial_population,
+               this->config->env_capacity,
                this->config->spatial_domain_size,
                this->config->tau_step);
 }
 
-ecs::Run SimulationEngine3D::run(uint32_t steps) {
+ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -155,267 +151,19 @@ ecs::Run SimulationEngine3D::run(uint32_t steps) {
                   tau);
 }
 
-void SimulationEngine3D::step() {
-  if (config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
-    stochasticStep3D();
-  }
-}
+void SimulationEngine3DCapacity::step() {
+  tau += config->tau_step;
+  const auto step_result = CellEvoX::systems::applyCommonPopulationStep(cells,
+                                                                        cells_graveyard,
+                                                                        *config,
+                                                                        available_mutation_types,
+                                                                        total_mutation_probability,
+                                                                        actual_population,
+                                                                        total_deaths,
+                                                                        tau,
+                                                                        event_rng_);
 
-void SimulationEngine3D::stop() { spdlog::info("Spatial 3D simulation stopped"); }
-
-void SimulationEngine3D::initializePopulationPositions() {
-  id_pos_x_.assign(next_cell_id_, 0.0f);
-  id_pos_y_.assign(next_cell_id_, 0.0f);
-  id_pos_z_.assign(next_cell_id_, 0.0f);
-  id_to_spatial_index_.assign(next_cell_id_, kInvalidSpatialIndex);
-
-  const uint32_t initial_population = static_cast<uint32_t>(config->initial_population);
-  if (initial_population == 0) {
-    return;
-  }
-
-  const uint32_t cells_per_axis =
-      std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(std::cbrt(initial_population))));
-  const float spacing = config->spatial_domain_size / static_cast<float>(cells_per_axis);
-  std::uniform_real_distribution<float> jitter_dist(-0.1f * CELL_RADIUS, 0.1f * CELL_RADIUS);
-
-  // O(N) lattice initialization keeps the starting state spatially stable.
-  for (uint32_t id = 0; id < initial_population; ++id) {
-    const uint32_t ix = id % cells_per_axis;
-    const uint32_t iy = (id / cells_per_axis) % cells_per_axis;
-    const uint32_t iz = id / (cells_per_axis * cells_per_axis);
-
-    id_pos_x_[id] =
-        clampToDomain((static_cast<float>(ix) + 0.5f) * spacing + jitter_dist(rng));
-    id_pos_y_[id] =
-        clampToDomain((static_cast<float>(iy) + 0.5f) * spacing + jitter_dist(rng));
-    id_pos_z_[id] =
-        clampToDomain((static_cast<float>(iz) + 0.5f) * spacing + jitter_dist(rng));
-  }
-}
-
-void SimulationEngine3D::rebuildSpatialState() {
-  for (uint32_t id : spatial_state_.cell_ids) {
-    if (id < id_to_spatial_index_.size()) {
-      id_to_spatial_index_[id] = kInvalidSpatialIndex;
-    }
-  }
-
-  spatial_state_.cell_ids.clear();
-  spatial_state_.pos_x.clear();
-  spatial_state_.pos_y.clear();
-  spatial_state_.pos_z.clear();
-
-  spatial_state_.cell_ids.reserve(cells.size());
-  for (const auto& cell_entry : cells) {
-    spatial_state_.cell_ids.push_back(cell_entry.first);
-  }
-  std::sort(spatial_state_.cell_ids.begin(), spatial_state_.cell_ids.end());
-
-  spatial_state_.pos_x.reserve(spatial_state_.cell_ids.size());
-  spatial_state_.pos_y.reserve(spatial_state_.cell_ids.size());
-  spatial_state_.pos_z.reserve(spatial_state_.cell_ids.size());
-
-  // O(N) gather from the persistent id-indexed position store.
-  for (size_t i = 0; i < spatial_state_.cell_ids.size(); ++i) {
-    const uint32_t id = spatial_state_.cell_ids[i];
-    ensurePositionCapacity(id);
-    spatial_state_.pos_x.push_back(id_pos_x_[id]);
-    spatial_state_.pos_y.push_back(id_pos_y_[id]);
-    spatial_state_.pos_z.push_back(id_pos_z_[id]);
-    id_to_spatial_index_[id] = static_cast<uint32_t>(i);
-  }
-
-  spatial_grid_.rebuild(
-      spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
-}
-
-void SimulationEngine3D::stochasticStep3D() {
-  const float tau_step = static_cast<float>(config->tau_step);
-  tau += tau_step;
-
-  if (spatial_state_.cell_ids.empty()) {
-    return;
-  }
-
-  const float sample_radius = std::max(config->sample_radius, 0.1f);
-  const float sample_radius_sq = sample_radius * sample_radius;
-  const float max_local_density = std::max(config->max_local_density, 1.0f);
-
-  tbb::combinable<std::vector<PendingBirth>> births_per_thread;
-  tbb::combinable<std::vector<PendingDeath>> deaths_per_thread;
-
-  // O(N) over active cells; each density query inspects a fixed voxel neighborhood.
-  tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, spatial_state_.cell_ids.size()),
-      [&](const tbb::blocked_range<size_t>& range) {
-        auto& local_births = births_per_thread.local();
-        auto& local_deaths = deaths_per_thread.local();
-        std::exponential_distribution<float> exp_dist(1.0f);
-        std::uniform_real_distribution<float> unif_dist(0.0f, 1.0f);
-        std::mt19937& local_rng = getThreadLocalRng();
-
-        for (size_t i = range.begin(); i != range.end(); ++i) {
-          const uint32_t id = spatial_state_.cell_ids[i];
-          const float x = spatial_state_.pos_x[i];
-          const float y = spatial_state_.pos_y[i];
-          const float z = spatial_state_.pos_z[i];
-
-          uint32_t local_density = 0;
-          spatial_grid_.queryRadius(x, y, z, sample_radius, [&](uint32_t neighbor_id) {
-            if (neighbor_id == id) {
-              return;
-            }
-
-            const uint32_t neighbor_index = id_to_spatial_index_[neighbor_id];
-            if (neighbor_index == kInvalidSpatialIndex) {
-              return;
-            }
-
-            const float dx = spatial_state_.pos_x[neighbor_index] - x;
-            const float dy = spatial_state_.pos_y[neighbor_index] - y;
-            const float dz = spatial_state_.pos_z[neighbor_index] - z;
-            const float dist_sq = dx * dx + dy * dy + dz * dz;
-            if (dist_sq <= sample_radius_sq) {
-              ++local_density;
-            }
-          });
-
-          const float crowding_ratio =
-              static_cast<float>(local_density) / max_local_density;
-
-          CellMap::const_accessor cell_accessor;
-          if (!cells.find(cell_accessor, id)) {
-            continue;
-          }
-          const Cell parent = cell_accessor->second;
-
-          // Split the crowding penalty between death and proliferation so the
-          // neutral population stays approximately balanced near local capacity.
-          const float death_rate =
-              std::max(kDeathRateFloor, kCrowdingPenaltySplit * crowding_ratio);
-          const float birth_rate =
-              std::max(kBirthSuppressionFloor,
-                       static_cast<float>(parent.fitness) *
-                           (1.0f - kCrowdingPenaltySplit * crowding_ratio));
-
-          const float death_prob = exp_dist(local_rng) / death_rate;
-          const float birth_prob = exp_dist(local_rng) / birth_rate;
-
-          if (death_prob < tau_step) {
-            local_deaths.push_back({id, parent.parent_id});
-            continue;
-          }
-
-          if (birth_prob >= tau_step) {
-            continue;
-          }
-
-          local_deaths.push_back({id, parent.parent_id});
-
-          // Symmetric placement avoids a persistent center-of-mass drift at division.
-          const Eigen::Vector3f offset =
-              sampleRandomUnitVector(local_rng) * (config->epsilon * CELL_RADIUS * 0.5f);
-
-          PendingBirth first_daughter{Cell(parent, parent.fitness),
-                                      clampToDomain(x - offset.x()),
-                                      clampToDomain(y - offset.y()),
-                                      clampToDomain(z - offset.z())};
-          PendingBirth second_daughter{Cell(parent, parent.fitness),
-                                       clampToDomain(x + offset.x()),
-                                       clampToDomain(y + offset.y()),
-                                       clampToDomain(z + offset.z())};
-
-          const float mutation_roll = unif_dist(local_rng);
-          if (mutation_roll < static_cast<float>(total_mutation_probability)) {
-            float cumulative_probability = 0.0f;
-            for (const auto& [mutation_id, mutation] : available_mutation_types) {
-              cumulative_probability += mutation.probability;
-              if (mutation_roll < cumulative_probability) {
-                first_daughter.cell =
-                    Cell(parent, parent.fitness * static_cast<double>(1.0f + mutation.effect));
-                first_daughter.cell.mutations.push_back({0, mutation_id});
-                break;
-              }
-            }
-          }
-
-          local_births.push_back(std::move(first_daughter));
-          local_births.push_back(std::move(second_daughter));
-        }
-      });
-
-  std::vector<PendingDeath> pending_deaths;
-  deaths_per_thread.combine_each(
-      [&](const std::vector<PendingDeath>& local_deaths) {
-        pending_deaths.insert(pending_deaths.end(), local_deaths.begin(), local_deaths.end());
-      });
-
-  std::vector<PendingBirth> pending_births;
-  births_per_thread.combine_each(
-      [&](std::vector<PendingBirth>& local_births) {
-        pending_births.insert(pending_births.end(),
-                              std::make_move_iterator(local_births.begin()),
-                              std::make_move_iterator(local_births.end()));
-      });
-
-  std::sort(
-      pending_deaths.begin(),
-      pending_deaths.end(),
-      [](const PendingDeath& lhs, const PendingDeath& rhs) { return lhs.id < rhs.id; });
-
-  std::sort(pending_births.begin(), pending_births.end(), [](const PendingBirth& lhs,
-                                                             const PendingBirth& rhs) {
-    if (lhs.cell.parent_id != rhs.cell.parent_id) {
-      return lhs.cell.parent_id < rhs.cell.parent_id;
-    }
-    if (lhs.cell.fitness != rhs.cell.fitness) {
-      return lhs.cell.fitness < rhs.cell.fitness;
-    }
-    if (lhs.cell.mutations.size() != rhs.cell.mutations.size()) {
-      return lhs.cell.mutations.size() < rhs.cell.mutations.size();
-    }
-    if (!lhs.cell.mutations.empty() && !rhs.cell.mutations.empty() &&
-        lhs.cell.mutations.back() != rhs.cell.mutations.back()) {
-      return lhs.cell.mutations.back() < rhs.cell.mutations.back();
-    }
-    if (lhs.x != rhs.x) {
-      return lhs.x < rhs.x;
-    }
-    if (lhs.y != rhs.y) {
-      return lhs.y < rhs.y;
-    }
-    return lhs.z < rhs.z;
-  });
-
-  for (const auto& death : pending_deaths) {
-    cells_graveyard.insert({death.id, {death.parent_id, tau}});
-    cells.erase(death.id);
-  }
-
-  for (auto& birth : pending_births) {
-    const uint32_t new_id = next_cell_id_++;
-    birth.cell.id = new_id;
-    for (auto& mutation : birth.cell.mutations) {
-      if (mutation.first == 0) {
-        mutation.first = new_id;
-      }
-    }
-
-    ensurePositionCapacity(new_id);
-    id_pos_x_[new_id] = birth.x;
-    id_pos_y_[new_id] = birth.y;
-    id_pos_z_[new_id] = birth.z;
-
-    CellMap::accessor accessor;
-    if (!cells.insert(accessor, {new_id, std::move(birth.cell)})) {
-      spdlog::error("Failed to insert spatial daughter cell {}", new_id);
-    }
-  }
-
-  total_deaths += pending_deaths.size();
-  actual_population = cells.size();
-
+  assignBirthPositions(step_result.births);
   rebuildSpatialState();
   mechanicalRelaxationStep();
 
@@ -442,7 +190,108 @@ void SimulationEngine3D::stochasticStep3D() {
   }
 }
 
-void SimulationEngine3D::mechanicalRelaxationStep() {
+void SimulationEngine3DCapacity::stop() {
+  spdlog::info("Spatial 3D capacity simulation stopped");
+}
+
+void SimulationEngine3DCapacity::initializePopulationPositions() {
+  id_pos_x_.assign(config->initial_population, 0.0f);
+  id_pos_y_.assign(config->initial_population, 0.0f);
+  id_pos_z_.assign(config->initial_population, 0.0f);
+  id_to_spatial_index_.assign(config->initial_population, kInvalidSpatialIndex);
+
+  const uint32_t initial_population = static_cast<uint32_t>(config->initial_population);
+  if (initial_population == 0) {
+    return;
+  }
+
+  const uint32_t cells_per_axis =
+      std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(std::cbrt(initial_population))));
+  const float spacing = config->spatial_domain_size / static_cast<float>(cells_per_axis);
+  std::uniform_real_distribution<float> jitter_dist(-0.1f * CELL_RADIUS, 0.1f * CELL_RADIUS);
+
+  for (uint32_t id = 0; id < initial_population; ++id) {
+    const uint32_t ix = id % cells_per_axis;
+    const uint32_t iy = (id / cells_per_axis) % cells_per_axis;
+    const uint32_t iz = id / (cells_per_axis * cells_per_axis);
+
+    id_pos_x_[id] =
+        clampToDomain((static_cast<float>(ix) + 0.5f) * spacing + jitter_dist(spatial_rng_));
+    id_pos_y_[id] =
+        clampToDomain((static_cast<float>(iy) + 0.5f) * spacing + jitter_dist(spatial_rng_));
+    id_pos_z_[id] =
+        clampToDomain((static_cast<float>(iz) + 0.5f) * spacing + jitter_dist(spatial_rng_));
+  }
+}
+
+void SimulationEngine3DCapacity::rebuildSpatialState() {
+  for (uint32_t id : spatial_state_.cell_ids) {
+    if (id < id_to_spatial_index_.size()) {
+      id_to_spatial_index_[id] = kInvalidSpatialIndex;
+    }
+  }
+
+  spatial_state_.cell_ids.clear();
+  spatial_state_.pos_x.clear();
+  spatial_state_.pos_y.clear();
+  spatial_state_.pos_z.clear();
+
+  spatial_state_.cell_ids.reserve(cells.size());
+  for (const auto& cell_entry : cells) {
+    spatial_state_.cell_ids.push_back(cell_entry.first);
+  }
+  std::sort(spatial_state_.cell_ids.begin(), spatial_state_.cell_ids.end());
+
+  spatial_state_.pos_x.reserve(spatial_state_.cell_ids.size());
+  spatial_state_.pos_y.reserve(spatial_state_.cell_ids.size());
+  spatial_state_.pos_z.reserve(spatial_state_.cell_ids.size());
+
+  for (size_t i = 0; i < spatial_state_.cell_ids.size(); ++i) {
+    const uint32_t id = spatial_state_.cell_ids[i];
+    ensurePositionCapacity(id);
+    spatial_state_.pos_x.push_back(id_pos_x_[id]);
+    spatial_state_.pos_y.push_back(id_pos_y_[id]);
+    spatial_state_.pos_z.push_back(id_pos_z_[id]);
+    id_to_spatial_index_[id] = static_cast<uint32_t>(i);
+  }
+
+  spatial_grid_.rebuild(
+      spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
+}
+
+void SimulationEngine3DCapacity::assignBirthPositions(
+    const std::vector<CellEvoX::systems::CommonBirthEvent>& births) {
+  size_t index = 0;
+  while (index < births.size()) {
+    const uint32_t parent_id = births[index].parent_id;
+    ensurePositionCapacity(parent_id);
+
+    const float parent_x = id_pos_x_[parent_id];
+    const float parent_y = id_pos_y_[parent_id];
+    const float parent_z = id_pos_z_[parent_id];
+    const Eigen::Vector3f offset =
+        sampleRandomUnitVector(spatial_rng_) * (config->epsilon * CELL_RADIUS * 0.5f);
+
+    const uint32_t first_id = births[index].id;
+    ensurePositionCapacity(first_id);
+    id_pos_x_[first_id] = clampToDomain(parent_x - offset.x());
+    id_pos_y_[first_id] = clampToDomain(parent_y - offset.y());
+    id_pos_z_[first_id] = clampToDomain(parent_z - offset.z());
+
+    if (index + 1 < births.size() && births[index + 1].parent_id == parent_id) {
+      const uint32_t second_id = births[index + 1].id;
+      ensurePositionCapacity(second_id);
+      id_pos_x_[second_id] = clampToDomain(parent_x + offset.x());
+      id_pos_y_[second_id] = clampToDomain(parent_y + offset.y());
+      id_pos_z_[second_id] = clampToDomain(parent_z + offset.z());
+      index += 2;
+    } else {
+      ++index;
+    }
+  }
+}
+
+void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
   const size_t count = spatial_state_.cell_ids.size();
   if (count == 0 || config->mech_substeps <= 0) {
     return;
@@ -461,7 +310,6 @@ void SimulationEngine3D::mechanicalRelaxationStep() {
   for (int substep = 0; substep < config->mech_substeps; ++substep) {
     spatial_grid_.rebuild(spatial_state_.cell_ids, read_x, read_y, read_z);
 
-    // O(N) over active cells with constant-radius neighbor lookups.
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, count),
         [&](const tbb::blocked_range<size_t>& range) {
@@ -527,7 +375,7 @@ void SimulationEngine3D::mechanicalRelaxationStep() {
       spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
 }
 
-void SimulationEngine3D::takeStatSnapshot() {
+void SimulationEngine3DCapacity::takeStatSnapshot() {
   const size_t living_cells_count = cells.size();
   if (living_cells_count == 0) {
     generational_stat_report.push_back(
@@ -622,7 +470,7 @@ void SimulationEngine3D::takeStatSnapshot() {
                                       mutations_kurtosis});
 }
 
-void SimulationEngine3D::takePopulationSnapshot() {
+void SimulationEngine3DCapacity::takePopulationSnapshot() {
   std::vector<CellEvoX::io::PopulationSnapshotRecord> snapshot;
   std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
   snapshot.reserve(spatial_state_.cell_ids.size());
@@ -630,7 +478,6 @@ void SimulationEngine3D::takePopulationSnapshot() {
                                 ? CellEvoX::io::MutationPayloadKind::Full
                                 : CellEvoX::io::MutationPayloadKind::DriverOnly;
 
-  // O(N) linear snapshot over the active spatial ordering.
   for (size_t i = 0; i < spatial_state_.cell_ids.size(); ++i) {
     const uint32_t id = spatial_state_.cell_ids[i];
     CellMap::const_accessor accessor;
@@ -673,7 +520,7 @@ void SimulationEngine3D::takePopulationSnapshot() {
   }
 }
 
-void SimulationEngine3D::pruneGraveyard() {
+void SimulationEngine3DCapacity::pruneGraveyard() {
   std::unordered_set<uint32_t> living_ids;
   for (const auto& cell : cells) {
     living_ids.insert(cell.first);
@@ -715,7 +562,7 @@ void SimulationEngine3D::pruneGraveyard() {
   }
 }
 
-Eigen::Vector3f SimulationEngine3D::sampleRandomUnitVector(std::mt19937& rng) const {
+Eigen::Vector3f SimulationEngine3DCapacity::sampleRandomUnitVector(std::mt19937& rng) const {
   std::normal_distribution<float> normal_dist(0.0f, 1.0f);
   Eigen::Vector3f direction(normal_dist(rng), normal_dist(rng), normal_dist(rng));
   const float norm = direction.norm();
@@ -725,11 +572,11 @@ Eigen::Vector3f SimulationEngine3D::sampleRandomUnitVector(std::mt19937& rng) co
   return direction / norm;
 }
 
-float SimulationEngine3D::clampToDomain(float value) const {
+float SimulationEngine3DCapacity::clampToDomain(float value) const {
   return std::clamp(value, 0.0f, config->spatial_domain_size);
 }
 
-void SimulationEngine3D::ensurePositionCapacity(uint32_t id) {
+void SimulationEngine3DCapacity::ensurePositionCapacity(uint32_t id) {
   if (id < id_pos_x_.size()) {
     return;
   }
@@ -741,28 +588,7 @@ void SimulationEngine3D::ensurePositionCapacity(uint32_t id) {
   id_to_spatial_index_.resize(new_size, kInvalidSpatialIndex);
 }
 
-std::mt19937& SimulationEngine3D::getThreadLocalRng() const {
-  struct ThreadRngState {
-    std::mt19937 rng;
-    const SimulationEngine3D* owner = nullptr;
-    int thread_index = std::numeric_limits<int>::min();
-  };
-
-  static thread_local ThreadRngState state;
-
-  const int thread_index = tbb::this_task_arena::current_thread_index();
-  if (state.owner != this || state.thread_index != thread_index) {
-    const uint32_t seed = config->seed ^
-                          (0x9E3779B9u + static_cast<uint32_t>(std::max(thread_index, 0)));
-    state.rng.seed(seed);
-    state.owner = this;
-    state.thread_index = thread_index;
-  }
-
-  return state.rng;
-}
-
-size_t SimulationEngine3D::getRSS() {
+size_t SimulationEngine3DCapacity::getRSS() {
   size_t rss = 0;
   std::ifstream statm("/proc/self/statm");
   if (statm.is_open()) {
@@ -774,7 +600,7 @@ size_t SimulationEngine3D::getRSS() {
   return rss * static_cast<size_t>(page_size_kb);
 }
 
-void SimulationEngine3D::logMemoryUsage() {
+void SimulationEngine3DCapacity::logMemoryUsage() {
   if (!memory_log_file.is_open()) {
     return;
   }

@@ -239,7 +239,7 @@ def load_population_frame(
     if source.kind == "csv":
         return _load_population_csv(source, driver_type_ids)
     if source.kind == "bin":
-        return _load_population_bin(source)
+        return _load_population_bin(source, driver_type_ids)
     raise ValueError(f"Unsupported population source kind: {source.kind}")
 
 
@@ -400,7 +400,7 @@ def _load_population_csv(source: PopulationFrameSource, driver_type_ids: Set[int
     )
 
 
-def _load_population_bin(source: PopulationFrameSource) -> SnapshotFrame:
+def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int]) -> SnapshotFrame:
     with source.path.open("rb") as handle:
         header_bytes = handle.read(_HEADER_STRUCT.size)
         if len(header_bytes) != _HEADER_STRUCT.size:
@@ -427,6 +427,8 @@ def _load_population_bin(source: PopulationFrameSource) -> SnapshotFrame:
 
     rows: List[Dict] = []
     has_driver_payload = bool(flags & 0x1) and driver_mutation_count > 0
+    has_full_payload = bool(flags & 0x2) and driver_mutation_count > 0
+    has_payload = has_driver_payload or has_full_payload
 
     for (
         cell_id,
@@ -440,10 +442,15 @@ def _load_population_bin(source: PopulationFrameSource) -> SnapshotFrame:
         driver_offset,
         position_valid,
     ) in records:
-        driver_slice = driver_mutations[driver_offset : driver_offset + driver_count] if has_driver_payload else []
-        driver_ids = [mutation_id for mutation_id, _ in driver_slice]
-        mutations_str = " ".join(f"({mutation_id},{mutation_type})" for mutation_id, mutation_type in driver_slice)
-        signature = driver_signature_from_driver_ids(driver_ids)
+        mutation_slice = driver_mutations[driver_offset : driver_offset + driver_count] if has_payload else []
+        mutations_str = " ".join(
+            f"({mutation_id},{mutation_type})" for mutation_id, mutation_type in mutation_slice
+        )
+        if has_full_payload:
+            signature = driver_signature_from_mutations(mutation_slice, driver_type_ids)
+        else:
+            driver_ids = [mutation_id for mutation_id, _ in mutation_slice]
+            signature = driver_signature_from_driver_ids(driver_ids)
         rows.append(
             {
                 "CellID": cell_id,

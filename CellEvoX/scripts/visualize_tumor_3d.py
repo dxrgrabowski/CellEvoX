@@ -31,12 +31,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output movie path (default: <input>/visualizations/tumor_growth_3d.mp4)",
     )
-    parser.add_argument("--fps", type=int, default=6, help="Animation frame rate")
+    parser.add_argument("--fps", type=int, default=30, help="Animation frame rate")
     parser.add_argument("--dpi", type=int, default=160, help="Output DPI")
     parser.add_argument(
         "--max-frames",
         type=int,
-        default=140,
+        default=250,
         help="Maximum number of snapshot checkpoints to include in the replay",
     )
     parser.add_argument(
@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pulse-frames",
         type=int,
-        default=12,
+        default=3,
         help="How many micro-frames to render per checkpoint for a slower breathing effect",
     )
     parser.add_argument(

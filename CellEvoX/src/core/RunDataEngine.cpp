@@ -103,6 +103,34 @@ std::string formatDriverMutationsForCsv(
   return mutations_str;
 }
 
+std::string formatSnapshotMutationsForCsv(
+    const CellEvoX::io::PopulationSnapshotRecord& record,
+    const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation>& mutation_payload) {
+  if (record.driver_mutation_count == 0) {
+    return "";
+  }
+
+  const size_t start = record.driver_mutation_offset;
+  const size_t end = start + record.driver_mutation_count;
+  if (start > mutation_payload.size() || end > mutation_payload.size()) {
+    return "";
+  }
+
+  std::string mutations_str;
+  for (size_t i = start; i < end; ++i) {
+    const auto& mutation = mutation_payload[i];
+    mutations_str +=
+        "(" + std::to_string(mutation.mutation_id) + "," + std::to_string(mutation.mutation_type) +
+        ") ";
+  }
+
+  if (!mutations_str.empty()) {
+    mutations_str.pop_back();
+  }
+
+  return mutations_str;
+}
+
 void writePopulationCsvRow(std::ofstream& file,
                            uint32_t cell_id,
                            uint32_t parent_id,
@@ -296,6 +324,7 @@ void RunDataEngine::exportToCSV() {
 
 void RunDataEngine::exportPopulationSnapshotsToCSV() {
   if (run && !run->generational_popul_report.empty()) {
+    const bool full_payload = config && config->full_mutation_payload;
     for (const auto& [generation, cell_map] : run->generational_popul_report) {
       const std::string populFilename =
           output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
@@ -314,7 +343,8 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
             cell_data.fitness,
             static_cast<uint32_t>(
                 std::min<size_t>(cell_data.mutations.size(), std::numeric_limits<uint32_t>::max())),
-            formatDriverMutationsForCsv(cell_data, run->mutation_id_to_type),
+            full_payload ? formatMutationsForCsv(cell_data)
+                         : formatDriverMutationsForCsv(cell_data, run->mutation_id_to_type),
             false,
             0.0f,
             0.0f,
@@ -330,8 +360,8 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
   for (const auto& path : collectPopulationBinaryFiles(output_dir)) {
     CellEvoX::io::PopulationSnapshotFileHeader header{};
     std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
-    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations;
-    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, driver_mutations)) {
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
+    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, mutation_payload)) {
       spdlog::error("Failed to read population snapshot file: {}", path.string());
       continue;
     }
@@ -352,7 +382,9 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
                             record.parent_id,
                             record.fitness,
                             record.mutations_count,
-                            formatDriverMutationsForCsv(record, driver_mutations),
+                            CellEvoX::io::hasFullMutationPayload(header)
+                                ? formatSnapshotMutationsForCsv(record, mutation_payload)
+                                : formatDriverMutationsForCsv(record, mutation_payload),
                             record.position_valid != 0,
                             record.x,
                             record.y,
@@ -496,12 +528,51 @@ void RunDataEngine::plotMutationsStatistics() {
 }
 
 void RunDataEngine::plotMutationWave() {
-  for (const auto& [generation, cells] : run->generational_popul_report) {
+  if (run && !run->generational_popul_report.empty()) {
+    for (const auto& [generation, cells] : run->generational_popul_report) {
+      std::map<size_t, size_t> mutation_counts;  // <number of mutations, number of cells>
+
+      for (const auto& cell : cells) {
+        size_t num_mutations = cell.second.mutations.size();
+        mutation_counts[num_mutations]++;
+      }
+
+      std::vector<size_t> mutation_bins;
+      std::vector<size_t> cell_counts;
+
+      for (const auto& [mutations, count] : mutation_counts) {
+        mutation_bins.push_back(mutations);
+        cell_counts.push_back(count);
+      }
+
+      plt::figure_size(1000, 600);
+      plt::bar(mutation_bins, cell_counts, "green");
+      plt::xlabel("Number of Mutations");
+      plt::ylabel("Number of Cells");
+      plt::title("Mutation Wave: Distribution of Mutation Counts (Generation " +
+                 std::to_string(generation) + ")");
+      plt::grid(true);
+      plt::save(output_dir + "mutation_histograms/mutation_wave_histogram_generation_" +
+                std::to_string(generation) + ".png");
+      plt::close();
+    }
+    return;
+  }
+
+  for (const auto& path : collectPopulationBinaryFiles(output_dir)) {
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
+    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, mutation_payload)) {
+      spdlog::error("Failed to read population snapshot file: {}", path.string());
+      continue;
+    }
+
+    const int generation = extractGenerationFromFilename(path);
     std::map<size_t, size_t> mutation_counts;  // <number of mutations, number of cells>
 
-    for (const auto& cell : cells) {
-      size_t num_mutations = cell.second.mutations.size();
-      mutation_counts[num_mutations]++;
+    for (const auto& record : records) {
+      mutation_counts[record.mutations_count]++;
     }
 
     std::vector<size_t> mutation_bins;
@@ -526,17 +597,80 @@ void RunDataEngine::plotMutationWave() {
 }
 
 void RunDataEngine::plotMutationFrequency() {
-  for (const auto& [generation, cells] : run->generational_popul_report) {
+  if (run && !run->generational_popul_report.empty()) {
+    const bool full_vaf = config && config->full_mutation_payload;
+    for (const auto& [generation, cells] : run->generational_popul_report) {
+      std::map<uint32_t, uint32_t> mutation_counts;
+      uint32_t total_cells = 0;
+
+      for (const auto& item : cells) {
+        const Cell& cell = item.second;
+        ++total_cells;
+
+        for (const auto& mutation : cell.mutations) {
+          if (!full_vaf && !isDriverMutationType(run->mutation_id_to_type, mutation.second)) {
+            continue;
+          }
+          uint32_t mutation_id = mutation.first;
+          mutation_counts[mutation_id]++;
+        }
+      }
+
+      std::vector<double> vafs;
+      for (const auto& [mutation_id, count] : mutation_counts) {
+        double vaf = static_cast<double>(count) / total_cells;
+        vafs.push_back(vaf);
+      }
+
+      if (vafs.empty()) {
+        continue;
+      }
+
+      int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
+
+      plt::figure();
+      plt::hist(vafs, num_bins);
+      plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
+                                      : "Driver VAF Histogram - Generation ") +
+                 std::to_string(generation));
+      plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
+                           : "Driver Variant Allele Frequency (VAF)");
+      plt::ylabel("Frequency");
+      plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+                ".png");
+      plt::close();
+    }
+    return;
+  }
+
+  for (const auto& path : collectPopulationBinaryFiles(output_dir)) {
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
+    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, mutation_payload)) {
+      spdlog::error("Failed to read population snapshot file: {}", path.string());
+      continue;
+    }
+
+    if (!CellEvoX::io::hasAnyMutationPayload(header)) {
+      continue;
+    }
+    const bool full_vaf = CellEvoX::io::hasFullMutationPayload(header);
+
     std::map<uint32_t, uint32_t> mutation_counts;
-    uint32_t total_cells = 0;
+    const uint32_t total_cells = static_cast<uint32_t>(records.size());
+    if (total_cells == 0) {
+      continue;
+    }
 
-    for (const auto& item : cells) {
-      const Cell& cell = item.second;
-      ++total_cells;
-
-      for (const auto& mutation : cell.mutations) {
-        uint32_t mutation_id = mutation.first;
-        mutation_counts[mutation_id]++;
+    for (const auto& record : records) {
+      const size_t start = record.driver_mutation_offset;
+      const size_t end = start + record.driver_mutation_count;
+      if (start > mutation_payload.size() || end > mutation_payload.size()) {
+        continue;
+      }
+      for (size_t i = start; i < end; ++i) {
+        mutation_counts[mutation_payload[i].mutation_id]++;
       }
     }
 
@@ -546,12 +680,20 @@ void RunDataEngine::plotMutationFrequency() {
       vafs.push_back(vaf);
     }
 
+    if (vafs.empty()) {
+      continue;
+    }
+
+    const int generation = extractGenerationFromFilename(path);
     int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
 
     plt::figure();
     plt::hist(vafs, num_bins);
-    plt::title("VAF Histogram - Generation " + std::to_string(generation));
-    plt::xlabel("Variant Allele Frequency (VAF)");
+    plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
+                                    : "Driver VAF Histogram - Generation ") +
+               std::to_string(generation));
+    plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
+                         : "Driver Variant Allele Frequency (VAF)");
     plt::ylabel("Frequency");
     plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
               ".png");
@@ -961,7 +1103,8 @@ void RunDataEngine::plotTumorReplay3D() {
   const std::string command =
       python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
       quoteForShell(output_dir) + " --output " +
-      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4");
+      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4") +
+      " --fps 30 --max-frames 250 --pulse-frames 3";
 
   spdlog::info("Running 3D tumor replay: {}", command);
   const int result = std::system(command.c_str());
@@ -973,4 +1116,3 @@ void RunDataEngine::plotTumorReplay3D() {
 }
 
 }  // namespace CellEvoX::core
-  
