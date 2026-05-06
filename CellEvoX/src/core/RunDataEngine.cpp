@@ -324,6 +324,7 @@ void RunDataEngine::exportToCSV() {
 
 void RunDataEngine::exportPopulationSnapshotsToCSV() {
   if (run && !run->generational_popul_report.empty()) {
+    const bool full_payload = config && config->full_mutation_payload;
     for (const auto& [generation, cell_map] : run->generational_popul_report) {
       const std::string populFilename =
           output_dir + "population_data/population_generation_" + std::to_string(generation) + ".csv";
@@ -342,7 +343,8 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
             cell_data.fitness,
             static_cast<uint32_t>(
                 std::min<size_t>(cell_data.mutations.size(), std::numeric_limits<uint32_t>::max())),
-            formatMutationsForCsv(cell_data),
+            full_payload ? formatMutationsForCsv(cell_data)
+                         : formatDriverMutationsForCsv(cell_data, run->mutation_id_to_type),
             false,
             0.0f,
             0.0f,
@@ -596,6 +598,7 @@ void RunDataEngine::plotMutationWave() {
 
 void RunDataEngine::plotMutationFrequency() {
   if (run && !run->generational_popul_report.empty()) {
+    const bool full_vaf = config && config->full_mutation_payload;
     for (const auto& [generation, cells] : run->generational_popul_report) {
       std::map<uint32_t, uint32_t> mutation_counts;
       uint32_t total_cells = 0;
@@ -605,6 +608,9 @@ void RunDataEngine::plotMutationFrequency() {
         ++total_cells;
 
         for (const auto& mutation : cell.mutations) {
+          if (!full_vaf && !isDriverMutationType(run->mutation_id_to_type, mutation.second)) {
+            continue;
+          }
           uint32_t mutation_id = mutation.first;
           mutation_counts[mutation_id]++;
         }
@@ -624,8 +630,11 @@ void RunDataEngine::plotMutationFrequency() {
 
       plt::figure();
       plt::hist(vafs, num_bins);
-      plt::title("VAF Histogram - Generation " + std::to_string(generation));
-      plt::xlabel("Variant Allele Frequency (VAF)");
+      plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
+                                      : "Driver VAF Histogram - Generation ") +
+                 std::to_string(generation));
+      plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
+                           : "Driver Variant Allele Frequency (VAF)");
       plt::ylabel("Frequency");
       plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
                 ".png");
@@ -643,9 +652,10 @@ void RunDataEngine::plotMutationFrequency() {
       continue;
     }
 
-    if (!CellEvoX::io::hasFullMutationPayload(header)) {
+    if (!CellEvoX::io::hasAnyMutationPayload(header)) {
       continue;
     }
+    const bool full_vaf = CellEvoX::io::hasFullMutationPayload(header);
 
     std::map<uint32_t, uint32_t> mutation_counts;
     const uint32_t total_cells = static_cast<uint32_t>(records.size());
@@ -679,8 +689,11 @@ void RunDataEngine::plotMutationFrequency() {
 
     plt::figure();
     plt::hist(vafs, num_bins);
-    plt::title("VAF Histogram - Generation " + std::to_string(generation));
-    plt::xlabel("Variant Allele Frequency (VAF)");
+    plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
+                                    : "Driver VAF Histogram - Generation ") +
+               std::to_string(generation));
+    plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
+                         : "Driver Variant Allele Frequency (VAF)");
     plt::ylabel("Frequency");
     plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
               ".png");
@@ -1090,7 +1103,8 @@ void RunDataEngine::plotTumorReplay3D() {
   const std::string command =
       python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
       quoteForShell(output_dir) + " --output " +
-      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4");
+      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4") +
+      " --fps 30 --max-frames 250 --pulse-frames 3";
 
   spdlog::info("Running 3D tumor replay: {}", command);
   const int result = std::system(command.c_str());

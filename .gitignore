@@ -30,6 +30,8 @@
 # Directories
 build/
 .vscode
+.venv/
+.pipx/
 output*
 compare*
 # Keys
@@ -41,3 +43,4 @@ compare*
 CMakeLists.txt.user
 CellEvoX/tests/benchmarks/baseline.json
 CellEvoX/build_skip_gui/
+.codex

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 #include <tbb/global_control.h>
 #include "core/RunDataEngine.hpp"
 #include "io/PopulationSnapshotIO.hpp"
@@ -49,6 +50,7 @@ TEST_CASE("SimulationConfig parses correctly from default JSON", "[SimulationCon
     REQUIRE(config.stat_res == 1);
     REQUIRE(config.popul_res == 5);
     REQUIRE(config.output_path == "./output/");
+    REQUIRE_FALSE(config.full_mutation_payload);
     REQUIRE(config.mutations.size() == 2);
     REQUIRE(config.mutations[1].is_driver == true);
 }
@@ -97,6 +99,7 @@ TEST_CASE("SimulationConfig parses spatial 3D global mode", "[SimulationConfig][
         {"statistics_resolution", 1},
         {"population_statistics_res", 2},
         {"output_path", "./output/"},
+        {"full_mutation_payload", true},
         {"spatial_domain_size", 256.0},
         {"mutations", nlohmann::json::array()}
     };
@@ -106,6 +109,7 @@ TEST_CASE("SimulationConfig parses spatial 3D global mode", "[SimulationConfig][
     REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_GLOBAL);
     REQUIRE(config.env_capacity == 1000);
     REQUIRE(config.spatial_domain_size == Catch::Approx(256.0));
+    REQUIRE(config.full_mutation_payload);
 }
 
 TEST_CASE("SpatialHashGrid returns neighbors from nearby voxels", "[SpatialHashGrid]") {
@@ -377,6 +381,137 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
     REQUIRE(row_line.find("\"(101,1) (202,3)\"") != std::string::npos);
 }
 
+TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV snapshots", "[RunDataEngine]") {
+    auto make_config = [](const std::string& output_path, bool full_payload) {
+        auto config = std::make_shared<SimulationConfig>();
+        config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+        config->tau_step = 1.0;
+        config->seed = 31;
+        config->initial_population = 64;
+        config->env_capacity = 1000;
+        config->steps = 1;
+        config->stat_res = 1;
+        config->popul_res = 1;
+        config->output_path = output_path;
+        config->full_mutation_payload = full_payload;
+        config->verbosity = 0;
+        config->mutations.push_back({0.0f, 1.0f, 2, false});
+        return config;
+    };
+
+    auto export_csv = [](std::shared_ptr<SimulationConfig> config) {
+        std::filesystem::remove_all(config->output_path);
+        std::filesystem::create_directories(std::filesystem::path(config->output_path) / "statistics");
+
+        SimulationEngine engine(config);
+        auto runData = engine.run(1);
+        auto run = std::make_shared<ecs::Run>(std::move(runData));
+        CellEvoX::core::RunDataEngine data_engine(config, run, "");
+        data_engine.exportPopulationSnapshotsToCSV();
+
+        const auto csv_path =
+            std::filesystem::path(config->output_path) / "population_data" / "population_generation_1.csv";
+        REQUIRE(std::filesystem::exists(csv_path));
+
+        std::ifstream file(csv_path);
+        REQUIRE(file.is_open());
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        return buffer.str();
+    };
+
+    const auto driver_only_csv =
+        export_csv(make_config("/tmp/test_run_data_engine_driver_only_ram_csv", false));
+    REQUIRE(driver_only_csv.find(",2)") == std::string::npos);
+
+    const auto full_payload_csv =
+        export_csv(make_config("/tmp/test_run_data_engine_full_ram_csv", true));
+    REQUIRE(full_payload_csv.find(",2)") != std::string::npos);
+}
+
+TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D", "[SimulationEngine][PopulationSnapshotIO]") {
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 1.0;
+    config->seed = 23;
+    config->initial_population = 16;
+    config->env_capacity = 1000;
+    config->steps = 1;
+    config->stat_res = 1;
+    config->popul_res = 1;
+    config->output_path = "/tmp/test_sim_2d_driver_snapshot";
+    config->verbosity = 0;
+    config->mutations.push_back({0.1f, 1.0f, 1, true});
+    config->mutations.push_back({-0.05f, 0.0f, 2, false});
+
+    std::filesystem::remove_all(config->output_path);
+    std::filesystem::create_directories(std::filesystem::path(config->output_path) / "statistics");
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(1);
+
+    REQUIRE(runData.generational_stat_report.size() == 1);
+    const auto snapshot_path =
+        std::filesystem::path(config->output_path) / "population_data" / "population_generation_1.bin";
+    REQUIRE(std::filesystem::exists(snapshot_path));
+
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
+    REQUIRE(header.spatial_dimensions == 0);
+    REQUIRE(CellEvoX::io::hasDriverMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasFullMutationPayload(header));
+    REQUIRE_FALSE(records.empty());
+    REQUIRE(std::all_of(records.begin(), records.end(), [](const auto& record) {
+        return record.position_valid == 0;
+    }));
+    REQUIRE_FALSE(mutations.empty());
+    REQUIRE(std::all_of(mutations.begin(), mutations.end(), [](const auto& mutation) {
+        return mutation.mutation_type == 1;
+    }));
+}
+
+TEST_CASE("SimulationEngine writes full mutation payload snapshots when enabled in 2D", "[SimulationEngine][PopulationSnapshotIO]") {
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 1.0;
+    config->seed = 29;
+    config->initial_population = 64;
+    config->env_capacity = 1000;
+    config->steps = 1;
+    config->stat_res = 1;
+    config->popul_res = 1;
+    config->output_path = "/tmp/test_sim_2d_full_snapshot";
+    config->full_mutation_payload = true;
+    config->verbosity = 0;
+    config->mutations.push_back({0.0f, 1.0f, 2, false});
+
+    std::filesystem::remove_all(config->output_path);
+    std::filesystem::create_directories(std::filesystem::path(config->output_path) / "statistics");
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(1);
+
+    REQUIRE(runData.generational_stat_report.size() == 1);
+    const auto snapshot_path =
+        std::filesystem::path(config->output_path) / "population_data" / "population_generation_1.bin";
+    REQUIRE(std::filesystem::exists(snapshot_path));
+
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
+    REQUIRE(header.spatial_dimensions == 0);
+    REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
+    REQUIRE_FALSE(records.empty());
+    REQUIRE_FALSE(mutations.empty());
+    REQUIRE(std::all_of(mutations.begin(), mutations.end(), [](const auto& mutation) {
+        return mutation.mutation_type == 2;
+    }));
+}
+
 inline bool snapshot_within_domain(
     const std::vector<CellEvoX::io::PopulationSnapshotRecord>& snapshot,
     float domain_size
@@ -580,7 +715,7 @@ TEST_CASE("SimulationEngine3DGlobal matches 2D population events", "[SimulationE
     }
 }
 
-TEST_CASE("SimulationEngine3DGlobal writes spatial full-mutation snapshots", "[SimulationEngine3DGlobal]") {
+TEST_CASE("SimulationEngine3DGlobal writes spatial driver-mutation snapshots", "[SimulationEngine3DGlobal]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto config = std::make_shared<SimulationConfig>();
@@ -617,13 +752,65 @@ TEST_CASE("SimulationEngine3DGlobal writes spatial full-mutation snapshots", "[S
     std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
     REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
     REQUIRE(header.spatial_dimensions == 3);
-    REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
+    REQUIRE(CellEvoX::io::hasDriverMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasFullMutationPayload(header));
     REQUIRE_FALSE(records.empty());
     REQUIRE(std::all_of(records.begin(), records.end(), [](const auto& record) {
         return record.position_valid == 1;
     }));
     REQUIRE(snapshot_within_domain(records, config->spatial_domain_size));
     REQUIRE_FALSE(mutations.empty());
+    REQUIRE(std::all_of(mutations.begin(), mutations.end(), [](const auto& mutation) {
+        return mutation.mutation_type == 1;
+    }));
+}
+
+TEST_CASE("SimulationEngine3DGlobal writes full mutation payload snapshots when enabled", "[SimulationEngine3DGlobal]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::SPATIAL_3D_GLOBAL;
+    config->tau_step = 1.0;
+    config->seed = 19;
+    config->initial_population = 64;
+    config->env_capacity = 1000;
+    config->steps = 1;
+    config->stat_res = 1;
+    config->popul_res = 1;
+    config->output_path = "/tmp/test_sim_3d_global_full_snapshot";
+    config->spatial_domain_size = 20.0f;
+    config->spring_constant = 0.2f;
+    config->mech_dt = 0.05f;
+    config->mech_substeps = 1;
+    config->epsilon = 0.1f;
+    config->full_mutation_payload = true;
+    config->verbosity = 0;
+    config->mutations.push_back({0.0f, 1.0f, 2, false});
+
+    std::filesystem::remove_all(config->output_path);
+    std::filesystem::create_directories(config->output_path);
+
+    SimulationEngine3DGlobal engine(config);
+    auto runData = engine.run(1);
+
+    REQUIRE(runData.generational_stat_report.size() == 1);
+    const auto snapshot_path =
+        std::filesystem::path(config->output_path) / "population_data" / "population_generation_1.bin";
+    REQUIRE(std::filesystem::exists(snapshot_path));
+
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
+    REQUIRE(header.spatial_dimensions == 3);
+    REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
+    REQUIRE_FALSE(records.empty());
+    REQUIRE(snapshot_within_domain(records, config->spatial_domain_size));
+    REQUIRE_FALSE(mutations.empty());
+    REQUIRE(std::all_of(mutations.begin(), mutations.end(), [](const auto& mutation) {
+        return mutation.mutation_type == 2;
+    }));
 }
 
 TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEngine3D]") {

@@ -104,13 +104,8 @@ void Application::initialize() {
     data_engine.plotLivingCellsOverGenerations();
     data_engine.exportToCSV();
     data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
-    if (sim_config->sim_type != SimulationType::SPATIAL_3D_ABM) {
-      data_engine.plotMutationWave();
-      data_engine.plotMutationFrequency();
-    } else {
-      spdlog::info(
-          "Spatial 3D mode stores driver-only mutation payloads in binary snapshots; skipping full-mutation plots.");
-    }
+    data_engine.plotMutationWave();
+    data_engine.plotMutationFrequency();
     data_engine.plotMullerDiagram();
     data_engine.plotClonePhylogenyTree();
     data_engine.plotCloneCounts();

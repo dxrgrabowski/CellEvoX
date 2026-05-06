@@ -31,6 +31,7 @@ struct SimulationConfig {
   int graveyard_pruning_interval = 0;
   std::string output_path;
   std::vector<MutationType> mutations;
+  bool full_mutation_payload = false;
   int verbosity = 2; // 0: off, 1: minimal, 2: full
   uint32_t phylogeny_num_cells_sampling = 100;
   float spatial_domain_size = 200.0f;

@@ -55,6 +55,11 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       config.graveyard_pruning_interval = 0;
     }
     config.output_path = j.at("output_path");
+    if (j.contains("full_mutation_payload")) {
+      config.full_mutation_payload = j.at("full_mutation_payload");
+    } else if (j.contains("snapshot_full_mutation_payload")) {
+      config.full_mutation_payload = j.at("snapshot_full_mutation_payload");
+    }
     if (j.contains("verbosity")) {
       config.verbosity = j.at("verbosity");
     } else {
@@ -114,6 +119,7 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
   spdlog::info("Output path: {}", config.output_path);
+  spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
   if (config.sim_type == SimulationType::SPATIAL_3D_ABM ||
       config.sim_type == SimulationType::SPATIAL_3D_GLOBAL) {

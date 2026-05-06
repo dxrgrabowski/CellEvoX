@@ -277,8 +277,11 @@ void SimulationEngine::takeStatSnapshot() {
 
 void SimulationEngine::takePopulationSnapshot() {
   std::vector<CellEvoX::io::PopulationSnapshotRecord> snapshot_records;
-  std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations;
+  std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
   snapshot_records.reserve(cells.size());
+  const auto payload_kind = config->full_mutation_payload
+                                ? CellEvoX::io::MutationPayloadKind::Full
+                                : CellEvoX::io::MutationPayloadKind::DriverOnly;
 
   CellMap cells_copy;
   cells_copy.rehash(cells.size());
@@ -286,15 +289,16 @@ void SimulationEngine::takePopulationSnapshot() {
     CellMap::accessor accessor;
     cells_copy.insert(accessor, {cell.first, cell.second});
 
-    const uint32_t driver_mutation_offset = static_cast<uint32_t>(driver_mutations.size());
+    const uint32_t mutation_payload_offset = static_cast<uint32_t>(mutation_payload.size());
     for (const auto& [mutation_id, mutation_type] : cell.second.mutations) {
       const auto type_it = available_mutation_types.find(mutation_type);
-      if (type_it != available_mutation_types.end() && type_it->second.is_driver) {
-        driver_mutations.push_back({mutation_id, mutation_type});
+      if (config->full_mutation_payload ||
+          (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
+        mutation_payload.push_back({mutation_id, mutation_type});
       }
     }
-    const auto driver_mutation_count =
-        static_cast<uint16_t>(std::min<size_t>(driver_mutations.size() - driver_mutation_offset,
+    const auto mutation_payload_count =
+        static_cast<uint16_t>(std::min<size_t>(mutation_payload.size() - mutation_payload_offset,
                                                std::numeric_limits<uint16_t>::max()));
 
     snapshot_records.push_back(
@@ -306,8 +310,8 @@ void SimulationEngine::takePopulationSnapshot() {
          std::numeric_limits<float>::quiet_NaN(),
          static_cast<uint16_t>(
              std::min<size_t>(cell.second.mutations.size(), std::numeric_limits<uint16_t>::max())),
-         driver_mutation_count,
-         driver_mutation_offset,
+         mutation_payload_count,
+         mutation_payload_offset,
          0,
          {0, 0, 0}});
   }
@@ -315,7 +319,7 @@ void SimulationEngine::takePopulationSnapshot() {
   const auto snapshot_path =
       CellEvoX::io::populationSnapshotPath(config->output_path, static_cast<int>(tau));
   if (!CellEvoX::io::writePopulationSnapshot(
-          snapshot_path, tau, 0, snapshot_records, driver_mutations)) {
+          snapshot_path, tau, 0, snapshot_records, mutation_payload, payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", snapshot_path);
   }
 
