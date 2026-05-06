@@ -15,7 +15,7 @@
 #include "spatial/SpatialHashGrid.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
-#include "systems/SimulationEngine3DGlobal.hpp"
+#include "systems/SimulationEngine3DCapacity.hpp"
 #include "ecs/Cell.hpp"
 
 // Namespace using removed
@@ -78,7 +78,7 @@ TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial
 
     auto config = utils::fromJson(j);
 
-    REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_ABM);
+    REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_DENSITY);
     REQUIRE(config.spatial_domain_size == Catch::Approx(256.0));
     REQUIRE(config.max_local_density == Catch::Approx(12.0));
     REQUIRE(config.sample_radius == Catch::Approx(4.0));
@@ -88,10 +88,10 @@ TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial
     REQUIRE(config.epsilon == Catch::Approx(0.15));
 }
 
-TEST_CASE("SimulationConfig parses spatial 3D global mode", "[SimulationConfig][Spatial3DGlobal]") {
+TEST_CASE("SimulationConfig parses spatial 3D capacity mode", "[SimulationConfig][Spatial3DCapacity]") {
     nlohmann::json j = {
         {"stochastic", true},
-        {"simulation_mode", "spatial_3d_global"},
+        {"simulation_mode", "spatial_3d_capacity"},
         {"tau_step", 0.05},
         {"initial_population", 32},
         {"env_capacity", 1000},
@@ -106,10 +106,35 @@ TEST_CASE("SimulationConfig parses spatial 3D global mode", "[SimulationConfig][
 
     auto config = utils::fromJson(j);
 
-    REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_GLOBAL);
+    REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_CAPACITY);
     REQUIRE(config.env_capacity == 1000);
     REQUIRE(config.spatial_domain_size == Catch::Approx(256.0));
     REQUIRE(config.full_mutation_payload);
+}
+
+TEST_CASE("SimulationConfig accepts legacy spatial 3D mode aliases", "[SimulationConfig][Spatial3D]") {
+    auto parse_mode = [](const std::string& simulation_mode) {
+        nlohmann::json j = {
+            {"stochastic", true},
+            {"simulation_mode", simulation_mode},
+            {"tau_step", 0.05},
+            {"initial_population", 32},
+            {"env_capacity", 1000},
+            {"steps", 10},
+            {"statistics_resolution", 1},
+            {"population_statistics_res", 2},
+            {"output_path", "./output/"},
+            {"mutations", nlohmann::json::array()}
+        };
+        return utils::fromJson(j).sim_type;
+    };
+
+    REQUIRE(parse_mode("spatial_3d") == SimulationType::SPATIAL_3D_DENSITY);
+    REQUIRE(parse_mode("spatial_3d_density") == SimulationType::SPATIAL_3D_DENSITY);
+    REQUIRE(parse_mode("spatial_3d_abm") == SimulationType::SPATIAL_3D_DENSITY);
+    REQUIRE(parse_mode("spatial_3d_capacity") == SimulationType::SPATIAL_3D_CAPACITY);
+    REQUIRE(parse_mode("spatial_3d_common") == SimulationType::SPATIAL_3D_CAPACITY);
+    REQUIRE(parse_mode("spatial_3d_global") == SimulationType::SPATIAL_3D_CAPACITY);
 }
 
 TEST_CASE("SpatialHashGrid returns neighbors from nearby voxels", "[SpatialHashGrid]") {
@@ -619,7 +644,7 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
 
 TEST_CASE("SimulationEngine3D produces binary population snapshots", "[SimulationEngine3D]") {
     auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_ABM;
+    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
     config->tau_step = 1.0;
     config->seed = 7;
     config->initial_population = 16;
@@ -646,7 +671,7 @@ TEST_CASE("SimulationEngine3D produces binary population snapshots", "[Simulatio
     REQUIRE(std::filesystem::exists("/tmp/test_sim_3d/population_data/population_generation_2.bin"));
 }
 
-TEST_CASE("SimulationEngine3DGlobal matches 2D population events", "[SimulationEngine3DGlobal][Determinism]") {
+TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[SimulationEngine3DCapacity][Determinism]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto make_config = [](SimulationType type, const std::string& output_path) {
@@ -672,7 +697,7 @@ TEST_CASE("SimulationEngine3DGlobal matches 2D population events", "[SimulationE
     };
 
     auto config_2d = make_config(SimulationType::STOCHASTIC_TAU_LEAP, "/tmp/test_sim_2d_parity");
-    auto config_3d = make_config(SimulationType::SPATIAL_3D_GLOBAL, "/tmp/test_sim_3d_global_parity");
+    auto config_3d = make_config(SimulationType::SPATIAL_3D_CAPACITY, "/tmp/test_sim_3d_capacity_parity");
 
     std::filesystem::remove_all(config_2d->output_path);
     std::filesystem::remove_all(config_3d->output_path);
@@ -682,7 +707,7 @@ TEST_CASE("SimulationEngine3DGlobal matches 2D population events", "[SimulationE
     SimulationEngine engine_2d(config_2d);
     auto run_2d = engine_2d.run(100);
 
-    SimulationEngine3DGlobal engine_3d(config_3d);
+    SimulationEngine3DCapacity engine_3d(config_3d);
     auto run_3d = engine_3d.run(100);
 
     REQUIRE(run_2d.generational_stat_report.size() == run_3d.generational_stat_report.size());
@@ -715,11 +740,11 @@ TEST_CASE("SimulationEngine3DGlobal matches 2D population events", "[SimulationE
     }
 }
 
-TEST_CASE("SimulationEngine3DGlobal writes spatial driver-mutation snapshots", "[SimulationEngine3DGlobal]") {
+TEST_CASE("SimulationEngine3DCapacity writes spatial driver-mutation snapshots", "[SimulationEngine3DCapacity]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_GLOBAL;
+    config->sim_type = SimulationType::SPATIAL_3D_CAPACITY;
     config->tau_step = 1.0;
     config->seed = 17;
     config->initial_population = 16;
@@ -727,7 +752,7 @@ TEST_CASE("SimulationEngine3DGlobal writes spatial driver-mutation snapshots", "
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_3d_global_snapshot";
+    config->output_path = "/tmp/test_sim_3d_capacity_snapshot";
     config->spatial_domain_size = 20.0f;
     config->spring_constant = 0.2f;
     config->mech_dt = 0.05f;
@@ -739,7 +764,7 @@ TEST_CASE("SimulationEngine3DGlobal writes spatial driver-mutation snapshots", "
     std::filesystem::remove_all(config->output_path);
     std::filesystem::create_directories(config->output_path);
 
-    SimulationEngine3DGlobal engine(config);
+    SimulationEngine3DCapacity engine(config);
     auto runData = engine.run(1);
 
     REQUIRE(runData.generational_stat_report.size() == 1);
@@ -765,11 +790,11 @@ TEST_CASE("SimulationEngine3DGlobal writes spatial driver-mutation snapshots", "
     }));
 }
 
-TEST_CASE("SimulationEngine3DGlobal writes full mutation payload snapshots when enabled", "[SimulationEngine3DGlobal]") {
+TEST_CASE("SimulationEngine3DCapacity writes full mutation payload snapshots when enabled", "[SimulationEngine3DCapacity]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_GLOBAL;
+    config->sim_type = SimulationType::SPATIAL_3D_CAPACITY;
     config->tau_step = 1.0;
     config->seed = 19;
     config->initial_population = 64;
@@ -777,7 +802,7 @@ TEST_CASE("SimulationEngine3DGlobal writes full mutation payload snapshots when 
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_3d_global_full_snapshot";
+    config->output_path = "/tmp/test_sim_3d_capacity_full_snapshot";
     config->spatial_domain_size = 20.0f;
     config->spring_constant = 0.2f;
     config->mech_dt = 0.05f;
@@ -790,7 +815,7 @@ TEST_CASE("SimulationEngine3DGlobal writes full mutation payload snapshots when 
     std::filesystem::remove_all(config->output_path);
     std::filesystem::create_directories(config->output_path);
 
-    SimulationEngine3DGlobal engine(config);
+    SimulationEngine3DCapacity engine(config);
     auto runData = engine.run(1);
 
     REQUIRE(runData.generational_stat_report.size() == 1);
@@ -817,7 +842,7 @@ TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEn
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_ABM;
+    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
     config->tau_step = 0.05;
     config->seed = 42;
     config->initial_population = 64;
@@ -850,7 +875,7 @@ TEST_CASE("SimulationEngine3D deterministic smoke test", "[SimulationEngine3D][D
 
     auto make_config = [](const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
-        config->sim_type = SimulationType::SPATIAL_3D_ABM;
+        config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
         config->tau_step = 1.0;
         config->seed = 321;
         config->initial_population = 16;
@@ -908,7 +933,7 @@ TEST_CASE("SimulationEngine3D is repeatable with the same seed", "[SimulationEng
 
     auto make_config = [](const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
-        config->sim_type = SimulationType::SPATIAL_3D_ABM;
+        config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
         config->tau_step = 0.05;
         config->seed = 123;
         config->initial_population = 64;
@@ -965,7 +990,7 @@ TEST_CASE("SimulationEngine3D stabilizes near local carrying capacity", "[Simula
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
     auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_ABM;
+    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
     config->tau_step = 0.05;
     config->seed = 42;
     config->initial_population = 125;

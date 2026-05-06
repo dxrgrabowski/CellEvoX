@@ -19,7 +19,7 @@
 #include "io/PopulationSnapshotIO.hpp"
 #include "utils/MathUtils.hpp"
 #include <unistd.h>
-#include "systems/GlobalPopulationStep.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include "utils/SimulationConfig.hpp"
 
 using namespace utils;
@@ -152,7 +152,7 @@ void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
 
 void SimulationEngine::stochasticStep() {
   tau += config->tau_step;
-  CellEvoX::systems::applyGlobalPopulationStep(cells,
+  CellEvoX::systems::applyCommonPopulationStep(cells,
                                                cells_graveyard,
                                                *config,
                                                available_mutation_types,

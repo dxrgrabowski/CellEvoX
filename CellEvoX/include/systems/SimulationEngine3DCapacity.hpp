@@ -11,14 +11,14 @@
 #include <Eigen/Dense>
 
 #include "spatial/SpatialHashGrid.hpp"
-#include "systems/GlobalPopulationStep.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
 
-class SimulationEngine3DGlobal {
+class SimulationEngine3DCapacity {
  public:
   static constexpr float CELL_RADIUS = 1.0f;
 
-  explicit SimulationEngine3DGlobal(std::shared_ptr<SimulationConfig> config);
+  explicit SimulationEngine3DCapacity(std::shared_ptr<SimulationConfig> config);
 
   static std::atomic<bool> shutdown_requested;
   static void signalHandler(int signum);
@@ -38,7 +38,7 @@ class SimulationEngine3DGlobal {
   void initializePopulationPositions();
   void rebuildSpatialState();
   void assignBirthPositions(
-      const std::vector<CellEvoX::systems::GlobalBirthEvent>& births);
+      const std::vector<CellEvoX::systems::CommonBirthEvent>& births);
   void mechanicalRelaxationStep();
   void takeStatSnapshot();
   void takePopulationSnapshot();

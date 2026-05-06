@@ -16,10 +16,10 @@ inline const char* toString(SimulationType type) {
       return "STOCHASTIC_TAU_LEAP";
     case SimulationType::DETERMINISTIC_RK4:
       return "DETERMINISTIC_RK4";
-    case SimulationType::SPATIAL_3D_ABM:
-      return "SPATIAL_3D_ABM";
-    case SimulationType::SPATIAL_3D_GLOBAL:
-      return "SPATIAL_3D_GLOBAL";
+    case SimulationType::SPATIAL_3D_DENSITY:
+      return "SPATIAL_3D_DENSITY";
+    case SimulationType::SPATIAL_3D_CAPACITY:
+      return "SPATIAL_3D_CAPACITY";
     default:
       return "UNKNOWN";
   }
@@ -32,10 +32,15 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
                                          : SimulationType::DETERMINISTIC_RK4;
     if (j.contains("simulation_mode")) {
-      if (j["simulation_mode"] == "spatial_3d") {
-        config.sim_type = SimulationType::SPATIAL_3D_ABM;
-      } else if (j["simulation_mode"] == "spatial_3d_global") {
-        config.sim_type = SimulationType::SPATIAL_3D_GLOBAL;
+      const std::string simulation_mode = j["simulation_mode"];
+      if (simulation_mode == "spatial_3d" ||
+          simulation_mode == "spatial_3d_density" ||
+          simulation_mode == "spatial_3d_abm") {
+        config.sim_type = SimulationType::SPATIAL_3D_DENSITY;
+      } else if (simulation_mode == "spatial_3d_capacity" ||
+                 simulation_mode == "spatial_3d_common" ||
+                 simulation_mode == "spatial_3d_global") {
+        config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
       }
     }
     config.tau_step = j.at("tau_step");
@@ -121,8 +126,8 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
-  if (config.sim_type == SimulationType::SPATIAL_3D_ABM ||
-      config.sim_type == SimulationType::SPATIAL_3D_GLOBAL) {
+  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY ||
+      config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);
     spdlog::info("Max local density: {:.2f}", config.max_local_density);
     spdlog::info("Sample radius: {:.2f}", config.sample_radius);

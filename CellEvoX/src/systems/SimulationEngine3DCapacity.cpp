@@ -1,4 +1,4 @@
-#include "systems/SimulationEngine3DGlobal.hpp"
+#include "systems/SimulationEngine3DCapacity.hpp"
 
 #include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
@@ -15,7 +15,7 @@
 #include <unordered_set>
 
 #include "io/PopulationSnapshotIO.hpp"
-#include "systems/GlobalPopulationStep.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include <unistd.h>
 
 namespace {
@@ -24,14 +24,14 @@ constexpr uint32_t kInvalidSpatialIndex = std::numeric_limits<uint32_t>::max();
 
 }  // namespace
 
-std::atomic<bool> SimulationEngine3DGlobal::shutdown_requested{false};
+std::atomic<bool> SimulationEngine3DCapacity::shutdown_requested{false};
 
-void SimulationEngine3DGlobal::signalHandler(int signum) {
+void SimulationEngine3DCapacity::signalHandler(int signum) {
   spdlog::warn("\nReceived interrupt signal ({}). Gracefully shutting down...", signum);
   shutdown_requested.store(true);
 }
 
-SimulationEngine3DGlobal::SimulationEngine3DGlobal(std::shared_ptr<SimulationConfig> config)
+SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<SimulationConfig> config)
     : actual_population(config->initial_population),
       total_deaths(0),
       tau(0.0),
@@ -84,7 +84,7 @@ SimulationEngine3DGlobal::SimulationEngine3DGlobal(std::shared_ptr<SimulationCon
                        "Estimated_Graveyard_KB\n";
   }
 
-  spdlog::info("=== Spatial 3D Global Simulation Engine Initialized ===");
+  spdlog::info("=== Spatial 3D Capacity Simulation Engine Initialized ===");
   spdlog::info("Initial population: {}, Capacity: {}, Domain: {:.2f}, Tau step: {:.3f}",
                this->config->initial_population,
                this->config->env_capacity,
@@ -92,7 +92,7 @@ SimulationEngine3DGlobal::SimulationEngine3DGlobal(std::shared_ptr<SimulationCon
                this->config->tau_step);
 }
 
-ecs::Run SimulationEngine3DGlobal::run(uint32_t steps) {
+ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -151,9 +151,9 @@ ecs::Run SimulationEngine3DGlobal::run(uint32_t steps) {
                   tau);
 }
 
-void SimulationEngine3DGlobal::step() {
+void SimulationEngine3DCapacity::step() {
   tau += config->tau_step;
-  const auto step_result = CellEvoX::systems::applyGlobalPopulationStep(cells,
+  const auto step_result = CellEvoX::systems::applyCommonPopulationStep(cells,
                                                                         cells_graveyard,
                                                                         *config,
                                                                         available_mutation_types,
@@ -190,11 +190,11 @@ void SimulationEngine3DGlobal::step() {
   }
 }
 
-void SimulationEngine3DGlobal::stop() {
-  spdlog::info("Spatial 3D global simulation stopped");
+void SimulationEngine3DCapacity::stop() {
+  spdlog::info("Spatial 3D capacity simulation stopped");
 }
 
-void SimulationEngine3DGlobal::initializePopulationPositions() {
+void SimulationEngine3DCapacity::initializePopulationPositions() {
   id_pos_x_.assign(config->initial_population, 0.0f);
   id_pos_y_.assign(config->initial_population, 0.0f);
   id_pos_z_.assign(config->initial_population, 0.0f);
@@ -224,7 +224,7 @@ void SimulationEngine3DGlobal::initializePopulationPositions() {
   }
 }
 
-void SimulationEngine3DGlobal::rebuildSpatialState() {
+void SimulationEngine3DCapacity::rebuildSpatialState() {
   for (uint32_t id : spatial_state_.cell_ids) {
     if (id < id_to_spatial_index_.size()) {
       id_to_spatial_index_[id] = kInvalidSpatialIndex;
@@ -259,8 +259,8 @@ void SimulationEngine3DGlobal::rebuildSpatialState() {
       spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
 }
 
-void SimulationEngine3DGlobal::assignBirthPositions(
-    const std::vector<CellEvoX::systems::GlobalBirthEvent>& births) {
+void SimulationEngine3DCapacity::assignBirthPositions(
+    const std::vector<CellEvoX::systems::CommonBirthEvent>& births) {
   size_t index = 0;
   while (index < births.size()) {
     const uint32_t parent_id = births[index].parent_id;
@@ -291,7 +291,7 @@ void SimulationEngine3DGlobal::assignBirthPositions(
   }
 }
 
-void SimulationEngine3DGlobal::mechanicalRelaxationStep() {
+void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
   const size_t count = spatial_state_.cell_ids.size();
   if (count == 0 || config->mech_substeps <= 0) {
     return;
@@ -375,7 +375,7 @@ void SimulationEngine3DGlobal::mechanicalRelaxationStep() {
       spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
 }
 
-void SimulationEngine3DGlobal::takeStatSnapshot() {
+void SimulationEngine3DCapacity::takeStatSnapshot() {
   const size_t living_cells_count = cells.size();
   if (living_cells_count == 0) {
     generational_stat_report.push_back(
@@ -470,7 +470,7 @@ void SimulationEngine3DGlobal::takeStatSnapshot() {
                                       mutations_kurtosis});
 }
 
-void SimulationEngine3DGlobal::takePopulationSnapshot() {
+void SimulationEngine3DCapacity::takePopulationSnapshot() {
   std::vector<CellEvoX::io::PopulationSnapshotRecord> snapshot;
   std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutation_payload;
   snapshot.reserve(spatial_state_.cell_ids.size());
@@ -520,7 +520,7 @@ void SimulationEngine3DGlobal::takePopulationSnapshot() {
   }
 }
 
-void SimulationEngine3DGlobal::pruneGraveyard() {
+void SimulationEngine3DCapacity::pruneGraveyard() {
   std::unordered_set<uint32_t> living_ids;
   for (const auto& cell : cells) {
     living_ids.insert(cell.first);
@@ -562,7 +562,7 @@ void SimulationEngine3DGlobal::pruneGraveyard() {
   }
 }
 
-Eigen::Vector3f SimulationEngine3DGlobal::sampleRandomUnitVector(std::mt19937& rng) const {
+Eigen::Vector3f SimulationEngine3DCapacity::sampleRandomUnitVector(std::mt19937& rng) const {
   std::normal_distribution<float> normal_dist(0.0f, 1.0f);
   Eigen::Vector3f direction(normal_dist(rng), normal_dist(rng), normal_dist(rng));
   const float norm = direction.norm();
@@ -572,11 +572,11 @@ Eigen::Vector3f SimulationEngine3DGlobal::sampleRandomUnitVector(std::mt19937& r
   return direction / norm;
 }
 
-float SimulationEngine3DGlobal::clampToDomain(float value) const {
+float SimulationEngine3DCapacity::clampToDomain(float value) const {
   return std::clamp(value, 0.0f, config->spatial_domain_size);
 }
 
-void SimulationEngine3DGlobal::ensurePositionCapacity(uint32_t id) {
+void SimulationEngine3DCapacity::ensurePositionCapacity(uint32_t id) {
   if (id < id_pos_x_.size()) {
     return;
   }
@@ -588,7 +588,7 @@ void SimulationEngine3DGlobal::ensurePositionCapacity(uint32_t id) {
   id_to_spatial_index_.resize(new_size, kInvalidSpatialIndex);
 }
 
-size_t SimulationEngine3DGlobal::getRSS() {
+size_t SimulationEngine3DCapacity::getRSS() {
   size_t rss = 0;
   std::ifstream statm("/proc/self/statm");
   if (statm.is_open()) {
@@ -600,7 +600,7 @@ size_t SimulationEngine3DGlobal::getRSS() {
   return rss * static_cast<size_t>(page_size_kb);
 }
 
-void SimulationEngine3DGlobal::logMemoryUsage() {
+void SimulationEngine3DCapacity::logMemoryUsage() {
   if (!memory_log_file.is_open()) {
     return;
   }

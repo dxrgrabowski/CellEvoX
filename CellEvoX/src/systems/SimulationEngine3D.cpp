@@ -156,7 +156,7 @@ ecs::Run SimulationEngine3D::run(uint32_t steps) {
 }
 
 void SimulationEngine3D::step() {
-  if (config->sim_type == SimulationType::SPATIAL_3D_ABM) {
+  if (config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
     stochasticStep3D();
   }
 }

@@ -15,8 +15,8 @@ using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>
 enum class SimulationType {
   STOCHASTIC_TAU_LEAP,
   DETERMINISTIC_RK4,
-  SPATIAL_3D_ABM,
-  SPATIAL_3D_GLOBAL
+  SPATIAL_3D_DENSITY,
+  SPATIAL_3D_CAPACITY
 };
 
 struct SimulationConfig {

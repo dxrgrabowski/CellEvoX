@@ -18,19 +18,19 @@
 
 namespace CellEvoX::systems {
 
-struct GlobalBirthEvent {
+struct CommonBirthEvent {
   uint32_t id;
   uint32_t parent_id;
 };
 
-struct GlobalDeathEvent {
+struct CommonDeathEvent {
   uint32_t id;
   uint32_t parent_id;
 };
 
-struct GlobalPopulationStepResult {
-  std::vector<GlobalBirthEvent> births;
-  std::vector<GlobalDeathEvent> deaths;
+struct CommonPopulationStepResult {
+  std::vector<CommonBirthEvent> births;
+  std::vector<CommonDeathEvent> deaths;
 };
 
 inline Eigen::VectorXd generateExponentialDistribution(size_t size, std::mt19937& rng) {
@@ -44,7 +44,7 @@ inline Eigen::VectorXd generateExponentialDistribution(size_t size, std::mt19937
   return result;
 }
 
-inline bool globalDaughterCellLess(const Cell& lhs, const Cell& rhs) {
+inline bool commonDaughterCellLess(const Cell& lhs, const Cell& rhs) {
   if (lhs.parent_id != rhs.parent_id) return lhs.parent_id < rhs.parent_id;
   if (lhs.fitness != rhs.fitness) return lhs.fitness < rhs.fitness;
   if (lhs.mutations.size() != rhs.mutations.size()) {
@@ -56,7 +56,7 @@ inline bool globalDaughterCellLess(const Cell& lhs, const Cell& rhs) {
   return false;
 }
 
-inline GlobalPopulationStepResult applyGlobalPopulationStep(
+inline CommonPopulationStepResult applyCommonPopulationStep(
     CellMap& cells,
     Graveyard& cells_graveyard,
     const SimulationConfig& config,
@@ -66,7 +66,7 @@ inline GlobalPopulationStepResult applyGlobalPopulationStep(
     size_t& total_deaths,
     double tau,
     std::mt19937& rng) {
-  GlobalPopulationStepResult result;
+  CommonPopulationStepResult result;
 
   const double tau_step = config.tau_step;
   const size_t N = actual_population;
@@ -107,7 +107,7 @@ inline GlobalPopulationStepResult applyGlobalPopulationStep(
   }
 
   tbb::concurrent_vector<Cell> new_cells;
-  tbb::concurrent_vector<GlobalDeathEvent> dead_cells;
+  tbb::concurrent_vector<CommonDeathEvent> dead_cells;
   std::atomic<uint32_t> new_cells_count(0), death_count(0);
 
   tbb::parallel_for(
@@ -162,7 +162,7 @@ inline GlobalPopulationStepResult applyGlobalPopulationStep(
     sorted_new_cells.push_back(std::move(cell));
   }
 
-  std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), globalDaughterCellLess);
+  std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
 
   const uint32_t starting_id = static_cast<uint32_t>(N + total_deaths);
   result.births.reserve(sorted_new_cells.size());

@@ -11,7 +11,7 @@
 #include "ecs/Run.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
-#include "systems/SimulationEngine3DGlobal.hpp"
+#include "systems/SimulationEngine3DCapacity.hpp"
 #include "utils/SimulationConfig.hpp"
 // #include "core/DatabaseManager.hpp"
 namespace CellEvoX::core {
@@ -79,16 +79,16 @@ void Application::initialize() {
     // Initialize DataEngine first to prepare output directory
     RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);
     
-    if (sim_config->sim_type == SimulationType::SPATIAL_3D_ABM) {
+    if (sim_config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
       sim_engine_3d = std::make_unique<SimulationEngine3D>(sim_config);
       std::signal(SIGINT, SimulationEngine3D::signalHandler);
       std::signal(SIGTERM, SimulationEngine3D::signalHandler);
       runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"))));
-    } else if (sim_config->sim_type == SimulationType::SPATIAL_3D_GLOBAL) {
-      sim_engine_3d_global = std::make_unique<SimulationEngine3DGlobal>(sim_config);
-      std::signal(SIGINT, SimulationEngine3DGlobal::signalHandler);
-      std::signal(SIGTERM, SimulationEngine3DGlobal::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_global->run(config.at("steps"))));
+    } else if (sim_config->sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
+      sim_engine_3d_capacity = std::make_unique<SimulationEngine3DCapacity>(sim_config);
+      std::signal(SIGINT, SimulationEngine3DCapacity::signalHandler);
+      std::signal(SIGTERM, SimulationEngine3DCapacity::signalHandler);
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_capacity->run(config.at("steps"))));
     } else {
       sim_engine = std::make_unique<SimulationEngine>(sim_config);
       std::signal(SIGINT, SimulationEngine::signalHandler);
