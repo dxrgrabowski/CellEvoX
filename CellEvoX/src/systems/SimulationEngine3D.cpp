@@ -109,6 +109,13 @@ ecs::Run SimulationEngine3D::run(uint32_t steps) {
       std::cout << std::endl;
       break;
     }
+    if (config->max_population_cutoff > 0 &&
+        actual_population >= config->max_population_cutoff) {
+      spdlog::warn("Population cutoff reached: {} >= {} at tau={:.2f}. Stopping.",
+                   actual_population, config->max_population_cutoff, tau);
+      std::cout << std::endl;
+      break;
+    }
 
     step();
 

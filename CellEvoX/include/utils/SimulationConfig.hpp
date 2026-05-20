@@ -55,6 +55,11 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     } else {
       config.graveyard_pruning_interval = 0;
     }
+    if (j.contains("max_population_cutoff")) {
+      config.max_population_cutoff = j.at("max_population_cutoff");
+    } else {
+      config.max_population_cutoff = 0;  // disabled by default
+    }
     config.output_path = j.at("output_path");
     if (j.contains("full_mutation_payload")) {
       config.full_mutation_payload = j.at("full_mutation_payload");
@@ -119,6 +124,12 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);
+  if (config.max_population_cutoff > 0) {
+    spdlog::info("Max population cutoff: {} (simulation stops when N >= this value)",
+                 config.max_population_cutoff);
+  } else {
+    spdlog::info("Max population cutoff: disabled");
+  }
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);

@@ -101,6 +101,13 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
       std::cout << std::endl;
       break;
     }
+    if (config->max_population_cutoff > 0 &&
+        actual_population >= config->max_population_cutoff) {
+      spdlog::warn("Population cutoff reached: {} >= {} at tau={:.2f}. Stopping.",
+                   actual_population, config->max_population_cutoff, tau);
+      std::cout << std::endl;
+      break;
+    }
     step();
     auto current_time = std::chrono::steady_clock::now();
     auto elapsed_time =

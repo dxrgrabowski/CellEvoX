@@ -29,6 +29,7 @@ struct SimulationConfig {
   uint32_t stat_res = 1;
   uint32_t popul_res = 1;
   int graveyard_pruning_interval = 0;
+  size_t max_population_cutoff = 0;  // 0 = disabled; stop when N >= this value
   std::string output_path;
   std::vector<MutationType> mutations;
   bool full_mutation_payload = false;
