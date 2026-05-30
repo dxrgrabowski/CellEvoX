@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   population_statistics_res: 500,
   graveyard_pruning_interval: 500,
   full_mutation_payload: false,
-  verbosity: 1,
+  verbosity: 2,
   phylogeny_num_cells_sampling: 100,
   spatial_domain_size: 200.0,
   max_local_density: 8.0,
@@ -77,7 +77,17 @@ export const DEFAULT_CONFIG: SimulationConfig = {
 export interface SimulationStatus {
   status: 'idle' | 'running' | 'finished' | 'error' | 'stopped';
   run_id: string | null;
+  current_run_id?: string | null;
+  run_index?: number;
+  run_total?: number;
   elapsed_seconds: number | null;
+}
+
+export interface BatchQueueItem {
+  id: string;
+  name: string;
+  config: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface RunMeta {

@@ -1,6 +1,8 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { MutationType } from '../../types/simulation';
 import { useConfigStore } from '../../stores';
+import InlineNumberValue from './InlineNumberValue';
+import SmoothSlider from './SmoothSlider';
 
 interface Props { mutations: MutationType[] }
 
@@ -43,9 +45,10 @@ export default function MutationEditor({ mutations }: Props) {
             </div>
             <button
               id={`mut-${idx}-remove`}
-              className="btn btn--icon btn--danger"
+              className="btn btn--icon btn--danger tooltip-target tooltip-target--compact"
               onClick={() => remove(idx)}
-              title="Remove mutation"
+              aria-label="Remove mutation"
+              data-tooltip="Remove mutation"
             >
               <Trash2 size={14} />
             </button>
@@ -54,40 +57,50 @@ export default function MutationEditor({ mutations }: Props) {
           <div className="grid-2">
             {/* Effect */}
             <div className="field">
-              <label className="field-label" htmlFor={`mut-${idx}-effect`}>
+              <div className="field-label">
                 Fitness Effect
-                <span style={{ marginLeft: 8, fontFamily: 'var(--font-mono)', fontSize: '0.85rem',
-                  color: mut.effect > 0 ? 'var(--positive)' : mut.effect < 0 ? 'var(--negative)' : 'var(--neutral)' }}>
-                  {mut.effect > 0 ? '+' : ''}{mut.effect.toFixed(4)}
-                </span>
-              </label>
-              <input
+                <InlineNumberValue
+                  ariaLabel={`Mutation ${mut.id} fitness effect`}
+                  value={mut.effect}
+                  min={-0.5}
+                  max={0.5}
+                  decimals={4}
+                  signed
+                  color={mut.effect > 0 ? 'var(--positive)' : mut.effect < 0 ? 'var(--negative)' : 'var(--neutral)'}
+                  onChange={value => update(idx, { effect: value })}
+                />
+              </div>
+              <SmoothSlider
                 id={`mut-${idx}-effect`}
-                className="slider" type="range"
                 min={-0.5} max={0.5} step={0.001}
+                variant="effect"
+                aria-label={`Mutation ${mut.id} fitness effect slider`}
                 value={mut.effect}
-                onChange={e => update(idx, { effect: Number(e.target.value) })}
-                style={{
-                  background: `linear-gradient(to right, var(--negative-dim), var(--border), var(--positive-dim))`,
-                }}
+                onValueChange={value => update(idx, { effect: value })}
               />
               <span className="field-hint">Δ fitness per division event</span>
             </div>
 
             {/* Probability */}
             <div className="field">
-              <label className="field-label" htmlFor={`mut-${idx}-prob`}>
+              <div className="field-label">
                 Probability
-                <span style={{ marginLeft: 8, fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--accent)' }}>
-                  {mut.probability.toFixed(5)}
-                </span>
-              </label>
-              <input
+                <InlineNumberValue
+                  ariaLabel={`Mutation ${mut.id} probability`}
+                  value={mut.probability}
+                  min={0.00001}
+                  max={0.5}
+                  decimals={5}
+                  color="var(--accent)"
+                  onChange={value => update(idx, { probability: value })}
+                />
+              </div>
+              <SmoothSlider
                 id={`mut-${idx}-prob`}
-                className="slider" type="range"
                 min={0.00001} max={0.5} step={0.00001}
+                aria-label={`Mutation ${mut.id} probability slider`}
                 value={mut.probability}
-                onChange={e => update(idx, { probability: Number(e.target.value) })}
+                onValueChange={value => update(idx, { probability: value })}
               />
               <span className="field-hint">Per-cell per-step mutation chance</span>
             </div>

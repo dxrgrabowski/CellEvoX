@@ -1,5 +1,8 @@
 import type { SimulationConfig, SimulationMode } from '../../types/simulation';
 import { useConfigStore } from '../../stores';
+import InlineNumberValue from './InlineNumberValue';
+import NumberInput from './NumberInput';
+import SmoothSlider from './SmoothSlider';
 
 const MODES: { value: SimulationMode; label: string; desc: string; status?: 'wip' }[] = [
   { value: 'stochastic',          label: 'Stochastic τ-Leap',   desc: 'Gillespie-based, probabilistic' },
@@ -19,30 +22,41 @@ export default function CoreParams({ config }: Props) {
       <div className="field">
         <label className="field-label">Simulation Mode</label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          {MODES.map(m => (
-            <button
-              key={m.value}
-              onClick={() => setConfig({
-                simulation_mode: m.value,
-              })}
-              className={`mode-card ${config.simulation_mode === m.value ? 'is-selected' : ''} ${m.status === 'wip' ? 'mode-card--wip' : ''}`}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                border: `1px solid ${config.simulation_mode === m.value ? 'var(--accent)' : 'var(--border)'}`,
-                background: config.simulation_mode === m.value ? 'var(--accent-dim)' : 'var(--bg-input)',
-                color: config.simulation_mode === m.value ? 'var(--accent)' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'all var(--transition)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              {m.status === 'wip' && <span className="mode-card__ribbon">Work in progress</span>}
-              <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.label}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
-            </button>
-          ))}
+          {MODES.map(m => {
+            const isSelected = config.simulation_mode === m.value;
+            const isWip = m.status === 'wip';
+
+            return (
+              <button
+                key={m.value}
+                type="button"
+                disabled={isWip}
+                onClick={() => {
+                  if (!isWip) setConfig({ simulation_mode: m.value });
+                }}
+                className={`mode-card ${isSelected ? 'is-selected' : ''} ${isWip ? 'mode-card--wip' : ''}`}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${isSelected && !isWip ? 'var(--accent)' : 'var(--border)'}`,
+                  background: isWip
+                    ? 'rgba(148,163,184,0.08)'
+                    : isSelected ? 'var(--accent-dim)' : 'var(--bg-input)',
+                  color: isWip
+                    ? 'var(--text-muted)'
+                    : isSelected ? 'var(--accent)' : 'var(--text-secondary)',
+                  cursor: isWip ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  transition: 'all var(--transition)',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                {isWip && <span className="mode-card__ribbon">Work in progress</span>}
+                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.label}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -50,41 +64,36 @@ export default function CoreParams({ config }: Props) {
         {/* Seed */}
         <div className="field">
           <label className="field-label">Random Seed</label>
-          <input
+          <NumberInput
             id="input-seed"
-            className="input"
-            type="number"
             min={0}
             value={config.seed}
-            onChange={e => setConfig({ seed: Number(e.target.value) })}
+            onValueChange={value => setConfig({ seed: value })}
           />
           <span className="field-hint">RNG seed for reproducibility</span>
         </div>
 
         {/* Tau Step */}
         <div className="field">
-          <label className="field-label" htmlFor="input-tau-step">Tau Step</label>
-          <div className="slider-input-row">
-            <input
-              id="input-tau-step"
-              className="slider"
-              type="range"
-              min={0.0001} max={1} step={0.0001}
+          <div className="field-label">
+            Tau Step
+            <InlineNumberValue
+              ariaLabel="Tau Step value"
               value={config.tau_step}
-              onChange={e => setConfig({ tau_step: Number(e.target.value) })}
-            />
-            <input
-              id="input-tau-step-number"
-              className="input numeric-step-input"
-              type="number"
-              min={0.0001} max={1} step={0.0001}
-              value={config.tau_step}
-              onChange={e => {
-                const next = Number(e.target.value);
-                if (Number.isFinite(next)) setConfig({ tau_step: next });
-              }}
+              min={0.0001}
+              max={1}
+              decimals={4}
+              color="var(--accent)"
+              onChange={value => setConfig({ tau_step: value })}
             />
           </div>
+          <SmoothSlider
+            id="input-tau-step"
+            min={0.0001} max={1} step={0.0001}
+            value={config.tau_step}
+            aria-label="Tau Step slider"
+            onValueChange={value => setConfig({ tau_step: value })}
+          />
           <span className="field-hint">Time step size (smaller = more accurate, slower)</span>
         </div>
       </div>
