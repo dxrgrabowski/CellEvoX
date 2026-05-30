@@ -67,9 +67,9 @@ export default function RunSelector() {
         <button
           key={run.id}
           id={`run-item-${run.id.slice(0, 16)}`}
-          className={`run-card ${selectedRunId === run.id ? 'is-selected' : ''}`}
+          className={`run-card tooltip-target tooltip-target--below tooltip-target--wide ${selectedRunId === run.id ? 'is-selected' : ''}`}
           onClick={() => setSelectedRunId(run.id)}
-          title={run.path}
+          data-tooltip={`${run.path}${run.steps ? ` | ${run.steps.toLocaleString()} steps` : ''}`}
         >
           <div className="run-card__main">
             <div className="run-card__topline">
@@ -80,7 +80,7 @@ export default function RunSelector() {
           </div>
           <div className="run-card__meta">
             {run.steps && (
-              <span className="run-card__steps" title={`${run.steps.toLocaleString()} steps`}>
+              <span className="run-card__steps">
                 {formatCompactNumber(run.steps)} steps
               </span>
             )}

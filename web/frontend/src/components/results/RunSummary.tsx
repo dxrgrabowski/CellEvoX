@@ -127,9 +127,13 @@ export default function RunSummary({ runId }: Props) {
               <div className="config-group" key={section.title}>
                 <div className="config-group__title">{section.title}</div>
                 {section.rows.map(([label, value]) => value && (
-                  <div className="config-row" key={label}>
+                  <div
+                    className="config-row tooltip-target tooltip-target--below tooltip-target--wide"
+                    key={label}
+                    data-tooltip={`${label}: ${value}`}
+                  >
                     <span className="config-row__label">{label}</span>
-                    <span className="config-row__value" title={value}>{value}</span>
+                    <span className="config-row__value">{value}</span>
                   </div>
                 ))}
               </div>
