@@ -1,12 +1,11 @@
 """
 ResultsParser — reads CellEvoX output directories and returns structured data.
-Imports processing functions from existing Python scripts (no duplication).
 """
 import csv
 import glob
 import json
 import os
-import sys
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -17,10 +16,12 @@ import numpy as np
 class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
+    MUTATION_RE = re.compile(r"\((\d+),(\d+)\)")
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
         self._scripts_dir = repo_root / "CellEvoX" / "scripts"
+        self._muller_cache: dict[tuple, dict] = {}
 
     # ── Run Discovery ──────────────────────────────────────────────────────────
 
@@ -160,7 +161,6 @@ class ResultsParser:
     def get_muller_data(self, run_id: str) -> Optional[dict]:
         """
         Returns Müller plot data as JSON suitable for Plotly.js stacked area chart.
-        Reuses build_pyfish_data() logic from the existing plot_muller.py script.
         """
         run_dir = self._id_to_dir(run_id)
         if run_dir is None:
@@ -170,31 +170,159 @@ class ResultsParser:
         if not config_path.exists():
             return None
 
+        cache_key = self._muller_cache_key(run_dir)
+        if cache_key in self._muller_cache:
+            return self._muller_cache[cache_key]
+
         try:
-            sys.path.insert(0, str(self._scripts_dir))
-            # Import existing processing functions — no code duplication
-            from plot_muller import build_pyfish_data, get_driver_mutation_type_ids
-
-            config = self._load_json(config_path)
-            driver_ids = get_driver_mutation_type_ids(str(config_path))
-
-            populations_df, parent_tree_df = build_pyfish_data(str(run_dir))
+            config = self._load_json(config_path) or {}
+            driver_ids = self._driver_mutation_type_ids(config)
+            populations_df, parent_tree_df = self._build_muller_web_data(run_dir, driver_ids)
 
             # Convert to JSON-serialisable format for Plotly.js
-            return {
+            result = {
                 "populations": self._jsonable_df(populations_df).to_dict(orient="list"),
                 "parent_tree": self._jsonable_df(parent_tree_df).to_dict(orient="list"),
-                "driver_mutation_ids": list(driver_ids),
+                "driver_mutation_ids": sorted(driver_ids),
                 "mutations": config.get("mutations", []),
             }
-        except SystemExit as e:
-            return {"error": f"Müller processing failed during import: {e}", "raw_available": True}
-        except ImportError as e:
-            return {"error": f"pyfish not installed: {e}", "raw_available": True}
+            self._muller_cache[cache_key] = result
+            return result
         except Exception as e:
             return {"error": str(e)}
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _driver_mutation_type_ids(self, config: dict) -> set[int]:
+        driver_ids: set[int] = set()
+        for mutation in config.get("mutations", []):
+            if not mutation.get("is_driver", False):
+                continue
+            try:
+                driver_ids.add(int(mutation.get("id")))
+            except (TypeError, ValueError):
+                continue
+        return driver_ids
+
+    def _build_muller_web_data(
+        self,
+        run_dir: Path,
+        driver_type_ids: set[int],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        files = self._find_population_files(run_dir, (".csv",))
+        if not files:
+            raise ValueError(f"No population_generation_*.csv files found in {run_dir}")
+
+        clone_populations: dict[int, dict[str, int]] = {}
+        all_signatures: set[str] = {"ancestor"}
+        signature_cache: dict[str, str] = {}
+
+        for path in files:
+            generation = self._extract_gen(path.name)
+            counts: dict[str, int] = {}
+            with open(path, newline="") as f:
+                for row in csv.DictReader(f):
+                    signature = self._driver_signature(
+                        row.get("Mutations", ""),
+                        driver_type_ids,
+                        signature_cache,
+                    )
+                    all_signatures.add(signature)
+                    counts[signature] = counts.get(signature, 0) + 1
+            clone_populations[generation] = counts
+
+        if len(clone_populations) == 1:
+            generation = next(iter(clone_populations))
+            clone_populations[generation + 1] = dict(clone_populations[generation])
+
+        generations = sorted(clone_populations)
+        signature_order = sorted(all_signatures)
+        signature_to_id = {signature: idx for idx, signature in enumerate(signature_order)}
+        first_generation = generations[0]
+        last_generation = generations[-1]
+
+        population_rows = []
+        for generation in generations:
+            counts = clone_populations[generation]
+            for signature in signature_order:
+                count = counts.get(signature, 0)
+                if count > 0 or generation == first_generation or generation == last_generation:
+                    population_rows.append({
+                        "Id": signature_to_id[signature],
+                        "Step": generation,
+                        "Pop": float(count),
+                    })
+
+        parent_rows = []
+        for signature in signature_order:
+            if signature == "ancestor":
+                continue
+            parent_signature = self._muller_parent_signature(signature, all_signatures)
+            if parent_signature and parent_signature in signature_to_id:
+                parent_rows.append({
+                    "ParentId": signature_to_id[parent_signature],
+                    "ChildId": signature_to_id[signature],
+                })
+
+        return (
+            pd.DataFrame(population_rows, columns=["Id", "Step", "Pop"]),
+            pd.DataFrame(parent_rows, columns=["ParentId", "ChildId"]),
+        )
+
+    def _driver_signature(
+        self,
+        mutations_value,
+        driver_type_ids: set[int],
+        signature_cache: dict[str, str],
+    ) -> str:
+        if not driver_type_ids or not mutations_value:
+            return "ancestor"
+
+        mutations_str = str(mutations_value).strip('"')
+        if not mutations_str:
+            return "ancestor"
+
+        cached = signature_cache.get(mutations_str)
+        if cached is not None:
+            return cached
+
+        driver_mutation_ids = []
+        for match in self.MUTATION_RE.finditer(mutations_str):
+            try:
+                mutation_type_id = int(match.group(2))
+            except ValueError:
+                continue
+            if mutation_type_id in driver_type_ids:
+                driver_mutation_ids.append(int(match.group(1)))
+
+        if driver_mutation_ids:
+            signature = ",".join(str(mutation_id) for mutation_id in sorted(driver_mutation_ids))
+        else:
+            signature = "ancestor"
+
+        signature_cache[mutations_str] = signature
+        return signature
+
+    def _muller_parent_signature(self, signature: str, all_signatures: set[str]) -> str:
+        if signature == "ancestor":
+            return ""
+        if "," not in signature:
+            return "ancestor"
+
+        # Mutation IDs are monotonic in CellEvoX outputs, so the newest driver is
+        # usually the final token. Try that parent first and keep a fallback for
+        # older or hand-authored outputs.
+        newest_parent = signature.rsplit(",", 1)[0]
+        if newest_parent in all_signatures:
+            return newest_parent
+
+        parts = signature.split(",")
+        for idx in range(len(parts)):
+            candidate_parts = parts[:idx] + parts[idx + 1:]
+            candidate = "ancestor" if not candidate_parts else ",".join(candidate_parts)
+            if candidate in all_signatures:
+                return candidate
+        return "ancestor"
 
     def _load_json(self, path: Path) -> Optional[dict]:
         try:
@@ -235,6 +363,17 @@ class ResultsParser:
                 files.extend(search_dir.glob(f"population_generation_*{ext}"))
         unique = list(dict.fromkeys(files))
         return sorted(unique, key=lambda p: self._extract_gen(p.name))
+
+    def _muller_cache_key(self, run_dir: Path) -> tuple:
+        files = [run_dir / "config.json", *self._find_population_files(run_dir, (".csv",))]
+        stats = []
+        for path in files:
+            try:
+                stat = path.stat()
+                stats.append((str(path.relative_to(self.repo_root)), stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                continue
+        return tuple(stats)
 
     def _row_value(self, row: pd.Series, names: list[str], default=0):
         normalized = {
