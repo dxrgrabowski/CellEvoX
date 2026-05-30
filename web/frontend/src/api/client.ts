@@ -4,8 +4,14 @@ import type { SimulationConfig, SimulationStatus, RunMeta, RunSummaryData, Stats
 const api = axios.create({ baseURL: '/api' });
 
 // ── Simulation ────────────────────────────────────────────────────────────────
-export const startSimulation = (config: SimulationConfig) =>
+export const startSimulation = (config: Record<string, unknown>) =>
   api.post<{ status: string; run_id: string }>('/simulation/start', { config });
+
+export const startSimulationBatch = (configs: Record<string, unknown>[], continueOnError = false) =>
+  api.post<{ status: string; run_id: string; batch_id: string; count: number }>(
+    '/simulation/batch/start',
+    { configs, continue_on_error: continueOnError },
+  );
 
 export const stopSimulation = () =>
   api.post('/simulation/stop');

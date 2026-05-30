@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Settings, Layers, Database, Dna, FileDown, FileUp, RotateCcw, Play } from 'lucide-react';
-import { useConfigStore } from '../stores';
+import { ListPlus, Settings, Layers, Database, Dna, FileDown, FileUp, RotateCcw, Play } from 'lucide-react';
+import { useBatchQueueStore, useConfigStore } from '../stores';
 import CoreParams from '../components/config/CoreParams';
 import PopulationParams from '../components/config/PopulationParams';
 import SpatialParams from '../components/config/SpatialParams';
 import MutationEditor from '../components/config/MutationEditor';
 import OutputParams from '../components/config/OutputParams';
+import { buildConfigPayload } from '../utils/configPayload';
 
 const SECTIONS = [
   { id: 'core',       label: 'Core',       icon: Settings, comp: CoreParams       },
@@ -17,16 +18,19 @@ const SECTIONS = [
 
 export default function ConfigPage() {
   const { config, setFullConfig, resetConfig } = useConfigStore();
+  const queueCount = useBatchQueueStore(s => s.items.length);
+  const addConfigToQueue = useBatchQueueStore(s => s.addConfig);
   const [activeSection, setActiveSection] = useState('core');
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const isSpatial =
+    config.simulation_mode === 'spatial_3d' ||
     config.simulation_mode === 'spatial_3d_density' ||
     config.simulation_mode === 'spatial_3d_capacity';
 
   const exportJson = () => {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(buildConfigPayload(config), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'cellevox_config.json';
@@ -45,22 +49,19 @@ export default function ConfigPage() {
     e.target.value = '';
   };
 
-  // Build preview JSON, strip spatial fields when not in spatial mode
-  const previewJson: Record<string, unknown> = { ...config };
-  if (!isSpatial) {
-    const {
-      spatial_domain_size, max_local_density, sample_radius,
-      spring_constant, mech_dt, mech_substeps, epsilon,
-      ...rest
-    } = previewJson as Record<string, unknown>;
-    void spatial_domain_size; void max_local_density; void sample_radius;
-    void spring_constant; void mech_dt; void mech_substeps; void epsilon;
-    Object.keys(previewJson).forEach(k => delete previewJson[k]);
-    Object.assign(previewJson, rest);
-  }
+  const previewJson = buildConfigPayload(config);
+
+  const addCurrentToQueue = () => {
+    addConfigToQueue(buildConfigPayload(config));
+  };
+
+  const addCurrentAndRun = () => {
+    addCurrentToQueue();
+    navigate('/run', { state: { autoRunQueue: true } });
+  };
 
   return (
-    <div className="page-content fade-up">
+    <div className="page-content page-content--wide fade-up">
       {/* Page header */}
       <div className="flex items-center justify-between" style={{ marginBottom: '28px' }}>
         <div>
@@ -70,6 +71,11 @@ export default function ConfigPage() {
           </p>
         </div>
         <div className="flex gap-8">
+          {queueCount > 0 && (
+            <button className="btn btn--ghost" onClick={() => navigate('/run')}>
+              Queue {queueCount}
+            </button>
+          )}
           <button id="btn-reset-config" className="btn btn--ghost" onClick={resetConfig}>
             <RotateCcw size={15} /> Reset
           </button>
@@ -80,8 +86,11 @@ export default function ConfigPage() {
           <button id="btn-export-config" className="btn btn--ghost" onClick={exportJson}>
             <FileDown size={15} /> Export JSON
           </button>
-          <button id="btn-go-run" className="btn btn--primary" onClick={() => navigate('/run')}>
-            <Play size={15} /> Run Simulation
+          <button id="btn-add-to-queue" className="btn btn--ghost" onClick={addCurrentToQueue}>
+            <ListPlus size={15} /> Add to Queue
+          </button>
+          <button id="btn-add-run" className="btn btn--primary" onClick={addCurrentAndRun}>
+            <Play size={15} /> Add & Run
           </button>
         </div>
       </div>
