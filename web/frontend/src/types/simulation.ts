@@ -3,6 +3,7 @@
 export type SimulationMode =
   | 'stochastic'
   | 'deterministic'
+  | 'spatial_3d'
   | 'spatial_3d_density'
   | 'spatial_3d_capacity';
 
@@ -16,7 +17,6 @@ export interface MutationType {
 export interface SimulationConfig {
   // Core
   seed: number;
-  stochastic: boolean;
   simulation_mode: SimulationMode;
   tau_step: number;
   // Population
@@ -46,7 +46,6 @@ export interface SimulationConfig {
 
 export const DEFAULT_CONFIG: SimulationConfig = {
   seed: 42,
-  stochastic: true,
   simulation_mode: 'stochastic',
   tau_step: 0.005,
   initial_population: 1000,
@@ -95,7 +94,7 @@ export interface RunMeta {
 export interface RunSummaryData {
   run_id: string;
   path: string;
-  config: SimulationConfig;
+  config: Partial<SimulationConfig> & { mutations?: MutationType[]; stochastic?: boolean };
   final_tau?: number;
   final_population?: number;
   final_mean_fitness?: number;

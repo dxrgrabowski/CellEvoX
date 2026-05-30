@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import ConfigPage from './pages/ConfigPage';
 import RunPage from './pages/RunPage';
 import ResultsPage from './pages/ResultsPage';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,12 +19,14 @@ export default function App() {
         <div className="app-shell">
           <Navbar />
           <main>
-            <Routes>
-              <Route path="/"        element={<Navigate to="/config" replace />} />
-              <Route path="/config"  element={<ConfigPage />} />
-              <Route path="/run"     element={<RunPage />} />
-              <Route path="/results" element={<ResultsPage />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/"        element={<Navigate to="/config" replace />} />
+                <Route path="/config"  element={<ConfigPage />} />
+                <Route path="/run"     element={<RunPage />} />
+                <Route path="/results" element={<ResultsPage />} />
+              </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </BrowserRouter>

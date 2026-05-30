@@ -1,9 +1,9 @@
 import type { SimulationConfig, SimulationMode } from '../../types/simulation';
 import { useConfigStore } from '../../stores';
 
-const MODES: { value: SimulationMode; label: string; desc: string }[] = [
+const MODES: { value: SimulationMode; label: string; desc: string; status?: 'wip' }[] = [
   { value: 'stochastic',          label: 'Stochastic τ-Leap',   desc: 'Gillespie-based, probabilistic' },
-  { value: 'deterministic',       label: 'Deterministic RK4',   desc: 'Runge-Kutta 4th order' },
+  { value: 'deterministic',       label: 'Deterministic RK4',   desc: 'Runge-Kutta 4th order', status: 'wip' },
   { value: 'spatial_3d_density',  label: '3D Spatial Density',  desc: 'Density-regulated 3D' },
   { value: 'spatial_3d_capacity', label: '3D Spatial Capacity', desc: 'Capacity-regulated 3D' },
 ];
@@ -24,8 +24,8 @@ export default function CoreParams({ config }: Props) {
               key={m.value}
               onClick={() => setConfig({
                 simulation_mode: m.value,
-                stochastic: m.value === 'stochastic',
               })}
+              className={`mode-card ${config.simulation_mode === m.value ? 'is-selected' : ''} ${m.status === 'wip' ? 'mode-card--wip' : ''}`}
               style={{
                 padding: '10px 14px',
                 borderRadius: 'var(--radius-md)',
@@ -38,6 +38,7 @@ export default function CoreParams({ config }: Props) {
                 fontFamily: 'var(--font-sans)',
               }}
             >
+              {m.status === 'wip' && <span className="mode-card__ribbon">Work in progress</span>}
               <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.label}</div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
             </button>
@@ -62,20 +63,28 @@ export default function CoreParams({ config }: Props) {
 
         {/* Tau Step */}
         <div className="field">
-          <label className="field-label">
-            Tau Step
-            <span style={{ marginLeft: 8, color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
-              {config.tau_step}
-            </span>
-          </label>
-          <input
-            id="input-tau-step"
-            className="slider"
-            type="range"
-            min={0.0001} max={1} step={0.0001}
-            value={config.tau_step}
-            onChange={e => setConfig({ tau_step: Number(e.target.value) })}
-          />
+          <label className="field-label" htmlFor="input-tau-step">Tau Step</label>
+          <div className="slider-input-row">
+            <input
+              id="input-tau-step"
+              className="slider"
+              type="range"
+              min={0.0001} max={1} step={0.0001}
+              value={config.tau_step}
+              onChange={e => setConfig({ tau_step: Number(e.target.value) })}
+            />
+            <input
+              id="input-tau-step-number"
+              className="input numeric-step-input"
+              type="number"
+              min={0.0001} max={1} step={0.0001}
+              value={config.tau_step}
+              onChange={e => {
+                const next = Number(e.target.value);
+                if (Number.isFinite(next)) setConfig({ tau_step: next });
+              }}
+            />
+          </div>
           <span className="field-hint">Time step size (smaller = more accurate, slower)</span>
         </div>
       </div>

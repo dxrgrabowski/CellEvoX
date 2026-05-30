@@ -9,6 +9,14 @@ function formatElapsed(s: number | null) {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+    if (typeof response?.data?.detail === 'string') return response.data.detail;
+  }
+  return 'Failed to start simulation';
+}
+
 export default function RunPage() {
   const config = useConfigStore(s => s.config);
   const { status, logs, setStatus, appendLog, clearLogs } = useSimStore();
@@ -32,7 +40,7 @@ export default function RunPage() {
       if (s.status !== 'running') clearInterval(iv);
     }, 2000);
     return () => clearInterval(iv);
-  }, [status.status]);
+  }, [status.status, setStatus]);
 
   const handleStart = async () => {
     setError(null);
@@ -47,8 +55,8 @@ export default function RunPage() {
         (line) => appendLog(line),
         () => setStatus({ ...status, status: 'finished' }),
       );
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? 'Failed to start simulation');
+    } catch (e: unknown) {
+      setError(getErrorMessage(e));
       setStatus({ status: 'error', run_id: null, elapsed_seconds: null });
     }
   };

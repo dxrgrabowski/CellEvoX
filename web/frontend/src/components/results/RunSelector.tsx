@@ -4,12 +4,40 @@ import { listRuns } from '../../api/client';
 import type { RunMeta } from '../../types/simulation';
 import { FolderOpen } from 'lucide-react';
 
-const MODE_ICONS: Record<string, string> = {
-  stochastic: '🎲',
-  deterministic: '📐',
-  spatial_3d_density: '🌐',
-  spatial_3d_capacity: '🌐',
+const MODE_LABELS: Record<string, string> = {
+  stochastic: 'Stochastic',
+  deterministic: 'Deterministic',
+  spatial_3d: 'Spatial 3D',
+  spatial_3d_density: '3D density',
+  spatial_3d_capacity: '3D capacity',
 };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatCompactNumber(value: number | null | undefined): string | null {
+  if (value == null) return null;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
+  }
+  if (abs >= 1_000) {
+    return `${(value / 1_000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, '')}k`;
+  }
+  return value.toLocaleString();
+}
+
+function formatRunDate(label: string): string {
+  const match = label.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})/);
+  if (!match) return label;
+  const monthIndex = Number(match[2]) - 1;
+  const month = MONTHS[monthIndex] ?? match[2];
+  return `${month} ${match[3]} ${match[4]}:${match[5]}`;
+}
+
+function parentPath(path: string): string {
+  const parts = path.split('/');
+  return parts.length > 1 ? parts.slice(0, -1).join(' / ') : path;
+}
 
 export default function RunSelector() {
   const { selectedRunId, setSelectedRunId } = useResultsStore();
@@ -34,45 +62,37 @@ export default function RunSelector() {
   );
 
   return (
-    <div className="flex-col gap-8">
+    <div className="run-list">
       {runs.map((run: RunMeta) => (
         <button
           key={run.id}
           id={`run-item-${run.id.slice(0, 16)}`}
+          className={`run-card ${selectedRunId === run.id ? 'is-selected' : ''}`}
           onClick={() => setSelectedRunId(run.id)}
-          style={{
-            display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
-            background: selectedRunId === run.id ? 'var(--accent-dim)' : 'var(--bg-card)',
-            border: `1px solid ${selectedRunId === run.id ? 'var(--accent)' : 'var(--border)'}`,
-            borderRadius: 'var(--radius-md)', padding: '12px 16px',
-            fontFamily: 'var(--font-sans)', transition: 'all var(--transition)',
-          }}
+          title={run.path}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-8">
-              <span style={{ fontSize: '1.1rem' }}>{MODE_ICONS[run.sim_mode] ?? '◉'}</span>
-              <div>
-                <div style={{
-                  fontWeight: 600, fontSize: '0.85rem',
-                  color: selectedRunId === run.id ? 'var(--accent)' : 'var(--text-primary)',
-                }}>
-                  {run.label}
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                  {run.path}
-                </div>
-              </div>
+          <div className="run-card__main">
+            <div className="run-card__topline">
+              <span className="run-card__date">{formatRunDate(run.label)}</span>
+              <span className="run-card__mode">{MODE_LABELS[run.sim_mode] ?? run.sim_mode.replace(/_/g, ' ')}</span>
             </div>
-            <div className="flex-col gap-8" style={{ alignItems: 'flex-end' }}>
-              {run.steps && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  {run.steps.toLocaleString()} steps
-                </span>
+            <div className="run-card__path">{parentPath(run.path)}</div>
+          </div>
+          <div className="run-card__meta">
+            {run.steps && (
+              <span className="run-card__steps" title={`${run.steps.toLocaleString()} steps`}>
+                {formatCompactNumber(run.steps)} steps
+              </span>
+            )}
+            <div className="run-card__badges">
+              {run.has_stats && <span className="badge badge--finished">Stats</span>}
+              {run.has_muller && <span className="badge badge--driver">Müller</span>}
+              {!run.has_stats && !run.has_muller && (
+                <span className="badge badge--idle">Config only</span>
               )}
-              <div className="flex gap-8">
-                {run.has_stats && <span className="badge badge--finished" style={{ fontSize: '0.65rem', padding: '2px 7px' }}>stats</span>}
-                {run.has_muller && <span className="badge badge--driver" style={{ fontSize: '0.65rem', padding: '2px 7px' }}>müller</span>}
-              </div>
+              {run.has_population && !run.has_muller && (
+                <span className="badge badge--idle">Population</span>
+              )}
             </div>
           </div>
         </button>

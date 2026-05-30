@@ -1,19 +1,39 @@
 import { create } from 'zustand';
-import type { SimulationConfig, SimulationStatus } from '../types/simulation';
+import type { SimulationConfig, SimulationMode, SimulationStatus } from '../types/simulation';
 import { DEFAULT_CONFIG } from '../types/simulation';
 
 // ── Config Store ──────────────────────────────────────────────────────────────
+type ImportedSimulationConfig = Partial<SimulationConfig> & {
+  stochastic?: boolean;
+};
+
 interface ConfigStore {
   config: SimulationConfig;
   setConfig: (patch: Partial<SimulationConfig>) => void;
-  setFullConfig: (config: SimulationConfig) => void;
+  setFullConfig: (config: ImportedSimulationConfig) => void;
   resetConfig: () => void;
+}
+
+function inferSimulationMode(config: ImportedSimulationConfig): SimulationMode {
+  if (config.simulation_mode) return config.simulation_mode;
+  if (config.stochastic === false) return 'deterministic';
+  return DEFAULT_CONFIG.simulation_mode;
+}
+
+function normalizeConfig(config: ImportedSimulationConfig): SimulationConfig {
+  const { stochastic: _legacyStochastic, ...rest } = config;
+  void _legacyStochastic;
+  return {
+    ...DEFAULT_CONFIG,
+    ...rest,
+    simulation_mode: inferSimulationMode(config),
+  };
 }
 
 export const useConfigStore = create<ConfigStore>((set) => ({
   config: DEFAULT_CONFIG,
   setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
-  setFullConfig: (config) => set({ config }),
+  setFullConfig: (config) => set({ config: normalizeConfig(config) }),
   resetConfig: () => set({ config: DEFAULT_CONFIG }),
 }));
 
@@ -44,7 +64,7 @@ interface ResultsStore {
 
 export const useResultsStore = create<ResultsStore>((set) => ({
   selectedRunId: null,
-  activeTab: 'stats',
-  setSelectedRunId: (id) => set({ selectedRunId: id, activeTab: 'stats' }),
+  activeTab: 'summary',
+  setSelectedRunId: (id) => set({ selectedRunId: id, activeTab: 'summary' }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 }));

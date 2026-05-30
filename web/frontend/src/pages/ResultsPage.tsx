@@ -16,16 +16,16 @@ export default function ResultsPage() {
 
   return (
     <div className="page-content fade-up">
-      <div style={{ marginBottom: '28px' }}>
+      <div className="results-page-header">
         <h1>Results</h1>
         <p style={{ color: 'var(--text-muted)', marginTop: 4, fontSize: '0.9rem' }}>
           Browse and analyse completed simulation runs
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '24px', alignItems: 'start' }}>
+      <div className="results-layout">
         {/* Run list */}
-        <div style={{ position: 'sticky', top: '80px' }}>
+        <div className="results-sidebar">
           <div style={{ marginBottom: 12 }}>
             <h4 style={{ color: 'var(--text-secondary)' }}>Simulation Runs</h4>
           </div>
@@ -33,7 +33,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Detail panel */}
-        <div className="card" style={{ minHeight: 500 }}>
+        <div className="card results-detail">
           {!selectedRunId ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16 }}>
               <BarChart2 size={48} style={{ color: 'var(--text-muted)' }} />

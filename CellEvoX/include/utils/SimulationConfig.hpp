@@ -29,15 +29,23 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
   SimulationConfig config;
   spdlog::info("Parsing simulation configuration from JSON");
   try {
-    config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
-                                         : SimulationType::DETERMINISTIC_RK4;
     if (j.contains("simulation_mode")) {
       const std::string simulation_mode = j["simulation_mode"];
-      if (simulation_mode == "spatial_3d_density") {
+      if (simulation_mode == "stochastic") {
+        config.sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+      } else if (simulation_mode == "deterministic") {
+        config.sim_type = SimulationType::DETERMINISTIC_RK4;
+      } else if (simulation_mode == "spatial_3d_density" || simulation_mode == "spatial_3d") {
         config.sim_type = SimulationType::SPATIAL_3D_DENSITY;
       } else if (simulation_mode == "spatial_3d_capacity") {
         config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
+      } else {
+        spdlog::warn("Unknown simulation_mode '{}'; defaulting to stochastic tau-leap", simulation_mode);
       }
+    } else if (j.contains("stochastic")) {
+      config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
+                                           : SimulationType::DETERMINISTIC_RK4;
+      spdlog::warn("Config uses legacy 'stochastic' field; prefer 'simulation_mode'");
     }
     config.tau_step = j.at("tau_step");
     if (j.contains("seed")) {
