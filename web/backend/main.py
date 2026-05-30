@@ -63,7 +63,7 @@ async def get_config_schema():
             "population_statistics_res": {"type": "integer", "default": 500, "min": 1},
             "graveyard_pruning_interval": {"type": "integer", "default": 500, "min": 0},
             "full_mutation_payload": {"type": "boolean", "default": False},
-            "verbosity": {"type": "enum", "values": [0, 1, 2], "labels": ["Off", "Minimal", "Full"], "default": 1},
+            "verbosity": {"type": "enum", "values": [0, 1, 2], "labels": ["Off", "Minimal", "Full"], "default": 2},
             "phylogeny_num_cells_sampling": {"type": "integer", "default": 100, "min": 10, "max": 10000},
         },
         "spatial": {
@@ -90,6 +90,11 @@ class SimulationStartRequest(BaseModel):
     config: dict
 
 
+class SimulationBatchStartRequest(BaseModel):
+    configs: list[dict]
+    continue_on_error: bool = False
+
+
 @app.post("/api/simulation/start")
 async def start_simulation(req: SimulationStartRequest):
     if runner.is_running():
@@ -97,6 +102,17 @@ async def start_simulation(req: SimulationStartRequest):
     try:
         run_id = await runner.start(req.config)
         return {"status": "started", "run_id": run_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/simulation/batch/start")
+async def start_simulation_batch(req: SimulationBatchStartRequest):
+    if runner.is_running():
+        raise HTTPException(status_code=409, detail="Simulation already running")
+    try:
+        batch_id = await runner.start_many(req.configs, continue_on_error=req.continue_on_error)
+        return {"status": "started", "run_id": batch_id, "batch_id": batch_id, "count": len(req.configs)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
