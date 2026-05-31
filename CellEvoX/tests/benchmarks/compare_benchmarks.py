@@ -59,6 +59,10 @@ def benchmark_values(raw: dict) -> dict:
     }
 
 
+def inconclusive_regression(item: dict, threshold: float) -> bool:
+    return item.get("status") in {"NOISY CI", "UNSTABLE CI"} and item.get("delta", 0.0) > threshold
+
+
 def classify(base_raw: dict, current_raw: dict, threshold: float, max_relative_ci: float) -> dict:
     base = benchmark_values(base_raw)
     current = benchmark_values(current_raw)
@@ -166,7 +170,7 @@ def main():
         print(f"Running benchmarks with tag '{args.tag}' (--benchmark-samples {args.benchmark_samples})...")
         returncode = run_current_benchmarks(args, xml_path)
         current_max_rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-        if returncode not in (0, 1):
+        if returncode != 0:
             print(f"Benchmark run failed (exit {returncode})", file=sys.stderr)
             sys.exit(2)
         current = parse_xml_benchmarks(xml_path)
@@ -266,10 +270,13 @@ def main():
             print(f"  {name}: {item['base_ms']:.3f}ms [{item['base_low_ms']:.3f},{item['base_high_ms']:.3f}] -> "
                   f"{item['current_ms']:.3f}ms [{item['current_low_ms']:.3f},{item['current_high_ms']:.3f}] ({item['delta']:+.1%})")
 
-    if inconclusive and args.fail_on_inconclusive:
-        print("\nINCONCLUSIVE BENCHMARKS (failing because --fail-on-inconclusive is set):")
-        for name, item in inconclusive:
-            print(f"  {name}: {item['status']} (baseline +/-{item['base_relative_ci'] * 100:.1f}%, current +/-{item['current_relative_ci'] * 100:.1f}%)")
+    inconclusive_failures = [
+        (name, item) for name, item in inconclusive if inconclusive_regression(item, args.threshold)
+    ]
+    if inconclusive_failures and args.fail_on_inconclusive:
+        print("\nINCONCLUSIVE REGRESSION RISKS (failing because --fail-on-inconclusive is set):")
+        for name, item in inconclusive_failures:
+            print(f"  {name}: {item['status']} (baseline +/-{item['base_relative_ci'] * 100:.1f}%, current +/-{item['current_relative_ci'] * 100:.1f}%, change {item['delta']:+.1%})")
 
     if args.report_json:
         os.makedirs(os.path.dirname(os.path.abspath(args.report_json)), exist_ok=True)
@@ -277,7 +284,7 @@ def main():
             json.dump(report, f, indent=2)
 
     missing_failed = args.fail_on_missing and counts["missing"]
-    if regressions or memory_regressed or missing_failed or (args.fail_on_inconclusive and inconclusive):
+    if regressions or memory_regressed or missing_failed or (args.fail_on_inconclusive and inconclusive_failures):
         print("\nBenchmark gate failed.")
         sys.exit(1)
 

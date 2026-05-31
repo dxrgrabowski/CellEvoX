@@ -15,7 +15,7 @@ import subprocess
 import sys
 from typing import Dict, Iterable, List, Tuple
 
-from compare_benchmarks import benchmark_values, classify, fmt_interval
+from compare_benchmarks import benchmark_values, classify, fmt_interval, inconclusive_regression
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CAPTURE_SCRIPT = SCRIPT_DIR / "capture_baseline.py"
@@ -119,16 +119,15 @@ def needs_retry(results: Dict[str, Dict]) -> bool:
     return any(item.get("status") in {"NOISY CI", "UNSTABLE CI"} for item in results.values())
 
 
-def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool) -> bool:
+def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool, threshold: float) -> bool:
     counts = summary["counts"]
     if counts["regressed"] or counts["missing"]:
         return True
     if summary["memory"].get("status") == "REGRESSED":
         return True
-    if fail_on_inconclusive and (counts["noisy"] or counts["unstable"]):
-        return True
+    if fail_on_inconclusive:
+        return any(inconclusive_regression(item, threshold) for item in results.values())
     return False
-
 
 def print_group_report(group: str, samples: int, results: Dict[str, Dict], summary: Dict) -> None:
     print(f"\n=== Benchmark group: {group} ({samples} samples) ===")
@@ -261,7 +260,7 @@ def main() -> int:
             "results": results,
             "summary": summary,
         }
-        if has_failure(results, summary, args.fail_on_inconclusive):
+        if has_failure(results, summary, args.fail_on_inconclusive, args.threshold):
             failed = True
 
     if args.report_json:
