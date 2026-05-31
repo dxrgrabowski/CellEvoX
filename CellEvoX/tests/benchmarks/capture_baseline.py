@@ -94,7 +94,7 @@ def main():
         )
         max_rss_kb = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         
-        if result.returncode != 0 and result.returncode != 1:
+        if result.returncode != 0:
             print(f"Benchmark run failed with exit code {result.returncode}", file=sys.stderr)
             sys.exit(1)
 

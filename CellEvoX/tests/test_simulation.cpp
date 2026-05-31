@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
+#include <map>
+#include <random>
 #include <cmath>
 #include <cstring>
 #include <sstream>
@@ -14,6 +16,7 @@
 #include "io/PopulationSnapshotIO.hpp"
 #include "utils/SimulationConfig.hpp"
 #include "spatial/SpatialHashGrid.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
 #include "systems/SimulationEngine3DCapacity.hpp"
@@ -155,6 +158,200 @@ TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
     REQUIRE(child.mutations.size() == 1);
     REQUIRE(child.mutations[0].second == 1); // Child inherits mutation type
     REQUIRE(child.id == 0); // ID hasn't been explicitly assigned yet
+}
+
+TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[CommonPopulationStep][Determinism][Correctness]") {
+    SimulationConfig config;
+    config.tau_step = 1.0;
+    config.env_capacity = 1000000000;
+
+    CellMap cells;
+    auto insert_cell = [&](uint32_t id, uint32_t parent_id) {
+        Cell cell(id);
+        cell.parent_id = parent_id;
+        cell.fitness = 1.0e20f;
+        REQUIRE(cells.insert({id, std::move(cell)}));
+    };
+
+    insert_cell(2, 102);
+    insert_cell(0, 100);
+    insert_cell(1, 101);
+
+    Graveyard graveyard;
+    const std::map<uint8_t, MutationType> mutations = {
+        {7, MutationType{0.0f, 1.0f, 7, true}},
+    };
+    size_t actual_population = 3;
+    size_t total_deaths = 0;
+    std::mt19937 rng(12345);
+
+    const auto result = CellEvoX::systems::applyCommonPopulationStep(cells,
+                                                                     graveyard,
+                                                                     config,
+                                                                     mutations,
+                                                                     1.0,
+                                                                     actual_population,
+                                                                     total_deaths,
+                                                                     12.5,
+                                                                     rng);
+
+    REQUIRE(actual_population == 6);
+    REQUIRE(total_deaths == 3);
+    REQUIRE(cells.size() == 6);
+    REQUIRE(graveyard.size() == 3);
+
+    std::vector<std::pair<uint32_t, uint32_t>> births;
+    for (const auto& birth : result.births) {
+        births.push_back({birth.id, birth.parent_id});
+    }
+    REQUIRE(births == std::vector<std::pair<uint32_t, uint32_t>>{
+                          {3, 0}, {4, 0}, {5, 1}, {6, 1}, {7, 2}, {8, 2}});
+
+    std::vector<std::pair<uint32_t, uint32_t>> deaths;
+    for (const auto& death : result.deaths) {
+        deaths.push_back({death.id, death.parent_id});
+    }
+    REQUIRE(deaths == std::vector<std::pair<uint32_t, uint32_t>>{{0, 100}, {1, 101}, {2, 102}});
+
+    for (const auto& [dead_id, parent_id] : deaths) {
+        CellMap::const_accessor dead_cell;
+        REQUIRE_FALSE(cells.find(dead_cell, dead_id));
+
+        Graveyard::const_accessor graveyard_entry;
+        REQUIRE(graveyard.find(graveyard_entry, dead_id));
+        REQUIRE(graveyard_entry->second.first == parent_id);
+        REQUIRE(graveyard_entry->second.second == Catch::Approx(12.5));
+    }
+
+    auto require_daughter = [&](uint32_t id, uint32_t parent_id, bool mutated) {
+        CellMap::const_accessor accessor;
+        REQUIRE(cells.find(accessor, id));
+        REQUIRE(accessor->second.id == id);
+        REQUIRE(accessor->second.parent_id == parent_id);
+        REQUIRE(accessor->second.fitness == Catch::Approx(1.0e20f));
+        if (mutated) {
+            REQUIRE(accessor->second.mutations == std::vector<std::pair<uint32_t, uint8_t>>{{id, 7}});
+        } else {
+            REQUIRE(accessor->second.mutations.empty());
+        }
+    };
+
+    require_daughter(3, 0, false);
+    require_daughter(4, 0, true);
+    require_daughter(5, 1, false);
+    require_daughter(6, 1, true);
+    require_daughter(7, 2, false);
+    require_daughter(8, 2, true);
+}
+
+TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]") {
+    CellMap cells;
+
+    Cell first(10);
+    first.mutations = {{100, 1}, {101, 2}};
+    REQUIRE(cells.insert({10, std::move(first)}));
+
+    Cell second(11);
+    second.mutations = {{102, 3}};
+    REQUIRE(cells.insert({11, std::move(second)}));
+
+    Cell third(12);
+    third.mutations = {{103, 4}};
+    REQUIRE(cells.insert({12, std::move(third)}));
+
+    std::map<uint8_t, MutationType> mutation_types;
+    mutation_types[1] = {0.10f, 0.0f, 1, true};
+    mutation_types[2] = {-0.20f, 0.0f, 2, false};
+    mutation_types[3] = {0.00f, 0.0f, 3, true};
+    mutation_types[4] = {0.05f, 0.0f, 4, false};
+
+    Graveyard graveyard;
+    ecs::Run run(std::move(cells), std::move(mutation_types), std::move(graveyard), {}, {}, 0, 1.0);
+
+    REQUIRE(run.total_mutations == 4);
+    REQUIRE(run.driver_mutations == 2);
+    REQUIRE(run.positive_mutations == 2);
+    REQUIRE(run.negative_mutations == 1);
+    REQUIRE(run.neutral_mutations == 1);
+    REQUIRE(run.average_mutations == Catch::Approx(4.0 / 3.0));
+}
+
+TEST_CASE("Run builds compressed phylogenetic tree without changing lineage leaf", "[Run][PhylogeneticTree][Correctness]") {
+    CellMap cells;
+
+    Cell leaf(3);
+    leaf.parent_id = 2;
+    REQUIRE(cells.insert({3, std::move(leaf)}));
+
+    Graveyard graveyard;
+    REQUIRE(graveyard.insert({1, {0, 1.0}}));
+    REQUIRE(graveyard.insert({2, {1, 2.0}}));
+
+    ecs::Run run(std::move(cells), {}, std::move(graveyard), {}, {}, 2, 3.0);
+
+    auto require_node = [&](uint32_t id, uint32_t parent_id, double death_time) {
+        tbb::concurrent_hash_map<uint32_t, ecs::NodeData>::const_accessor accessor;
+        REQUIRE(run.phylogenetic_tree.find(accessor, id));
+        REQUIRE(accessor->second.parent_id == parent_id);
+        REQUIRE(accessor->second.death_time == Catch::Approx(death_time));
+    };
+
+    require_node(0, 0, 0.0);
+    require_node(3, 0, 0.0);
+
+    tbb::concurrent_hash_map<uint32_t, ecs::NodeData>::const_accessor removed_accessor;
+    REQUIRE_FALSE(run.phylogenetic_tree.find(removed_accessor, 1));
+    REQUIRE_FALSE(run.phylogenetic_tree.find(removed_accessor, 2));
+    REQUIRE(run.phylogenetic_tree.size() == 2);
+}
+
+TEST_CASE("SimulationEngine creates memory log directory when missing", "[SimulationEngine][MemoryLog]") {
+    const auto output_path = std::filesystem::path("/tmp/test_sim_auto_memory_log");
+    std::filesystem::remove_all(output_path);
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 1.0;
+    config->initial_population = 8;
+    config->env_capacity = 100000;
+    config->steps = 1;
+    config->stat_res = 1;
+    config->popul_res = 1000000;
+    config->output_path = output_path.string();
+    config->verbosity = 0;
+
+    size_t living_cells = 0;
+    {
+        SimulationEngine engine(config);
+        auto runData = engine.run(1);
+        living_cells = runData.cells.size();
+    }
+
+    const auto memory_log_path = output_path / "statistics" / "memory_log.csv";
+    REQUIRE(std::filesystem::exists(memory_log_path));
+
+    std::ifstream memory_log(memory_log_path);
+    REQUIRE(memory_log.is_open());
+
+    std::string header;
+    std::getline(memory_log, header);
+    REQUIRE(header == "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB");
+
+    std::string row;
+    std::getline(memory_log, row);
+    REQUIRE_FALSE(row.empty());
+
+    std::vector<std::string> columns;
+    std::stringstream row_stream(row);
+    for (std::string column; std::getline(row_stream, column, ',');) {
+        columns.push_back(column);
+    }
+
+    REQUIRE(columns.size() == 6);
+    REQUIRE(columns[0] == "1");
+    REQUIRE(columns[2] == std::to_string(living_cells));
+
+    std::filesystem::remove_all(output_path);
 }
 
 TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
