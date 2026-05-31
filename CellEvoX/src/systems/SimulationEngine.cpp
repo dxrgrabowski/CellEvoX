@@ -8,11 +8,15 @@
 #include <tbb/tbb.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <execution>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <random>
 #include <unordered_set>
 
@@ -32,7 +36,13 @@ void SimulationEngine::signalHandler(int signum) {
 }
 
 SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
-    : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0), rng(config->seed) {
+    : tau(0.0),
+      config(config),
+      actual_population(config->initial_population),
+      total_deaths(0),
+      rng(config->seed),
+      deterministic_population(static_cast<double>(config->initial_population)),
+      next_deterministic_cell_id(static_cast<uint32_t>(config->initial_population)) {
   
   // Set global spdlog level based on config verbosity
   // 0 = off, 1 = warnings only, 2 = full info/debug
@@ -59,6 +69,13 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
                       [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
                         return sum + pair.second.probability;
                       });
+  deterministic_expected_mutation_effect =
+      std::accumulate(available_mutation_types.begin(),
+                      available_mutation_types.end(),
+                      0.0,
+                      [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
+                        return sum + pair.second.probability * pair.second.effect;
+                      });
 
   // These are informational logs; they will be filtered by spdlog's level.
   spdlog::info("=== Simulation Engine Initialized ===");
@@ -81,9 +98,12 @@ void SimulationEngine::step() {
     case SimulationType::STOCHASTIC_TAU_LEAP:
       stochasticStep();
       break;
-      // case SimulationType::DETERMINISTIC_RK4:
-      //     deterministicStep();
-      //     break;
+    case SimulationType::DETERMINISTIC_RK4:
+      deterministicStep(config->tau_step);
+      break;
+    default:
+      spdlog::warn("SimulationEngine cannot handle simulation type {}", static_cast<int>(config->sim_type));
+      break;
   }
 }
 
@@ -156,6 +176,122 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 }
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
+
+SimulationEngine::DeterministicState SimulationEngine::deterministicDerivative(
+    const DeterministicState& state) const {
+  DeterministicState derivative;
+  if (config->env_capacity == 0 || state.population <= 0.0) {
+    return derivative;
+  }
+
+  const double carrying_capacity = static_cast<double>(config->env_capacity);
+  const double birth_rate = std::max(0.0, state.mean_fitness);
+  const double death_rate = state.population / carrying_capacity;
+
+  derivative.population = state.population * (birth_rate - death_rate);
+  derivative.mean_fitness =
+      birth_rate * state.mean_fitness * deterministic_expected_mutation_effect;
+  derivative.mean_mutations = birth_rate * total_mutation_probability;
+  return derivative;
+}
+
+void SimulationEngine::syncDeterministicCells() {
+  const size_t target_population =
+      static_cast<size_t>(std::max(0.0, std::round(deterministic_population)));
+  const size_t current_population = cells.size();
+
+  if (target_population > current_population) {
+    for (size_t i = current_population; i < target_population; ++i) {
+      Cell cell(next_deterministic_cell_id++);
+      cell.fitness = static_cast<float>(deterministic_mean_fitness);
+      cells.insert({cell.id, std::move(cell)});
+    }
+  } else if (target_population < current_population) {
+    std::vector<uint32_t> ids;
+    ids.reserve(current_population);
+    for (const auto& cell : cells) {
+      ids.push_back(cell.first);
+    }
+    std::sort(ids.begin(), ids.end(), std::greater<uint32_t>());
+    const size_t remove_count = current_population - target_population;
+    for (size_t i = 0; i < remove_count && i < ids.size(); ++i) {
+      cells.erase(ids[i]);
+    }
+    total_deaths += remove_count;
+  }
+
+  for (auto& cell : cells) {
+    cell.second.fitness = static_cast<float>(deterministic_mean_fitness);
+  }
+
+  actual_population = target_population;
+}
+
+void SimulationEngine::deterministicStep(double delta_time) {
+  const DeterministicState state{
+      deterministic_population, deterministic_mean_fitness, deterministic_mean_mutations};
+
+  const auto add_scaled = [](const DeterministicState& lhs,
+                             const DeterministicState& rhs,
+                             double scale) {
+    return DeterministicState{
+        lhs.population + rhs.population * scale,
+        lhs.mean_fitness + rhs.mean_fitness * scale,
+        lhs.mean_mutations + rhs.mean_mutations * scale,
+    };
+  };
+
+  const DeterministicState k1 = deterministicDerivative(state);
+  const DeterministicState k2 = deterministicDerivative(add_scaled(state, k1, delta_time * 0.5));
+  const DeterministicState k3 = deterministicDerivative(add_scaled(state, k2, delta_time * 0.5));
+  const DeterministicState k4 = deterministicDerivative(add_scaled(state, k3, delta_time));
+
+  deterministic_population =
+      state.population + (delta_time / 6.0) *
+                             (k1.population + 2.0 * k2.population + 2.0 * k3.population +
+                              k4.population);
+  deterministic_mean_fitness =
+      state.mean_fitness + (delta_time / 6.0) *
+                               (k1.mean_fitness + 2.0 * k2.mean_fitness +
+                                2.0 * k3.mean_fitness + k4.mean_fitness);
+  deterministic_mean_mutations =
+      state.mean_mutations + (delta_time / 6.0) *
+                                 (k1.mean_mutations + 2.0 * k2.mean_mutations +
+                                  2.0 * k3.mean_mutations + k4.mean_mutations);
+
+  deterministic_population = std::max(0.0, deterministic_population);
+  deterministic_mean_fitness = std::max(0.0, deterministic_mean_fitness);
+  deterministic_mean_mutations = std::max(0.0, deterministic_mean_mutations);
+  tau += delta_time;
+  syncDeterministicCells();
+
+  const int current_tau = static_cast<int>(tau);
+  if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
+      current_tau != last_stat_snapshot_tau) {
+    takeDeterministicStatSnapshot();
+    last_stat_snapshot_tau = current_tau;
+  }
+  if (config->popul_res > 0 && current_tau % config->popul_res == 0 &&
+      current_tau != last_population_snapshot_tau) {
+    takePopulationSnapshot();
+    last_population_snapshot_tau = current_tau;
+  }
+}
+
+void SimulationEngine::takeDeterministicStatSnapshot() {
+  generational_stat_report.push_back({
+      tau,
+      deterministic_mean_fitness,
+      0.0,
+      deterministic_mean_mutations,
+      0.0,
+      actual_population,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+  });
+}
 
 void SimulationEngine::stochasticStep() {
   tau += config->tau_step;

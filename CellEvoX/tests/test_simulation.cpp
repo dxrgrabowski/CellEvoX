@@ -112,6 +112,24 @@ TEST_CASE("SimulationConfig parses spatial 3D capacity mode", "[SimulationConfig
     REQUIRE(config.full_mutation_payload);
 }
 
+TEST_CASE("SimulationConfig parses deterministic mode", "[SimulationConfig][Deterministic]") {
+    nlohmann::json j = {
+        {"simulation_mode", "deterministic"},
+        {"tau_step", 0.25},
+        {"initial_population", 10},
+        {"env_capacity", 100},
+        {"steps", 4},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 10},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array()}
+    };
+
+    auto config = utils::fromJson(j);
+
+    REQUIRE(config.sim_type == SimulationType::DETERMINISTIC_RK4);
+}
+
 TEST_CASE("SpatialHashGrid returns neighbors from nearby voxels", "[SpatialHashGrid]") {
     SpatialHashGrid grid(2.0f, 20.0f);
     std::vector<uint32_t> ids = {10, 11, 12};
@@ -205,6 +223,84 @@ TEST_CASE("Simulation Determinism", "[Determinism]") {
     for(size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
         REQUIRE(runData1.generational_stat_report[i].mean_fitness == runData2.generational_stat_report[i].mean_fitness);
         REQUIRE(runData1.generational_stat_report[i].total_living_cells == runData2.generational_stat_report[i].total_living_cells);
+    }
+}
+
+TEST_CASE("Deterministic RK4 follows neutral logistic growth", "[SimulationEngine][Deterministic]") {
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::DETERMINISTIC_RK4;
+    config->tau_step = 0.25;
+    config->initial_population = 10;
+    config->env_capacity = 100;
+    config->steps = 4;
+    config->stat_res = 1;
+    config->popul_res = 10;
+    config->output_path = "/tmp/test_sim_deterministic_logistic";
+    config->verbosity = 0;
+
+    std::filesystem::remove_all(config->output_path);
+    std::filesystem::create_directories(std::filesystem::path(config->output_path) / "statistics");
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(config->steps);
+
+    REQUIRE(runData.generational_stat_report.size() == 1);
+    const auto& final_stat = runData.generational_stat_report.back();
+    const double carrying_capacity = static_cast<double>(config->env_capacity);
+    const double initial_population = static_cast<double>(config->initial_population);
+    const double expected_population =
+        carrying_capacity /
+        (1.0 + ((carrying_capacity - initial_population) / initial_population) *
+                   std::exp(-final_stat.tau));
+
+    REQUIRE(final_stat.tau == Catch::Approx(1.0));
+    REQUIRE(static_cast<double>(final_stat.total_living_cells) ==
+            Catch::Approx(expected_population).margin(1.0));
+    REQUIRE(final_stat.mean_fitness == Catch::Approx(1.0));
+    REQUIRE(final_stat.fitness_variance == Catch::Approx(0.0));
+    REQUIRE(final_stat.mean_mutations == Catch::Approx(0.0));
+    REQUIRE(runData.cells.size() == final_stat.total_living_cells);
+}
+
+TEST_CASE("Deterministic RK4 is repeatable independent of seed", "[SimulationEngine][Deterministic]") {
+    auto make_config = [](uint32_t seed, const std::string& output_path) {
+        auto config = std::make_shared<SimulationConfig>();
+        config->sim_type = SimulationType::DETERMINISTIC_RK4;
+        config->tau_step = 0.25;
+        config->seed = seed;
+        config->initial_population = 10;
+        config->env_capacity = 100;
+        config->steps = 4;
+        config->stat_res = 1;
+        config->popul_res = 10;
+        config->output_path = output_path;
+        config->verbosity = 0;
+        return config;
+    };
+
+    auto config1 = make_config(1, "/tmp/test_sim_deterministic_seed_1");
+    auto config2 = make_config(999, "/tmp/test_sim_deterministic_seed_2");
+
+    std::filesystem::remove_all(config1->output_path);
+    std::filesystem::remove_all(config2->output_path);
+    std::filesystem::create_directories(std::filesystem::path(config1->output_path) / "statistics");
+    std::filesystem::create_directories(std::filesystem::path(config2->output_path) / "statistics");
+
+    SimulationEngine engine1(config1);
+    auto runData1 = engine1.run(config1->steps);
+
+    SimulationEngine engine2(config2);
+    auto runData2 = engine2.run(config2->steps);
+
+    REQUIRE(runData1.generational_stat_report.size() == runData2.generational_stat_report.size());
+    REQUIRE(runData1.cells.size() == runData2.cells.size());
+    for (size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
+        const auto& lhs = runData1.generational_stat_report[i];
+        const auto& rhs = runData2.generational_stat_report[i];
+        REQUIRE(lhs.tau == Catch::Approx(rhs.tau));
+        REQUIRE(lhs.mean_fitness == Catch::Approx(rhs.mean_fitness));
+        REQUIRE(lhs.mean_mutations == Catch::Approx(rhs.mean_mutations));
+        REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
     }
 }
 

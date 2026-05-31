@@ -69,9 +69,18 @@ class SimulationEngine {
   void stop();
 
  private:
+  struct DeterministicState {
+    double population = 0.0;
+    double mean_fitness = 1.0;
+    double mean_mutations = 0.0;
+  };
+
   void stochasticStep();
+  void deterministicStep(double delta_time);
+  DeterministicState deterministicDerivative(const DeterministicState& state) const;
+  void syncDeterministicCells();
+  void takeDeterministicStatSnapshot();
   void pruneGraveyard();
-  // void rk4DeterministicStep(double deltaTime);
   void takeStatSnapshot();
   void takePopulationSnapshot();
   CellMap cells;
@@ -84,6 +93,11 @@ class SimulationEngine {
   size_t total_deaths;
   double tau;
   double total_mutation_probability;
+  double deterministic_population = 0.0;
+  double deterministic_mean_fitness = 1.0;
+  double deterministic_mean_mutations = 0.0;
+  double deterministic_expected_mutation_effect = 0.0;
+  uint32_t next_deterministic_cell_id = 0;
   int last_stat_snapshot_tau = 0;
   int last_population_snapshot_tau = 0;
   int last_pruning_tau = -1;
