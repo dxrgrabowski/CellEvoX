@@ -7,7 +7,6 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
@@ -72,9 +71,10 @@ target_include_directories(CellEvoX
     ${NUMPY_INCLUDE_DIR}
 )
 
-target_compile_options(CellEvoX PRIVATE -Wno-deprecated-declarations)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math)
+    target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math -Wno-deprecated-declarations)
+elseif(MSVC)
+    target_compile_options(CellEvoX PRIVATE /wd4996)
 endif()
 
 target_link_libraries(CellEvoX
@@ -85,6 +85,10 @@ target_link_libraries(CellEvoX
     nlohmann_json::nlohmann_json
     ${Python3_LIBRARIES}
 )
+
+if(WIN32)
+    target_link_libraries(CellEvoX PRIVATE Psapi)
+endif()
 
 install(TARGETS CellEvoX
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -107,7 +111,11 @@ target_include_directories(CellEvoXTests
 
 # Suppress deprecation warnings from external header matplotlibcpp.h
 # which uses Py_SetProgramName/PySys_SetArgv deprecated since Python 3.11
-target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
+elseif(MSVC)
+    target_compile_options(CellEvoXTests PRIVATE /wd4996)
+endif()
 
 # Inject repo source directory for robust test data discovery (e.g. JSON baselines)
 target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
@@ -121,6 +129,10 @@ target_link_libraries(CellEvoXTests
     ${Python3_LIBRARIES}
     Catch2::Catch2WithMain
 )
+
+if(WIN32)
+    target_link_libraries(CellEvoXTests PRIVATE Psapi)
+endif()
 
 include(Catch)
 catch_discover_tests(CellEvoXTests)
