@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
+#include <map>
+#include <random>
 #include <cmath>
 #include <cstring>
 #include <sstream>
@@ -13,6 +15,7 @@
 #include "io/PopulationSnapshotIO.hpp"
 #include "utils/SimulationConfig.hpp"
 #include "spatial/SpatialHashGrid.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
 #include "systems/SimulationEngine3DCapacity.hpp"
@@ -142,6 +145,90 @@ TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
     REQUIRE(child.mutations.size() == 1);
     REQUIRE(child.mutations[0].second == 1); // Child inherits mutation type
     REQUIRE(child.id == 0); // ID hasn't been explicitly assigned yet
+}
+
+TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[CommonPopulationStep][Determinism][Correctness]") {
+    SimulationConfig config;
+    config.tau_step = 1.0;
+    config.env_capacity = 1000000000;
+
+    CellMap cells;
+    auto insert_cell = [&](uint32_t id, uint32_t parent_id) {
+        Cell cell(id);
+        cell.parent_id = parent_id;
+        cell.fitness = 1.0e20f;
+        REQUIRE(cells.insert({id, std::move(cell)}));
+    };
+
+    insert_cell(2, 102);
+    insert_cell(0, 100);
+    insert_cell(1, 101);
+
+    Graveyard graveyard;
+    const std::map<uint8_t, MutationType> mutations = {
+        {7, MutationType{0.0f, 1.0f, 7, true}},
+    };
+    size_t actual_population = 3;
+    size_t total_deaths = 0;
+    std::mt19937 rng(12345);
+
+    const auto result = CellEvoX::systems::applyCommonPopulationStep(cells,
+                                                                     graveyard,
+                                                                     config,
+                                                                     mutations,
+                                                                     1.0,
+                                                                     actual_population,
+                                                                     total_deaths,
+                                                                     12.5,
+                                                                     rng);
+
+    REQUIRE(actual_population == 6);
+    REQUIRE(total_deaths == 3);
+    REQUIRE(cells.size() == 6);
+    REQUIRE(graveyard.size() == 3);
+
+    std::vector<std::pair<uint32_t, uint32_t>> births;
+    for (const auto& birth : result.births) {
+        births.push_back({birth.id, birth.parent_id});
+    }
+    REQUIRE(births == std::vector<std::pair<uint32_t, uint32_t>>{
+                          {3, 0}, {4, 0}, {5, 1}, {6, 1}, {7, 2}, {8, 2}});
+
+    std::vector<std::pair<uint32_t, uint32_t>> deaths;
+    for (const auto& death : result.deaths) {
+        deaths.push_back({death.id, death.parent_id});
+    }
+    REQUIRE(deaths == std::vector<std::pair<uint32_t, uint32_t>>{{0, 100}, {1, 101}, {2, 102}});
+
+    for (const auto& [dead_id, parent_id] : deaths) {
+        CellMap::const_accessor dead_cell;
+        REQUIRE_FALSE(cells.find(dead_cell, dead_id));
+
+        Graveyard::const_accessor graveyard_entry;
+        REQUIRE(graveyard.find(graveyard_entry, dead_id));
+        REQUIRE(graveyard_entry->second.first == parent_id);
+        REQUIRE(graveyard_entry->second.second == Catch::Approx(12.5));
+    }
+
+    auto require_daughter = [&](uint32_t id, uint32_t parent_id, bool mutated) {
+        CellMap::const_accessor accessor;
+        REQUIRE(cells.find(accessor, id));
+        REQUIRE(accessor->second.id == id);
+        REQUIRE(accessor->second.parent_id == parent_id);
+        REQUIRE(accessor->second.fitness == Catch::Approx(1.0e20f));
+        if (mutated) {
+            REQUIRE(accessor->second.mutations == std::vector<std::pair<uint32_t, uint8_t>>{{id, 7}});
+        } else {
+            REQUIRE(accessor->second.mutations.empty());
+        }
+    };
+
+    require_daughter(3, 0, false);
+    require_daughter(4, 0, true);
+    require_daughter(5, 1, false);
+    require_daughter(6, 1, true);
+    require_daughter(7, 2, false);
+    require_daughter(8, 2, true);
 }
 
 TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
