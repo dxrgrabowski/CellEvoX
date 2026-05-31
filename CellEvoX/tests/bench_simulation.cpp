@@ -261,7 +261,7 @@ static size_t extendedSnapshotBytes(const SyntheticSnapshotInput& input) {
 // These 4 benchmarks cover all critical code paths.
 // ============================================================
 
-TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
+TEST_CASE("Simulation: High-Performance Regression", "[benchmark][perf-core]") {
     std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
     std::filesystem::create_directories("/tmp/test_bench_sim_3d/statistics");
 
@@ -313,7 +313,7 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
     };
 }
 
-TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison]") {
+TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison][perf-timing]") {
     std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
     std::filesystem::create_directories("/tmp/test_bench_sim_3d/statistics");
 
@@ -343,7 +343,7 @@ TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison
     };
 }
 
-TEST_CASE("Population snapshot serialization tradeoff", "[benchmark][snapshot-serialization]") {
+TEST_CASE("Population snapshot serialization tradeoff", "[benchmark][snapshot-serialization][perf-snapshot]") {
     const auto non_spatial_input = makeSyntheticSnapshotInput(2000000, 4, false);
     const auto spatial_input = makeSyntheticSnapshotInput(2000000, 4, true);
 
