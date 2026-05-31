@@ -72,17 +72,21 @@ void Run::createPhylogeneticTree() {
       {
         tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
         if (phylogenetic_tree.insert(accessor, current_id)) {
-          Graveyard::const_accessor g_accessor;
-          CellMap::const_accessor c_accessor;
-          if (cells_graveyard.find(g_accessor, current_id)) {
-            const auto& [graveyard_parent_id, death_time] = g_accessor->second;
-            accessor->second = {graveyard_parent_id, 0, death_time};
-          } else if (cells.find(c_accessor, current_id)) {
-            const auto& cell_parent_id = c_accessor->second.parent_id;
-            accessor->second = {cell_parent_id, 0, 0.0};
+          if (current_id == cell_id) {
+            accessor->second = {cell_data.parent_id, 0, 0.0};
           } else {
-            accessor->second = {0, 0, 0.0};
-            spdlog::error("Cell with ID {} not found in cells or graveyard", current_id);
+            Graveyard::const_accessor g_accessor;
+            CellMap::const_accessor c_accessor;
+            if (cells_graveyard.find(g_accessor, current_id)) {
+              const auto& [graveyard_parent_id, death_time] = g_accessor->second;
+              accessor->second = {graveyard_parent_id, 0, death_time};
+            } else if (cells.find(c_accessor, current_id)) {
+              const auto& cell_parent_id = c_accessor->second.parent_id;
+              accessor->second = {cell_parent_id, 0, 0.0};
+            } else {
+              accessor->second = {0, 0, 0.0};
+              spdlog::error("Cell with ID {} not found in cells or graveyard", current_id);
+            }
           }
         }
 
