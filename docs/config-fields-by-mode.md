@@ -2,6 +2,8 @@
 
 This document summarizes the simulation config fields used by the web UI, TypeScript types, FastAPI schema, and C++ parser/engines.
 
+Related docs: [docs index](README.md), [simulation engines](simulation-engines.md), [architecture](architecture.md).
+
 Sources checked:
 
 - `web/frontend/src/components/config/*`
@@ -101,10 +103,10 @@ Required means required by the C++ parser via `j.at(...)` unless noted otherwise
 
 `deterministic` is offered by the frontend and backend schema. The C++ parser can produce `SimulationType::DETERMINISTIC_RK4` from `simulation_mode: "deterministic"` or legacy `stochastic: false`.
 
-Open question: the inspected `SimulationEngine::step()` only handles `STOCHASTIC_TAU_LEAP`; the deterministic case is commented out. This means `deterministic` appears selectable/configurable but not implemented in the current engine path.
+Current status: the inspected `SimulationEngine::step()` only handles `STOCHASTIC_TAU_LEAP`; the deterministic case is commented out. This means `deterministic` appears selectable/configurable but is not implemented in the current engine path.
 
 ## Open questions
 
 - Should `spatial_3d` remain as a legacy alias, or should old result configs be migrated to `spatial_3d_density`?
 - Should backend schema validation enforce the same ranges as the frontend, especially `mutations[].probability` min (`0.00001` frontend vs `0.0001` backend schema)?
-- Should docs/UI describe `deterministic` as unavailable until the C++ `DETERMINISTIC_RK4` step is implemented?
+- Should UI disable or explicitly mark `deterministic` as unavailable until the C++ `DETERMINISTIC_RK4` step is implemented?

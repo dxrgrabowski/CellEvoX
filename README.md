@@ -3,6 +3,12 @@
 
 CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as Qt6, TBB, and Eigen3 for high performance and ease of extensibility.
 
+## Documentation
+
+Start with [docs/README.md](docs/README.md) for the project knowledge map. The docs
+section includes onboarding for agents, architecture, simulation engine behavior,
+config fields by mode, output formats, development workflows, and high-risk areas.
+
 ## Visualization
 
 CellEvoX is able to generate visualizations from existing runs:
@@ -20,7 +26,7 @@ Both outputs are written under `visualizations/` inside the run directory.
 
 ## Features
 
-- **Stochastic and Deterministic Simulation**: Supports tau-leap simulation based on Gillespie's algorithm and provides extensibility for new methods.
+- **Stochastic Simulation and Extensible Mode Model**: Supports tau-leap simulation based on Gillespie-style event sampling and provides extensibility for new methods. The current config surface includes a deterministic mode selector, but current mainline C++ dispatch does not execute an RK4 deterministic step yet.
 - **Entity-Component-System (ECS) Architecture**: Decouples data and behavior for flexible simulation management.
 - **Mutation Modeling**: Implements various mutation types with configurable probabilities and effects.
 - **Statistical Reporting**: Generates detailed statistical snapshots, including mutation histograms and fitness distributions.
@@ -75,15 +81,18 @@ Both outputs are written under `visualizations/` inside the run directory.
 
 ### Building from Source
 
-1. Create a build directory and run CMake:
+1. Configure and build from the repository root:
    ```bash
-   mkdir build && cd build
-   cmake ..
-   make
+   cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DSKIP_GUI=ON
+   cmake --build build --target CellEvoXTests -j
    ```
-2. Run the program:
+2. Run tests:
    ```bash
-   ./bin/CellEvoX
+   ./build/bin/CellEvoXTests "~[benchmark]"
+   ```
+3. Build the runnable executable without `SKIP_GUI=ON` when Qt dependencies are available, then run:
+   ```bash
+   ./build/bin/CellEvoX
    ```
 
 ## Usage
@@ -124,6 +133,7 @@ python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
 - **src/**: Source files implementing the program logic.
 - **qml/**: QML files for the GUI.
 - **build/**: Directory for compiled binaries.
+- **docs/**: Agent and contributor knowledge base.
 
 ## Contributing
 
