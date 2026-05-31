@@ -9,8 +9,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 
-# Find required packages
-find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
 FetchContent_Declare(
@@ -81,8 +79,6 @@ endif()
 
 target_link_libraries(CellEvoX
     PRIVATE
-    Boost::boost
-    Boost::program_options
     spdlog::spdlog
     Eigen3::Eigen
     TBB::tbb
@@ -118,8 +114,6 @@ target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_
 
 target_link_libraries(CellEvoXTests
     PRIVATE
-    Boost::boost
-    Boost::program_options
     spdlog::spdlog
     Eigen3::Eigen
     TBB::tbb

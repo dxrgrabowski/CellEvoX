@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <utility>
 
 #include "core/RunDataEngine.hpp"
 #include "ecs/Run.hpp"
@@ -19,7 +20,7 @@ namespace CellEvoX::core {
 
 float calculateDeltaTime();
 
-Application::Application(po::variables_map& vm) : vm(vm) { initialize(); }
+Application::Application(CliOptions options) : options(std::move(options)) { initialize(); }
 
 Application::~Application() = default;
 
@@ -27,8 +28,8 @@ void Application::initialize() {
   spdlog::info("CellEvoX Application starting...");
   spdlog::set_level(spdlog::level::trace);
   // Initialize the simulation engine
-  if (vm.count("analyze")) {
-    std::string analyze_path = vm["analyze"].as<std::string>();
+  if (options.analyze_path) {
+    std::string analyze_path = *options.analyze_path;
     spdlog::info("Running in analysis mode for directory: {}", analyze_path);
     
     // Initialize DataEngine in post-processing mode
@@ -69,8 +70,8 @@ void Application::initialize() {
     }
     
     spdlog::info("Analysis complete.");
-  } else if (vm.count("config")) {
-    const std::string config_path = vm["config"].as<std::string>();
+  } else if (options.config_path) {
+    const std::string config_path = *options.config_path;
     std::ifstream config_file(config_path);
     if (!config_file.is_open()) {
       throw std::runtime_error("Could not open config file: " + config_path);

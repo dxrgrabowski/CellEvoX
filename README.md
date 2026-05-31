@@ -31,7 +31,6 @@ Both outputs are written under `visualizations/` inside the run directory.
 
 - C++23 compatible compiler
 - CMake 3.16 or higher
-- Boost Program Options
 - Intel TBB
 - Eigen3
 - spdlog

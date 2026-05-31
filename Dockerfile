@@ -18,7 +18,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg2 \
-    libboost-program-options-dev \
     libtbb-dev \
     libeigen3-dev \
     nlohmann-json3-dev \
