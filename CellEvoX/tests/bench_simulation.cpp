@@ -4,8 +4,14 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
+#include <map>
+#include <memory>
+#include <random>
+#include <vector>
 
 #include "io/PopulationSnapshotIO.hpp"
+#include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
 #include "utils/SimulationConfig.hpp"
@@ -54,6 +60,53 @@ static std::shared_ptr<SimulationConfig> makeSpatial3DConfig(
     c->mech_substeps = mech_substeps;
     c->epsilon = 0.1f;
     return c;
+}
+
+static std::shared_ptr<SimulationConfig> makeRealistic2DConfig(size_t population) {
+    auto c = makeConfig(population, population);
+    c->stat_res = 1;
+    c->popul_res = 2;
+    c->graveyard_pruning_interval = 2;
+    c->output_path = "/tmp/test_bench_sim_realistic";
+    c->mutations = {
+        {0.01f, 0.0001f, 1, true},
+        {-0.01f, 0.01f, 3, false},
+    };
+    return c;
+}
+
+static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarness(
+    size_t population,
+    size_t env_capacity,
+    const std::vector<MutationType>& mutations = {}
+) {
+    auto cfg = makeConfig(population, env_capacity, mutations);
+    CellMap cells;
+    cells.rehash(population);
+    for (uint32_t id = 0; id < static_cast<uint32_t>(population); ++id) {
+        cells.insert({id, Cell(id)});
+    }
+
+    Graveyard graveyard;
+    std::map<uint8_t, MutationType> available_mutation_types;
+    double total_mutation_probability = 0.0;
+    for (const auto& mutation : mutations) {
+        available_mutation_types[mutation.type_id] = mutation;
+        total_mutation_probability += mutation.probability;
+    }
+
+    size_t actual_population = population;
+    size_t total_deaths = 0;
+    std::mt19937 rng(cfg->seed);
+    return CellEvoX::systems::applyCommonPopulationStep(cells,
+                                                        graveyard,
+                                                        *cfg,
+                                                        available_mutation_types,
+                                                        total_mutation_probability,
+                                                        actual_population,
+                                                        total_deaths,
+                                                        cfg->tau_step,
+                                                        rng);
 }
 
 #pragma pack(push, 1)
@@ -245,6 +298,18 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark]") {
         auto cfg = makeConfig(50000, 1000000);
         SimulationEngine eng(cfg);
         return eng.run(5);
+    };
+
+    BENCHMARK("applyCommonPopulationStep N=100000 [baseline harness]") {
+        return runCommonPopulationStepHarness(100000, 10000000);
+    };
+
+    BENCHMARK("2D run() N=2000 x450 [realistic snapshots/pruning]") {
+        std::filesystem::create_directories("/tmp/test_bench_sim_realistic/statistics");
+        std::filesystem::create_directories("/tmp/test_bench_sim_realistic/population_data");
+        auto cfg = makeRealistic2DConfig(2000);
+        SimulationEngine eng(cfg);
+        return eng.run(450);
     };
 }
 

@@ -15,6 +15,7 @@
 
 #include "systems/SimulationEngine.hpp"
 #include "utils/MathUtils.hpp"
+#include "utils/PhaseProfiler.hpp"
 
 namespace CellEvoX::systems {
 
@@ -66,6 +67,7 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     size_t& total_deaths,
     double tau,
     std::mt19937& rng) {
+  CELLEVOX_PROFILE_PHASE("common_step_total");
   CommonPopulationStepResult result;
 
   const double tau_step = config.tau_step;
@@ -77,18 +79,38 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
   }
 
   const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
-  Eigen::VectorXd death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
+  Eigen::VectorXd death_probs;
+  {
+    CELLEVOX_PROFILE_PHASE("rng_death");
+    death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
+  }
 
   std::vector<uint32_t> alive_cell_indices;
-  alive_cell_indices.reserve(cells.size());
-  for (auto it = cells.begin(); it != cells.end(); ++it) {
-    alive_cell_indices.push_back(it->first);
+  {
+    CELLEVOX_PROFILE_PHASE("collect_alive_ids");
+    alive_cell_indices.reserve(cells.size());
+    for (auto it = cells.begin(); it != cells.end(); ++it) {
+      alive_cell_indices.push_back(it->first);
+    }
   }
-  std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
 
-  Eigen::VectorXd birth_probs =
-      generateExponentialDistribution(N, rng).array() /
-      utils::FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices).array();
+  {
+    CELLEVOX_PROFILE_PHASE("sort_alive_ids");
+    std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
+  }
+
+  Eigen::VectorXd fitness_vector;
+  {
+    CELLEVOX_PROFILE_PHASE("fitness_vector");
+    fitness_vector = utils::FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices);
+  }
+
+  Eigen::VectorXd birth_randoms;
+  {
+    CELLEVOX_PROFILE_PHASE("rng_birth");
+    birth_randoms = generateExponentialDistribution(N, rng);
+  }
+  Eigen::VectorXd birth_probs = birth_randoms.array() / fitness_vector.array();
 
   if (alive_cell_indices.size() != N) {
     spdlog::error(
@@ -101,101 +123,119 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
   }
 
   std::vector<double> mutation_rand_vals(N);
-  std::uniform_real_distribution<> unif_dist(0.0, 1.0);
-  for (size_t i = 0; i < N; ++i) {
-    mutation_rand_vals[i] = unif_dist(rng);
+  {
+    CELLEVOX_PROFILE_PHASE("rng_mutation");
+    std::uniform_real_distribution<> unif_dist(0.0, 1.0);
+    for (size_t i = 0; i < N; ++i) {
+      mutation_rand_vals[i] = unif_dist(rng);
+    }
   }
 
   tbb::concurrent_vector<Cell> new_cells;
   tbb::concurrent_vector<CommonDeathEvent> dead_cells;
   std::atomic<uint32_t> new_cells_count(0), death_count(0);
 
-  tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, alive_cell_indices.size()),
-      [&](const tbb::blocked_range<size_t>& range) {
-        for (size_t i = range.begin(); i != range.end(); ++i) {
-          const uint32_t idx = alive_cell_indices[i];
-          CellMap::const_accessor cell;
-          if (!cells.find(cell, idx)) {
-            continue;
-          }
+  {
+    CELLEVOX_PROFILE_PHASE("parallel_events");
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, alive_cell_indices.size()),
+        [&](const tbb::blocked_range<size_t>& range) {
+          for (size_t i = range.begin(); i != range.end(); ++i) {
+            const uint32_t idx = alive_cell_indices[i];
+            CellMap::const_accessor cell;
+            if (!cells.find(cell, idx)) {
+              continue;
+            }
 
-          if (death_probs[static_cast<Eigen::Index>(i)] <= tau_step) {
+            if (death_probs[static_cast<Eigen::Index>(i)] <= tau_step) {
+              dead_cells.push_back({idx, cell->second.parent_id});
+              death_count++;
+              continue;
+            }
+
+            if (birth_probs[static_cast<Eigen::Index>(i)] > tau_step) {
+              continue;
+            }
+
+            new_cells_count += 2;
             dead_cells.push_back({idx, cell->second.parent_id});
             death_count++;
-            continue;
-          }
 
-          if (birth_probs[static_cast<Eigen::Index>(i)] > tau_step) {
-            continue;
-          }
-
-          new_cells_count += 2;
-          dead_cells.push_back({idx, cell->second.parent_id});
-          death_count++;
-
-          const double rand_val = mutation_rand_vals[i];
-          if (rand_val >= total_mutation_probability) {
-            new_cells.emplace_back(cell->second, cell->second.fitness);
-            new_cells.emplace_back(cell->second, cell->second.fitness);
-            continue;
-          }
-
-          double prob_sum = 0.0;
-          for (const auto& mut : available_mutation_types) {
-            prob_sum += mut.second.probability;
-            if (rand_val < prob_sum) {
-              Cell daughter_cell1 =
-                  Cell(cell->second, cell->second.fitness * (1.0 + mut.second.effect));
-              daughter_cell1.mutations.push_back({0, mut.second.type_id});
-              new_cells.push_back(std::move(daughter_cell1));
+            const double rand_val = mutation_rand_vals[i];
+            if (rand_val >= total_mutation_probability) {
               new_cells.emplace_back(cell->second, cell->second.fitness);
-              break;
+              new_cells.emplace_back(cell->second, cell->second.fitness);
+              continue;
+            }
+
+            double prob_sum = 0.0;
+            for (const auto& mut : available_mutation_types) {
+              prob_sum += mut.second.probability;
+              if (rand_val < prob_sum) {
+                Cell daughter_cell1 =
+                    Cell(cell->second, cell->second.fitness * (1.0 + mut.second.effect));
+                daughter_cell1.mutations.push_back({0, mut.second.type_id});
+                new_cells.push_back(std::move(daughter_cell1));
+                new_cells.emplace_back(cell->second, cell->second.fitness);
+                break;
+              }
             }
           }
-        }
-      });
+        });
+  }
 
   std::vector<Cell> sorted_new_cells;
-  sorted_new_cells.reserve(new_cells.size());
-  for (auto& cell : new_cells) {
-    sorted_new_cells.push_back(std::move(cell));
-  }
+  {
+    CELLEVOX_PROFILE_PHASE("copy_sort_births");
+    sorted_new_cells.reserve(new_cells.size());
+    for (auto& cell : new_cells) {
+      sorted_new_cells.push_back(std::move(cell));
+    }
 
-  std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
+    std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
+  }
 
   const uint32_t starting_id = static_cast<uint32_t>(N + total_deaths);
-  result.births.reserve(sorted_new_cells.size());
-  for (size_t i = 0; i < sorted_new_cells.size(); ++i) {
-    const uint32_t new_id = starting_id + static_cast<uint32_t>(i);
-    sorted_new_cells[i].id = new_id;
+  {
+    CELLEVOX_PROFILE_PHASE("apply_births");
+    result.births.reserve(sorted_new_cells.size());
+    for (size_t i = 0; i < sorted_new_cells.size(); ++i) {
+      const uint32_t new_id = starting_id + static_cast<uint32_t>(i);
+      sorted_new_cells[i].id = new_id;
 
-    CellMap::accessor accessor;
-    if (!cells.insert(accessor, {new_id, std::move(sorted_new_cells[i])})) {
-      spdlog::error("Failed to insert new cell {}", new_id);
-      continue;
-    }
-
-    for (auto& mutation : accessor->second.mutations) {
-      if (mutation.first == 0) {
-        mutation.first = new_id;
+      CellMap::accessor accessor;
+      if (!cells.insert(accessor, {new_id, std::move(sorted_new_cells[i])})) {
+        spdlog::error("Failed to insert new cell {}", new_id);
+        continue;
       }
+
+      for (auto& mutation : accessor->second.mutations) {
+        if (mutation.first == 0) {
+          mutation.first = new_id;
+        }
+      }
+
+      result.births.push_back({new_id, accessor->second.parent_id});
     }
-
-    result.births.push_back({new_id, accessor->second.parent_id});
   }
 
-  result.deaths.reserve(dead_cells.size());
-  for (const auto& death : dead_cells) {
-    result.deaths.push_back(death);
+  {
+    CELLEVOX_PROFILE_PHASE("sort_deaths");
+    result.deaths.reserve(dead_cells.size());
+    for (const auto& death : dead_cells) {
+      result.deaths.push_back(death);
+    }
+    std::sort(result.deaths.begin(), result.deaths.end(), [](const auto& lhs, const auto& rhs) {
+      return lhs.id < rhs.id;
+    });
   }
-  std::sort(result.deaths.begin(), result.deaths.end(), [](const auto& lhs, const auto& rhs) {
-    return lhs.id < rhs.id;
-  });
 
-  for (const auto& death : result.deaths) {
-    cells_graveyard.insert({death.id, {death.parent_id, tau}});
-    cells.erase(death.id);
+  {
+    CELLEVOX_PROFILE_PHASE("apply_deaths");
+    for (const auto& death : result.deaths) {
+      cells_graveyard.insert({death.id, {death.parent_id, tau}});
+      cells.erase(death.id);
+    }
   }
 
   const size_t created_count = new_cells_count.load();

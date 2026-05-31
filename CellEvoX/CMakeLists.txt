@@ -13,6 +13,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 option(SKIP_GUI "Skip GUI and Qt dependencies" OFF)
+option(CELLEVOX_PROFILE_PHASES "Enable opt-in CSV phase profiling instrumentation" OFF)
 
 # Find required packages
 if(NOT SKIP_GUI)
@@ -55,6 +56,7 @@ set(HEADERS
     include/ecs/Run.hpp
     include/spatial/SpatialHashGrid.hpp
     include/utils/MathUtils.hpp
+    include/utils/PhaseProfiler.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
     include/external/matplotlibcpp.h
@@ -116,6 +118,9 @@ if(NOT SKIP_GUI)
     )
 
     target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math)
+    if(CELLEVOX_PROFILE_PHASES)
+        target_compile_definitions(CellEvoX PRIVATE CELLEVOX_PROFILE_PHASES=1)
+    endif()
 
     target_link_libraries(CellEvoX
         PRIVATE
@@ -168,6 +173,9 @@ target_include_directories(CellEvoXTests
 # Suppress deprecation warnings from external header matplotlibcpp.h
 # which uses Py_SetProgramName/PySys_SetArgv deprecated since Python 3.11
 target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
+if(CELLEVOX_PROFILE_PHASES)
+    target_compile_definitions(CellEvoXTests PRIVATE CELLEVOX_PROFILE_PHASES=1)
+endif()
 
 # Inject repo source directory for robust test data discovery (e.g. JSON baselines)
 target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")

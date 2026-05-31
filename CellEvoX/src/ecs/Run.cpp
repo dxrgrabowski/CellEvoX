@@ -1,6 +1,7 @@
 #include "ecs/Run.hpp"
 
 #include "systems/SimulationEngine.hpp"
+#include "utils/PhaseProfiler.hpp"
 namespace ecs {
 
 Run::Run(CellMap&& cells,
@@ -17,10 +18,23 @@ Run::Run(CellMap&& cells,
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau) {
-  processRunInfo();
-  logResults();
-  checkRunCorrectness();
-  createPhylogeneticTree();
+  CELLEVOX_PROFILE_PHASE("run_postprocessing");
+  {
+    CELLEVOX_PROFILE_PHASE("run_process_info");
+    processRunInfo();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_log_results");
+    logResults();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_correctness_check");
+    checkRunCorrectness();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_create_phylogenetic_tree");
+    createPhylogeneticTree();
+  }
 }
 
 void Run::logResults() const {
