@@ -29,8 +29,9 @@
 
 # Directories
 build/
-build-profile/
+build-*/
 .vscode
+.vs/
 .venv/
 .pipx/
 output*

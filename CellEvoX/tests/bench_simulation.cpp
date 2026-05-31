@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <string_view>
 #include <vector>
 
 #include "io/PopulationSnapshotIO.hpp"
@@ -15,6 +16,18 @@
 #include "systems/SimulationEngine.hpp"
 #include "systems/SimulationEngine3D.hpp"
 #include "utils/SimulationConfig.hpp"
+
+namespace {
+
+std::filesystem::path benchmarkTempPath(std::string_view name) {
+    return std::filesystem::temp_directory_path() / "cellevox_benchmarks" / name;
+}
+
+std::string benchmarkTempString(std::string_view name) {
+    return benchmarkTempPath(name).string();
+}
+
+}  // namespace
 
 // Helper: minimal overhead config.
 static std::shared_ptr<SimulationConfig> makeConfig(
@@ -30,7 +43,7 @@ static std::shared_ptr<SimulationConfig> makeConfig(
     c->stat_res = 1000000;
     c->popul_res = 1000000;
     c->graveyard_pruning_interval = 0;
-    c->output_path = "/tmp/test_bench_sim";
+    c->output_path = benchmarkTempString("test_bench_sim");
     c->mutations = mutations;
     c->verbosity = 0;
     return c;
@@ -50,7 +63,7 @@ static std::shared_ptr<SimulationConfig> makeSpatial3DConfig(
     c->stat_res = 1000000;
     c->popul_res = 1000000;
     c->graveyard_pruning_interval = 0;
-    c->output_path = "/tmp/test_bench_sim_3d";
+    c->output_path = benchmarkTempString("test_bench_sim_3d");
     c->verbosity = 0;
     c->spatial_domain_size = domain_size;
     c->sample_radius = 3.0f;
@@ -67,7 +80,7 @@ static std::shared_ptr<SimulationConfig> makeRealistic2DConfig(size_t population
     c->stat_res = 1;
     c->popul_res = 2;
     c->graveyard_pruning_interval = 2;
-    c->output_path = "/tmp/test_bench_sim_realistic";
+    c->output_path = benchmarkTempString("test_bench_sim_realistic");
     c->mutations = {
         {0.01f, 0.0001f, 1, true},
         {-0.01f, 0.01f, 3, false},
@@ -262,8 +275,8 @@ static size_t extendedSnapshotBytes(const SyntheticSnapshotInput& input) {
 // ============================================================
 
 TEST_CASE("Simulation: High-Performance Regression", "[benchmark][perf-core]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-    std::filesystem::create_directories("/tmp/test_bench_sim_3d/statistics");
+    std::filesystem::create_directories(benchmarkTempPath("test_bench_sim") / "statistics");
+    std::filesystem::create_directories(benchmarkTempPath("test_bench_sim_3d") / "statistics");
 
     // 1. RAW STEP (Minimum logic)
     // Measures: TBB scheduling and raw birth/death compute.
@@ -305,8 +318,8 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark][perf-core]") {
     };
 
     BENCHMARK("2D run() N=2000 x450 [realistic snapshots/pruning]") {
-        std::filesystem::create_directories("/tmp/test_bench_sim_realistic/statistics");
-        std::filesystem::create_directories("/tmp/test_bench_sim_realistic/population_data");
+        std::filesystem::create_directories(benchmarkTempPath("test_bench_sim_realistic") / "statistics");
+        std::filesystem::create_directories(benchmarkTempPath("test_bench_sim_realistic") / "population_data");
         auto cfg = makeRealistic2DConfig(2000);
         SimulationEngine eng(cfg);
         return eng.run(450);
@@ -314,8 +327,8 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark][perf-core]") {
 }
 
 TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison][perf-timing]") {
-    std::filesystem::create_directories("/tmp/test_bench_sim/statistics");
-    std::filesystem::create_directories("/tmp/test_bench_sim_3d/statistics");
+    std::filesystem::create_directories(benchmarkTempPath("test_bench_sim") / "statistics");
+    std::filesystem::create_directories(benchmarkTempPath("test_bench_sim_3d") / "statistics");
 
     // Balanced scenario for side-by-side timing at the engine level.
     BENCHMARK("2D run() N=20000 x3 steps [timing]") {
