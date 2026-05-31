@@ -180,6 +180,9 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     clone_populations: Dict[int, Dict[str, int]] = {}  # generation -> {signature -> count}
     all_signatures: Set[str] = set()
     
+    # Ensure "ancestor" is always a valid signature so parent lookups never fail
+    all_signatures.add("ancestor")
+
     for generation in sorted(populations.keys()):
         df = populations[generation]
         clone_populations[generation] = {}
@@ -222,7 +225,7 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         if signature == "ancestor":
             continue  # Ancestor has no parent
         parent_sig = find_parent_signature(signature, all_signatures)
-        if parent_sig:  # parent_sig could be empty string if no parent found
+        if parent_sig and parent_sig in signature_to_id:
             parent_rows.append({
                 'ParentId': signature_to_id[parent_sig],
                 'ChildId': signature_to_id[signature]

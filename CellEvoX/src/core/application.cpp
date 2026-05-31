@@ -6,6 +6,7 @@
 #include <csignal>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 #include "core/RunDataEngine.hpp"
 #include "ecs/Run.hpp"
@@ -69,12 +70,18 @@ void Application::initialize() {
     
     spdlog::info("Analysis complete.");
   } else if (vm.count("config")) {
-    std::ifstream config_file(vm["config"].as<std::string>());
+    const std::string config_path = vm["config"].as<std::string>();
+    std::ifstream config_file(config_path);
+    if (!config_file.is_open()) {
+      throw std::runtime_error("Could not open config file: " + config_path);
+    }
+    if (config_file.peek() == std::ifstream::traits_type::eof()) {
+      throw std::runtime_error("Config file is empty: " + config_path);
+    }
     nlohmann::json config;
     config_file >> config;
     sim_config = std::make_shared<SimulationConfig>(utils::fromJson(config));
     utils::printConfig(*sim_config);
-    std::string config_path = vm["config"].as<std::string>();
     
     // Initialize DataEngine first to prepare output directory
     RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);

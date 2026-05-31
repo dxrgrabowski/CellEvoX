@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <boost/program_options.hpp>
+#include <exception>
 #include <iostream>
 
 namespace po = boost::program_options;
@@ -21,7 +22,12 @@ int main(int argc, char *argv[]) {
     // std::cout<< desc << std::endl;
     return 1;
   }
-  CellEvoX::core::Application cancerSim(vm);
+  try {
+    CellEvoX::core::Application cancerSim(vm);
+  } catch (const std::exception& e) {
+    std::cerr << "CellEvoX error: " << e.what() << std::endl;
+    return 1;
+  }
 
   // QGuiApplication app(argc, argv);
   // QQmlApplicationEngine engine;
