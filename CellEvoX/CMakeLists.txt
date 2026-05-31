@@ -8,6 +8,8 @@ endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(CELLEVOX_PROFILE_PHASES "Enable opt-in CSV phase profiling instrumentation" OFF)
+
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
 FetchContent_Declare(
@@ -42,6 +44,7 @@ set(HEADERS
     include/ecs/Run.hpp
     include/spatial/SpatialHashGrid.hpp
     include/utils/MathUtils.hpp
+    include/utils/PhaseProfiler.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
     include/external/matplotlibcpp.h
@@ -75,6 +78,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math -Wno-deprecated-declarations)
 elseif(MSVC)
     target_compile_options(CellEvoX PRIVATE /wd4996)
+endif()
+if(CELLEVOX_PROFILE_PHASES)
+    target_compile_definitions(CellEvoX PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
 
 target_link_libraries(CellEvoX
@@ -115,6 +121,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
 elseif(MSVC)
     target_compile_options(CellEvoXTests PRIVATE /wd4996)
+endif()
+if(CELLEVOX_PROFILE_PHASES)
+    target_compile_definitions(CellEvoXTests PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
 
 # Inject repo source directory for robust test data discovery (e.g. JSON baselines)

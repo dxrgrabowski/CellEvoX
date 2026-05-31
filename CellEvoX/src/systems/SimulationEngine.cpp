@@ -29,6 +29,7 @@
 #endif
 #include "systems/CommonPopulationStep.hpp"
 #include "utils/SimulationConfig.hpp"
+#include "utils/PhaseProfiler.hpp"
 
 using namespace utils;
 
@@ -166,6 +167,7 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
 
 void SimulationEngine::stochasticStep() {
+  CELLEVOX_PROFILE_PHASE("stochastic_step_total");
   tau += config->tau_step;
   CellEvoX::systems::applyCommonPopulationStep(cells,
                                                cells_graveyard,
@@ -179,10 +181,12 @@ void SimulationEngine::stochasticStep() {
 
   int current_tau = static_cast<int>(tau);
   if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {
+    CELLEVOX_PROFILE_PHASE("stat_snapshot");
     takeStatSnapshot();
     last_stat_snapshot_tau = current_tau;
   }
   if (current_tau % config->popul_res == 0 && current_tau != last_population_snapshot_tau) {
+    CELLEVOX_PROFILE_PHASE("population_snapshot");
     takePopulationSnapshot();
     last_population_snapshot_tau = current_tau;
   }
@@ -190,13 +194,17 @@ void SimulationEngine::stochasticStep() {
   if (config->graveyard_pruning_interval > 0 && 
       current_tau % config->graveyard_pruning_interval == 0 && 
       current_tau != last_pruning_tau) {
+      CELLEVOX_PROFILE_PHASE("graveyard_pruning");
       pruneGraveyard();
       last_pruning_tau = current_tau;
   }
   
   // Log memory usage periodically (e.g. same as stats resolution or separate)
-  if (current_tau % config->stat_res == 0) {
-       logMemoryUsage();
+  if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
+      current_tau != last_memory_log_tau) {
+    CELLEVOX_PROFILE_PHASE("memory_log");
+    logMemoryUsage();
+    last_memory_log_tau = current_tau;
   }
 }
 void SimulationEngine::takeStatSnapshot() {
@@ -458,5 +466,4 @@ void SimulationEngine::logMemoryUsage() {
                     << graveyard_count << ","
                     << estimated_cells_kb << ","
                     << estimated_graveyard_kb << "\n";
-    memory_log_file.flush();
 }

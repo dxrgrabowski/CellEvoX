@@ -2,6 +2,8 @@
 
 CellEvoX batch runs use the same launch path as a single web run: each config is written as an atomic launch JSON file and then passed to the C++ binary with `--config`.
 
+Related docs: [docs index](README.md), [architecture](architecture.md), [development workflows](development-workflows.md).
+
 ## Console
 
 Run several config files sequentially:

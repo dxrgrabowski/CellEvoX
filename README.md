@@ -3,6 +3,12 @@
 
 CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as TBB and Eigen3 for high performance and ease of extensibility.
 
+## Documentation
+
+Start with [docs/README.md](docs/README.md) for the project knowledge map. The docs
+section includes onboarding for agents, architecture, simulation engine behavior,
+config fields by mode, output formats, development workflows, and high-risk areas.
+
 ## Visualization
 
 CellEvoX is able to generate visualizations from existing runs:
@@ -79,7 +85,11 @@ Both outputs are written under `visualizations/` inside the run directory.
    cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release
    cmake --build build --target CellEvoX CellEvoXTests -j
    ```
-2. Run the program:
+2. Run tests:
+   ```bash
+   ./build/bin/CellEvoXTests "~[benchmark]"
+   ```
+3. Run the program:
    ```bash
    ./build/bin/CellEvoX --config quick_config.json
    ```
@@ -123,6 +133,7 @@ python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
 - **scripts/**: Python analysis and visualization scripts.
 - **web/**: React/FastAPI local interface.
 - **build/**: Directory for compiled binaries.
+- **docs/**: Agent and contributor knowledge base.
 
 ## Contributing
 
