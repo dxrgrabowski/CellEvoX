@@ -231,6 +231,35 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
     require_daughter(8, 2, true);
 }
 
+TEST_CASE("Run builds compressed phylogenetic tree without changing lineage leaf", "[Run][PhylogeneticTree][Correctness]") {
+    CellMap cells;
+
+    Cell leaf(3);
+    leaf.parent_id = 2;
+    REQUIRE(cells.insert({3, std::move(leaf)}));
+
+    Graveyard graveyard;
+    REQUIRE(graveyard.insert({1, {0, 1.0}}));
+    REQUIRE(graveyard.insert({2, {1, 2.0}}));
+
+    ecs::Run run(std::move(cells), {}, std::move(graveyard), {}, {}, 2, 3.0);
+
+    auto require_node = [&](uint32_t id, uint32_t parent_id, double death_time) {
+        tbb::concurrent_hash_map<uint32_t, ecs::NodeData>::const_accessor accessor;
+        REQUIRE(run.phylogenetic_tree.find(accessor, id));
+        REQUIRE(accessor->second.parent_id == parent_id);
+        REQUIRE(accessor->second.death_time == Catch::Approx(death_time));
+    };
+
+    require_node(0, 0, 0.0);
+    require_node(3, 0, 0.0);
+
+    tbb::concurrent_hash_map<uint32_t, ecs::NodeData>::const_accessor removed_accessor;
+    REQUIRE_FALSE(run.phylogenetic_tree.find(removed_accessor, 1));
+    REQUIRE_FALSE(run.phylogenetic_tree.find(removed_accessor, 2));
+    REQUIRE(run.phylogenetic_tree.size() == 2);
+}
+
 TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     auto config = std::make_shared<SimulationConfig>();
     config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
