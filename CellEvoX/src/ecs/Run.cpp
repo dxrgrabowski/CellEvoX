@@ -55,10 +55,12 @@ void Run::logResults() const {
   spdlog::info("   Mutations memory usage: {} KB", total_mutations_memory / (1024));
 }
 void Run::createPhylogeneticTree() {
-  tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-  if (!phylogenetic_tree.find(accessor, 0)) {
-    phylogenetic_tree.insert({0, {0, 0, 0.0}});
-    spdlog::debug("Root node 0 inserted");
+  {
+    tbb::concurrent_hash_map<uint32_t, NodeData>::accessor root_accessor;
+    if (phylogenetic_tree.insert(root_accessor, 0)) {
+      root_accessor->second = {0, 0, 0.0};
+      spdlog::debug("Root node 0 inserted");
+    }
   }
 
   // child sum counting
@@ -66,34 +68,28 @@ void Run::createPhylogeneticTree() {
     uint32_t current_id = cell_id;
 
     while (true) {
-      NodeData node;
+      uint32_t parent_id = 0;
       {
         tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-        if (phylogenetic_tree.find(accessor, current_id)) {
-          node = accessor->second;
-        } else {
-          Graveyard::accessor g_accessor;
-          CellMap::accessor c_accessor;
+        if (phylogenetic_tree.insert(accessor, current_id)) {
+          Graveyard::const_accessor g_accessor;
+          CellMap::const_accessor c_accessor;
           if (cells_graveyard.find(g_accessor, current_id)) {
-            const auto& [parent_id, death_time] = g_accessor->second;
-            node = {parent_id, 0, death_time};
+            const auto& [graveyard_parent_id, death_time] = g_accessor->second;
+            accessor->second = {graveyard_parent_id, 0, death_time};
           } else if (cells.find(c_accessor, current_id)) {
-            const auto& parent_id = c_accessor->second.parent_id;
-            node = {parent_id, 0, 0.0};
+            const auto& cell_parent_id = c_accessor->second.parent_id;
+            accessor->second = {cell_parent_id, 0, 0.0};
           } else {
-            node = {0, 0, 0.0};
+            accessor->second = {0, 0, 0.0};
             spdlog::error("Cell with ID {} not found in cells or graveyard", current_id);
           }
-          phylogenetic_tree.insert({current_id, node});
         }
-      }
 
-      {
-        tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
-        phylogenetic_tree.find(accessor, current_id);
         accessor->second.child_sum++;
-        current_id = accessor->second.parent_id;
+        parent_id = accessor->second.parent_id;
       }
+      current_id = parent_id;
 
       if (current_id == 0) {
         tbb::concurrent_hash_map<uint32_t, NodeData>::accessor accessor;
@@ -116,11 +112,9 @@ void Run::createPhylogeneticTree() {
     uint32_t current_id = cell_id;
 
     while (current_id != 0) {
-      if (visited_nodes.count(current_id)) {
+      if (!visited_nodes.insert(current_id).second) {
         break;
       }
-
-      visited_nodes.insert(current_id);
 
       tbb::concurrent_hash_map<uint32_t, NodeData>::accessor current_accessor;
       if (!phylogenetic_tree.find(current_accessor, current_id)) {
@@ -134,24 +128,24 @@ void Run::createPhylogeneticTree() {
         break;
       }
 
-      tbb::concurrent_hash_map<uint32_t, NodeData>::accessor parent_accessor;
+      tbb::concurrent_hash_map<uint32_t, NodeData>::const_accessor parent_accessor;
       if (!phylogenetic_tree.find(parent_accessor, parent_id)) {
         spdlog::error("Parent node with ID {} not found", parent_id);
         break;
       }
-      NodeData& parent_node = parent_accessor->second;
+      const NodeData& parent_node = parent_accessor->second;
 
       if (current_node.child_sum == parent_node.child_sum) {
         uint32_t next_parent_id = parent_node.parent_id;
         nodes_to_be_removed.push_back(parent_id);
 
         while (next_parent_id != 0) {
-          tbb::concurrent_hash_map<uint32_t, NodeData>::accessor next_parent_accessor;
+          tbb::concurrent_hash_map<uint32_t, NodeData>::const_accessor next_parent_accessor;
           if (!phylogenetic_tree.find(next_parent_accessor, next_parent_id)) {
             spdlog::error("Parent node with ID {} not found", next_parent_id);
             break;
           }
-          NodeData& next_parent_node = next_parent_accessor->second;
+          const NodeData& next_parent_node = next_parent_accessor->second;
 
           if (next_parent_node.child_sum > current_node.child_sum) {
             current_node.parent_id = next_parent_id;
