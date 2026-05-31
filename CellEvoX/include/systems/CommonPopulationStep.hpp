@@ -7,7 +7,6 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-#include <atomic>
 #include <map>
 #include <random>
 #include <utility>
@@ -133,7 +132,6 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
 
   tbb::concurrent_vector<Cell> new_cells;
   tbb::concurrent_vector<CommonDeathEvent> dead_cells;
-  std::atomic<uint32_t> new_cells_count(0), death_count(0);
 
   {
     CELLEVOX_PROFILE_PHASE("parallel_events");
@@ -149,7 +147,6 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
 
             if (death_probs[static_cast<Eigen::Index>(i)] <= tau_step) {
               dead_cells.push_back({idx, cell->second.parent_id});
-              death_count++;
               continue;
             }
 
@@ -157,9 +154,7 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
               continue;
             }
 
-            new_cells_count += 2;
             dead_cells.push_back({idx, cell->second.parent_id});
-            death_count++;
 
             const double rand_val = mutation_rand_vals[i];
             if (rand_val >= total_mutation_probability) {
@@ -238,8 +233,8 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     }
   }
 
-  const size_t created_count = new_cells_count.load();
-  const size_t removed_count = death_count.load();
+  const size_t created_count = new_cells.size();
+  const size_t removed_count = dead_cells.size();
   total_deaths += removed_count;
   actual_population = actual_population + created_count - removed_count;
 
