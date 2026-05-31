@@ -1,6 +1,7 @@
 #include "ecs/Run.hpp"
 
 #include "systems/SimulationEngine.hpp"
+#include "utils/PhaseProfiler.hpp"
 namespace ecs {
 
 Run::Run(CellMap&& cells,
@@ -17,10 +18,23 @@ Run::Run(CellMap&& cells,
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau) {
-  processRunInfo();
-  logResults();
-  checkRunCorrectness();
-  createPhylogeneticTree();
+  CELLEVOX_PROFILE_PHASE("run_postprocessing");
+  {
+    CELLEVOX_PROFILE_PHASE("run_process_info");
+    processRunInfo();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_log_results");
+    logResults();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_correctness_check");
+    checkRunCorrectness();
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("run_create_phylogenetic_tree");
+    createPhylogeneticTree();
+  }
 }
 
 void Run::logResults() const {
@@ -93,8 +107,11 @@ void Run::createPhylogeneticTree() {
 
   auto start_time = std::chrono::high_resolution_clock::now();
   int deleted_nodes_count = 0;
+  const size_t lineage_count = cells.size() + cells_graveyard.size() + 1;
   std::unordered_set<uint32_t> visited_nodes;
+  visited_nodes.reserve(lineage_count);
   std::vector<uint32_t> nodes_to_be_removed;
+  nodes_to_be_removed.reserve(cells_graveyard.size());
   for (const auto& [cell_id, cell_data] : cells) {
     uint32_t current_id = cell_id;
 
@@ -199,6 +216,7 @@ void Run::processRunInfo() {
 // Check duplicate cell IDs and ID consistency
 void Run::checkRunCorrectness() const {
   std::unordered_set<uint64_t> cell_ids;
+  cell_ids.reserve(cells.size() + cells_graveyard.size());
   uint64_t max_id = 0;
 
   for (const auto& cell : cells) {

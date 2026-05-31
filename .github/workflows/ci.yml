@@ -5,6 +5,12 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      benchmark_groups:
+        description: "Benchmark groups to run: quick, timing, snapshot, all"
+        required: false
+        default: "quick"
 
 jobs:
   bench-regression-check:
@@ -33,38 +39,38 @@ jobs:
     - name: Determine Base Commit
       id: base_info
       run: |
-        # Identify the commit we are comparing against
-        # If PR: use base_ref. If Push: use event.before
-        BASE_REF="${{ github.base_ref || github.event.before }}"
-        
-        # Fallback to main if BASE_REF is missing or the null SHA (0000...)
-        if [ -z "$BASE_REF" ] || [ "$BASE_REF" == "0000000000000000000000000000000000000000" ]; then
-          BASE_REF="main"
+        set -euo pipefail
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+        elif [ "${{ github.event_name }}" = "push" ]; then
+          BASE_SHA="${{ github.event.before }}"
+        else
+          BASE_SHA=""
         fi
 
         cd head
-        echo "Fetching base reference: $BASE_REF"
-        git fetch origin $BASE_REF --depth=1
-        # Resolve to a full SHA using FETCH_HEAD (works for both names and SHAs)
-        BASE_SHA=$(git rev-parse FETCH_HEAD)
-        echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+        if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          echo "Base SHA missing; falling back to origin/main"
+          git fetch origin main --depth=1
+          BASE_SHA=$(git rev-parse FETCH_HEAD)
+        fi
+
+        echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
         echo "Comparing against SHA: $BASE_SHA"
 
-    - name: Restore Base Baseline Cache
-      id: cache-baseline
-      uses: actions/cache@v4
-      with:
-        path: ci_baseline.json
-        key: baseline-${{ steps.base_info.outputs.base_sha }}
-
-    - name: Build Base Baseline (ToT)
-      if: steps.cache-baseline.outputs.cache-hit != 'true'
+    - name: Checkout Base Commit
       run: |
-        # If cache missed, we MUST build the base to get a baseline
-        git clone --depth 1 --branch ${{ github.base_ref || 'main' }} https://github.com/${{ github.repository }}.git base_repo
+        set -euo pipefail
+        mkdir base_repo
+        git -C base_repo init
+        git -C base_repo remote add origin https://github.com/${{ github.repository }}.git
+        git -C base_repo fetch --depth=1 origin "${{ steps.base_info.outputs.base_sha }}"
+        git -C base_repo checkout --detach FETCH_HEAD
+
+    - name: Build Base (Exact Comparison Commit)
+      run: |
         cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build base_build --target CellEvoXTests -j$(nproc)
-        python3 head/CellEvoX/tests/benchmarks/capture_baseline.py --binary base_build/bin/CellEvoXTests --out ci_baseline.json
 
     - name: Build Head (Current PR)
       run: |
@@ -74,9 +80,30 @@ jobs:
     - name: Run Unit Tests
       run: ./head_build/bin/CellEvoXTests "~[benchmark]"
 
-    - name: Strict Performance Check (5% Tolerance)
+    - name: Paired Performance Gate
+      env:
+        BENCHMARK_GROUPS: ${{ inputs.benchmark_groups || 'quick' }}
       run: |
-        python3 head/CellEvoX/tests/benchmarks/compare_benchmarks.py \
-          --binary head_build/bin/CellEvoXTests \
-          --baseline ci_baseline.json \
-          --threshold 0.05
+        mkdir -p benchmark_reports
+        python3 head/CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
+          --base-binary base_build/bin/CellEvoXTests \
+          --head-binary head_build/bin/CellEvoXTests \
+          --groups "$BENCHMARK_GROUPS" \
+          --initial-samples 30 \
+          --retry-samples 60 \
+          --threshold 0.05 \
+          --memory-threshold 0.10 \
+          --max-relative-ci 0.05 \
+          --fail-on-inconclusive \
+          --benchmark-warmup-time 200 \
+          --benchmark-resamples 20000 \
+          --benchmark-confidence-interval 0.95 \
+          --out-dir benchmark_reports \
+          --report-json benchmark_reports/perf-gate.json
+
+    - name: Upload Benchmark Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-reports
+        path: benchmark_reports
