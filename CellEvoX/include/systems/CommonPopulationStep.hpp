@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "systems/SimulationEngine.hpp"
-#include "utils/MathUtils.hpp"
 #include "utils/PhaseProfiler.hpp"
 
 namespace CellEvoX::systems {
@@ -98,18 +97,11 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
   }
 
-  Eigen::VectorXd fitness_vector;
-  {
-    CELLEVOX_PROFILE_PHASE("fitness_vector");
-    fitness_vector = utils::FitnessCalculator::getCellsFitnessVector(cells, alive_cell_indices);
-  }
-
   Eigen::VectorXd birth_randoms;
   {
     CELLEVOX_PROFILE_PHASE("rng_birth");
     birth_randoms = generateExponentialDistribution(N, rng);
   }
-  Eigen::VectorXd birth_probs = birth_randoms.array() / fitness_vector.array();
 
   if (alive_cell_indices.size() != N) {
     spdlog::error(
@@ -117,8 +109,8 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
   }
 
   if (death_probs.size() != static_cast<Eigen::Index>(N) ||
-      birth_probs.size() != static_cast<Eigen::Index>(N)) {
-    spdlog::error("Death arr: {} B: {} AP: {}", death_probs.size(), birth_probs.size(), N);
+      birth_randoms.size() != static_cast<Eigen::Index>(N)) {
+    spdlog::error("Death arr: {} B: {} AP: {}", death_probs.size(), birth_randoms.size(), N);
   }
 
   std::vector<double> mutation_rand_vals(N);
@@ -150,7 +142,9 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
               continue;
             }
 
-            if (birth_probs[static_cast<Eigen::Index>(i)] > tau_step) {
+            const double birth_prob =
+                birth_randoms[static_cast<Eigen::Index>(i)] / cell->second.fitness;
+            if (birth_prob > tau_step) {
               continue;
             }
 
