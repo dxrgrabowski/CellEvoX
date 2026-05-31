@@ -18,15 +18,7 @@
 #include <unordered_set>
 
 #include "io/PopulationSnapshotIO.hpp"
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <psapi.h>
-#else
 #include <unistd.h>
-#endif
 
 namespace {
 
@@ -778,13 +770,6 @@ std::mt19937& SimulationEngine3D::getThreadLocalRng() const {
 }
 
 size_t SimulationEngine3D::getRSS() {
-#ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS counters{};
-  if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) {
-    return static_cast<size_t>(counters.WorkingSetSize / 1024);
-  }
-  return 0;
-#else
   size_t rss = 0;
   std::ifstream statm("/proc/self/statm");
   if (statm.is_open()) {
@@ -794,7 +779,6 @@ size_t SimulationEngine3D::getRSS() {
 
   const long page_size_kb = sysconf(_SC_PAGESIZE) / 1024;
   return rss * static_cast<size_t>(page_size_kb);
-#endif
 }
 
 void SimulationEngine3D::logMemoryUsage() {
