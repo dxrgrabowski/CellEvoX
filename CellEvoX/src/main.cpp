@@ -1,7 +1,5 @@
 #include "core/application.hpp"
-// #include <spdlog/spdlog.h>
-#include <QGuiApplication>
-#include <QQmlApplicationEngine>
+
 #include <boost/program_options.hpp>
 #include <exception>
 #include <iostream>
@@ -19,8 +17,8 @@ int main(int argc, char *argv[]) {
   po::notify(vm);
 
   if (vm.count("help")) {
-    // std::cout<< desc << std::endl;
-    return 1;
+    std::cout << desc << std::endl;
+    return 0;
   }
   try {
     CellEvoX::core::Application cancerSim(vm);
@@ -29,10 +27,5 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // QGuiApplication app(argc, argv);
-  // QQmlApplicationEngine engine;
-
-  // engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
-
-  return 0;  // app.exec();
+  return 0;
 }

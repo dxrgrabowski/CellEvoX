@@ -14,7 +14,7 @@
 #include "systems/SimulationEngine3D.hpp"
 #include "systems/SimulationEngine3DCapacity.hpp"
 #include "utils/SimulationConfig.hpp"
-// #include "core/DatabaseManager.hpp"
+
 namespace CellEvoX::core {
 
 float calculateDeltaTime();
@@ -122,10 +122,6 @@ void Application::initialize() {
   } else {
     spdlog::error("Neither --config nor --analyze flag was provided. Please provide one.");
   }
-
-  // Initialize the database manager
-  // DatabaseManager db;
-
   spdlog::info("CellEvoX Application finished run successfully");
 }
 

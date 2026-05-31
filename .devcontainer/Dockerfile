@@ -23,9 +23,6 @@ RUN usermod -a -G video ${USER}
 
 # Update packages and install basic tools
 RUN apt-get update && apt-get install -y \
-    libxcb1 \
-    x11-apps \
-    libxcb-cursor0 \
     openssh-server \
     openssh-client \
     zsh \
@@ -36,25 +33,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg2 \
-    libboost-all-dev \
+    libboost-program-options-dev \
     libtbb-dev \
     libeigen3-dev \
-    qt6-base-dev \
-    qt6-tools-dev \
-    qt6-quick3d-dev \
-    qt6-declarative-dev \
-    qt6-wayland \
-    qml6-module-qtquick \
-    qml6-module-qtquick-controls \
-    qml6-module-qtquick-window \
-    qml6-module-qtquick-dialogs \
-    qml6-module-qtquick-layouts \
-    qml6-module-qtquick-particles \
-    qml6-module-qtqml-workerscript \
-    qml6-module-qtquick-templates \
-    qml6-module-qtqml \
-    qml6-module-qt-labs-platform \
-    qml6-module-qt-labs-folderlistmodel \
     nlohmann-json3-dev \
     gdb \
     python3-dev \
