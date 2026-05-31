@@ -10,10 +10,12 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <execution>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <random>
+#include <system_error>
 #include <unordered_set>
 
 #include "io/PopulationSnapshotIO.hpp"
@@ -67,13 +69,27 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
   spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
 
   // Initialize memory logging
-  std::string memory_log_path = config->output_path + "/statistics/memory_log.csv";
-  
+  const auto memory_log_path =
+      std::filesystem::path(config->output_path) / "statistics" / "memory_log.csv";
+
   memory_log_file.open(memory_log_path);
+  if (!memory_log_file.is_open()) {
+    memory_log_file.clear();
+    std::error_code directory_error;
+    std::filesystem::create_directories(memory_log_path.parent_path(), directory_error);
+    if (directory_error) {
+      spdlog::warn("Failed to create memory log directory at: {} ({})",
+                   memory_log_path.parent_path().string(),
+                   directory_error.message());
+    } else {
+      memory_log_file.open(memory_log_path);
+    }
+  }
+
   if (memory_log_file.is_open()) {
       memory_log_file << "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB\n";
   } else {
-      spdlog::warn("Failed to open memory log file at: {}", memory_log_path);
+      spdlog::warn("Failed to open memory log file at: {}", memory_log_path.string());
   }
 }
 

@@ -292,6 +292,55 @@ TEST_CASE("Run builds compressed phylogenetic tree without changing lineage leaf
     REQUIRE(run.phylogenetic_tree.size() == 2);
 }
 
+TEST_CASE("SimulationEngine creates memory log directory when missing", "[SimulationEngine][MemoryLog]") {
+    const auto output_path = std::filesystem::path("/tmp/test_sim_auto_memory_log");
+    std::filesystem::remove_all(output_path);
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 1.0;
+    config->initial_population = 8;
+    config->env_capacity = 100000;
+    config->steps = 1;
+    config->stat_res = 1;
+    config->popul_res = 1000000;
+    config->output_path = output_path.string();
+    config->verbosity = 0;
+
+    size_t living_cells = 0;
+    {
+        SimulationEngine engine(config);
+        auto runData = engine.run(1);
+        living_cells = runData.cells.size();
+    }
+
+    const auto memory_log_path = output_path / "statistics" / "memory_log.csv";
+    REQUIRE(std::filesystem::exists(memory_log_path));
+
+    std::ifstream memory_log(memory_log_path);
+    REQUIRE(memory_log.is_open());
+
+    std::string header;
+    std::getline(memory_log, header);
+    REQUIRE(header == "Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB");
+
+    std::string row;
+    std::getline(memory_log, row);
+    REQUIRE_FALSE(row.empty());
+
+    std::vector<std::string> columns;
+    std::stringstream row_stream(row);
+    for (std::string column; std::getline(row_stream, column, ',');) {
+        columns.push_back(column);
+    }
+
+    REQUIRE(columns.size() == 6);
+    REQUIRE(columns[0] == "1");
+    REQUIRE(columns[2] == std::to_string(living_cells));
+
+    std::filesystem::remove_all(output_path);
+}
+
 TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     auto config = std::make_shared<SimulationConfig>();
     config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
