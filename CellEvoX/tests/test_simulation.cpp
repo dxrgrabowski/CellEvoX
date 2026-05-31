@@ -231,6 +231,38 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
     require_daughter(8, 2, true);
 }
 
+TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]") {
+    CellMap cells;
+
+    Cell first(10);
+    first.mutations = {{100, 1}, {101, 2}};
+    REQUIRE(cells.insert({10, std::move(first)}));
+
+    Cell second(11);
+    second.mutations = {{102, 3}};
+    REQUIRE(cells.insert({11, std::move(second)}));
+
+    Cell third(12);
+    third.mutations = {{103, 4}};
+    REQUIRE(cells.insert({12, std::move(third)}));
+
+    std::map<uint8_t, MutationType> mutation_types;
+    mutation_types[1] = {0.10f, 0.0f, 1, true};
+    mutation_types[2] = {-0.20f, 0.0f, 2, false};
+    mutation_types[3] = {0.00f, 0.0f, 3, true};
+    mutation_types[4] = {0.05f, 0.0f, 4, false};
+
+    Graveyard graveyard;
+    ecs::Run run(std::move(cells), std::move(mutation_types), std::move(graveyard), {}, {}, 0, 1.0);
+
+    REQUIRE(run.total_mutations == 4);
+    REQUIRE(run.driver_mutations == 2);
+    REQUIRE(run.positive_mutations == 2);
+    REQUIRE(run.negative_mutations == 1);
+    REQUIRE(run.neutral_mutations == 1);
+    REQUIRE(run.average_mutations == Catch::Approx(4.0 / 3.0));
+}
+
 TEST_CASE("Run builds compressed phylogenetic tree without changing lineage leaf", "[Run][PhylogeneticTree][Correctness]") {
     CellMap cells;
 
