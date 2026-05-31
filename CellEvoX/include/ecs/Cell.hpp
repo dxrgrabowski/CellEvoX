@@ -1,6 +1,6 @@
 #pragma once
-#include <boost/pool/pool_alloc.hpp>
-#include <memory>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 struct MutationType {
@@ -12,7 +12,6 @@ struct MutationType {
 
 class Cell {
  public:
-  // using CellAllocator = boost::pool_allocator<Cell>;
   uint32_t parent_id{0};
   uint32_t id{0};
   float fitness{1.0};

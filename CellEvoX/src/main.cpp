@@ -1,38 +1,71 @@
 #include "core/application.hpp"
-// #include <spdlog/spdlog.h>
-#include <QGuiApplication>
-#include <QQmlApplicationEngine>
-#include <boost/program_options.hpp>
+
 #include <exception>
 #include <iostream>
+#include <string>
+#include <utility>
 
-namespace po = boost::program_options;
+namespace {
+
+void printUsage(std::ostream& out) {
+  out << "Allowed options:\n"
+      << "  --help, -h             produce help message\n"
+      << "  --config <path>        path to config file\n"
+      << "  --analyze <path>       path to existing output directory to analyze\n";
+}
+
+bool readOptionValue(int& index, int argc, char* argv[], const std::string& option, std::string& value) {
+  if (index + 1 >= argc) {
+    std::cerr << "Missing value for " << option << std::endl;
+    return false;
+  }
+  value = argv[++index];
+  return true;
+}
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
-  po::options_description desc("Allowed options");
-  desc.add_options()("help", "produce help message")(
-      "config", po::value<std::string>(), "path to config file")(
-      "analyze", po::value<std::string>(), "path to existing output directory to analyze");
+  CellEvoX::core::CliOptions options;
 
-  po::variables_map vm;
-  po::store(po::parse_command_line(argc, argv, desc), vm);
-  po::notify(vm);
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--help" || arg == "-h") {
+      printUsage(std::cout);
+      return 0;
+    }
+    if (arg == "--config") {
+      std::string value;
+      if (!readOptionValue(i, argc, argv, arg, value)) return 1;
+      options.config_path = value;
+      continue;
+    }
+    if (arg.rfind("--config=", 0) == 0) {
+      options.config_path = arg.substr(std::string("--config=").size());
+      continue;
+    }
+    if (arg == "--analyze") {
+      std::string value;
+      if (!readOptionValue(i, argc, argv, arg, value)) return 1;
+      options.analyze_path = value;
+      continue;
+    }
+    if (arg.rfind("--analyze=", 0) == 0) {
+      options.analyze_path = arg.substr(std::string("--analyze=").size());
+      continue;
+    }
 
-  if (vm.count("help")) {
-    // std::cout<< desc << std::endl;
+    std::cerr << "Unknown option: " << arg << std::endl;
+    printUsage(std::cerr);
     return 1;
   }
+
   try {
-    CellEvoX::core::Application cancerSim(vm);
+    CellEvoX::core::Application cancerSim(std::move(options));
   } catch (const std::exception& e) {
     std::cerr << "CellEvoX error: " << e.what() << std::endl;
     return 1;
   }
 
-  // QGuiApplication app(argc, argv);
-  // QQmlApplicationEngine engine;
-
-  // engine.load(QUrl(QStringLiteral("qrc:/CellEvoX/qml/main.qml")));
-
-  return 0;  // app.exec();
+  return 0;
 }

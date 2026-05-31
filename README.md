@@ -1,7 +1,7 @@
 [![Docker](https://github.com/dxrgrabowski/CellEvoX/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/dxrgrabowski/CellEvoX/actions/workflows/docker-publish.yml)
 # CellEvoX
 
-CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as Qt6, TBB, and Eigen3 for high performance and ease of extensibility.
+CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as TBB and Eigen3 for high performance and ease of extensibility.
 
 ## Documentation
 
@@ -26,23 +26,22 @@ Both outputs are written under `visualizations/` inside the run directory.
 
 ## Features
 
-- **Stochastic Simulation and Extensible Mode Model**: Supports tau-leap simulation based on Gillespie-style event sampling and provides extensibility for new methods. The current config surface includes a deterministic mode selector, but current mainline C++ dispatch does not execute an RK4 deterministic step yet.
+- **Stochastic and Spatial Simulation**: Supports tau-leap simulation based on Gillespie-style event sampling, plus spatial 3D density and capacity modes.
 - **Entity-Component-System (ECS) Architecture**: Decouples data and behavior for flexible simulation management.
 - **Mutation Modeling**: Implements various mutation types with configurable probabilities and effects.
 - **Statistical Reporting**: Generates detailed statistical snapshots, including mutation histograms and fitness distributions.
-- **Graphical User Interface (GUI)**: Developed using QML for real-time visualization and user-friendly interaction.
+- **Web Interface**: Provides a React/FastAPI control and results surface for local runs.
 - **Containerized Deployment**: Ensures reproducibility and ease of deployment using Docker.
 
 ## Requirements
 
 - C++23 compatible compiler
 - CMake 3.16 or higher
-- Qt6 (Quick, QuickControls2, Qml, Core, Gui)
 - Intel TBB
 - Eigen3
 - spdlog
 - nlohmann\_json
-- Python3 with NumPy (for additional utilities)
+- Python3 development headers with NumPy
 
 ## Installation
 
@@ -60,7 +59,7 @@ Both outputs are written under `visualizations/` inside the run directory.
    ```bash
    docker run -it ghcr.io/dxrgrabowski/cellevox:main
    ```
-4. Follow the instructions of builing on source
+4. Follow the source build instructions below.
 
 ### Building Docker Image Locally
 
@@ -77,22 +76,22 @@ Both outputs are written under `visualizations/` inside the run directory.
    ```bash
    docker run -it cellevox:local
    ```
-4. Follow the instructions of builing on source
+4. Follow the source build instructions below.
 
 ### Building from Source
 
-1. Configure and build from the repository root:
+1. Configure and build:
    ```bash
-   cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DSKIP_GUI=ON
-   cmake --build build --target CellEvoXTests -j
+   cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release
+   cmake --build build --target CellEvoX CellEvoXTests -j
    ```
 2. Run tests:
    ```bash
    ./build/bin/CellEvoXTests "~[benchmark]"
    ```
-3. Build the runnable executable without `SKIP_GUI=ON` when Qt dependencies are available, then run:
+3. Run the program:
    ```bash
-   ./build/bin/CellEvoX
+   ./build/bin/CellEvoX --config quick_config.json
    ```
 
 ## Usage
@@ -117,7 +116,7 @@ For MP4 export, make sure `ffmpeg` is available in the environment. If it is mis
 ### Run on an existing output directory
 
 ```bash
-./bin/CellEvoX --analyze /path/to/run_dir
+./build/bin/CellEvoX --analyze /path/to/run_dir
 ```
 
 ### Run the visualization scripts manually
@@ -131,7 +130,8 @@ python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
 
 - **include/**: Header files defining core components.
 - **src/**: Source files implementing the program logic.
-- **qml/**: QML files for the GUI.
+- **scripts/**: Python analysis and visualization scripts.
+- **web/**: React/FastAPI local interface.
 - **build/**: Directory for compiled binaries.
 - **docs/**: Agent and contributor knowledge base.
 
