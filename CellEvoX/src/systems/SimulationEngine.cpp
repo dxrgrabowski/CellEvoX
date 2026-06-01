@@ -20,7 +20,15 @@
 
 #include "io/PopulationSnapshotIO.hpp"
 #include "utils/MathUtils.hpp"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#else
 #include <unistd.h>
+#endif
 #include "systems/CommonPopulationStep.hpp"
 #include "utils/SimulationConfig.hpp"
 #include "utils/PhaseProfiler.hpp"
@@ -188,12 +196,14 @@ void SimulationEngine::stochasticStep() {
                                                rng);
 
   int current_tau = static_cast<int>(tau);
-  if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {
+  if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
+      current_tau != last_stat_snapshot_tau) {
     CELLEVOX_PROFILE_PHASE("stat_snapshot");
     takeStatSnapshot();
     last_stat_snapshot_tau = current_tau;
   }
-  if (current_tau % config->popul_res == 0 && current_tau != last_population_snapshot_tau) {
+  if (config->popul_res > 0 && current_tau % config->popul_res == 0 &&
+      current_tau != last_population_snapshot_tau) {
     CELLEVOX_PROFILE_PHASE("population_snapshot");
     takePopulationSnapshot();
     last_population_snapshot_tau = current_tau;
@@ -227,6 +237,11 @@ void SimulationEngine::takeStatSnapshot() {
   double total_mutations_fourth = 0.0;
 
   size_t living_cells_count = cells.size();
+  if (living_cells_count == 0) {
+    generational_stat_report.push_back(
+        {tau, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0});
+    return;
+  }
 
   std::vector<uint32_t> sorted_keys;
   sorted_keys.reserve(living_cells_count);
@@ -320,6 +335,10 @@ void SimulationEngine::takePopulationSnapshot() {
     CellMap::accessor accessor;
     cells_copy.insert(accessor, {cell.first, cell.second});
 
+    if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
+      spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
+      return;
+    }
     const uint32_t mutation_payload_offset = static_cast<uint32_t>(mutation_payload.size());
     for (const auto& [mutation_id, mutation_type] : cell.second.mutations) {
       const auto type_it = available_mutation_types.find(mutation_type);
@@ -354,7 +373,7 @@ void SimulationEngine::takePopulationSnapshot() {
     spdlog::error("Failed to write population snapshot file: {}", snapshot_path);
   }
 
-  generational_popul_report.push_back({tau, std::move(cells_copy)});
+  generational_popul_report.push_back({static_cast<int>(tau), std::move(cells_copy)});
 }
 
 void SimulationEngine::pruneGraveyard() {
@@ -436,6 +455,15 @@ void SimulationEngine::pruneGraveyard() {
 }
 
 size_t SimulationEngine::getRSS() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                             sizeof(counters))) {
+        return static_cast<size_t>(counters.WorkingSetSize / 1024);
+    }
+    return 0;
+#else
     size_t rss = 0;
     std::ifstream statm("/proc/self/statm");
     if (statm.is_open()) {
@@ -444,6 +472,7 @@ size_t SimulationEngine::getRSS() {
     }
     long page_size_kb = sysconf(_SC_PAGESIZE) / 1024;
     return rss * page_size_kb;
+#endif
 }
 
 void SimulationEngine::logMemoryUsage() {

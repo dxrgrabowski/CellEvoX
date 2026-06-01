@@ -184,12 +184,18 @@ void Run::createPhylogeneticTree() {
 }
 
 void Run::processRunInfo() {
-  int N = cells.size();
+  const size_t living_cell_count = cells.size();
 
   for (const auto& cell : cells) {
     total_mutations += cell.second.mutations.size();
     for (const auto& mutation_id : cell.second.mutations) {
-      const auto& mut_type = mutation_id_to_type[mutation_id.second];
+      const auto mut_type_it = mutation_id_to_type.find(mutation_id.second);
+      if (mut_type_it == mutation_id_to_type.end()) {
+        spdlog::warn("Unknown mutation type id {} in cell {}", mutation_id.second, cell.first);
+        continue;
+      }
+
+      const auto& mut_type = mut_type_it->second;
       if (mut_type.is_driver) {
         ++driver_mutations;
       }
@@ -204,9 +210,16 @@ void Run::processRunInfo() {
     }
   }
 
-  average_mutations = static_cast<double>(total_mutations) / N;
-  total_mutations_memory = N * average_mutations * sizeof(std::pair<uint32_t, uint8_t>);
-  total_cell_memory_usage = N * sizeof(Cell);
+  if (living_cell_count == 0) {
+    average_mutations = 0.0f;
+    total_mutations_memory = 0;
+    total_cell_memory_usage = 0;
+  } else {
+    average_mutations =
+        static_cast<float>(static_cast<double>(total_mutations) / living_cell_count);
+    total_mutations_memory = total_mutations * sizeof(std::pair<uint32_t, uint8_t>);
+    total_cell_memory_usage = living_cell_count * sizeof(Cell);
+  }
 
   total_graveyard_memory =
       cells_graveyard.size() * sizeof(std::pair<uint32_t, std::pair<uint32_t, double>>);

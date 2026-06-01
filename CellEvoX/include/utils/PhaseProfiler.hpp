@@ -52,14 +52,27 @@ class PhaseProfiler {
             : std::filesystem::path(std::string(requested_path));
 
     const auto parent_path = output_path.parent_path();
+    std::error_code ec;
     if (!parent_path.empty()) {
-      std::filesystem::create_directories(parent_path);
+      std::filesystem::create_directories(parent_path, ec);
+      if (ec) {
+        return;
+      }
     }
 
-    std::error_code ec;
-    const bool write_header =
-        !std::filesystem::exists(output_path, ec) ||
-        std::filesystem::file_size(output_path, ec) == 0;
+    bool write_header = true;
+    if (std::filesystem::exists(output_path, ec)) {
+      if (ec) {
+        return;
+      }
+      const auto output_size = std::filesystem::file_size(output_path, ec);
+      if (ec) {
+        return;
+      }
+      write_header = output_size == 0;
+    } else if (ec) {
+      return;
+    }
 
     output_.open(output_path, std::ios::out | std::ios::app);
     if (!output_.is_open()) {

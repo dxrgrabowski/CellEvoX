@@ -54,7 +54,7 @@ class SimulationEngine3D {
   void takePopulationSnapshot();
   void pruneGraveyard();
 
-  Eigen::Vector3f sampleRandomUnitVector(std::mt19937& rng) const;
+  Eigen::Vector3f sampleRandomUnitVector(std::mt19937& random_engine) const;
   float clampToDomain(float value) const;
   void ensurePositionCapacity(uint32_t id);
   std::mt19937& getThreadLocalRng() const;
@@ -76,6 +76,7 @@ class SimulationEngine3D {
 
   int last_stat_snapshot_tau = 0;
   int last_population_snapshot_tau = 0;
+  int last_memory_log_tau = 0;
   int last_pruning_tau = -1;
 
   std::shared_ptr<SimulationConfig> config;

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace CellEvoX::io {
@@ -157,7 +158,19 @@ inline bool writePopulationSnapshot(
     const std::vector<PopulationSnapshotRecord>& records,
     const std::vector<PopulationSnapshotDriverMutation>& driver_mutations = {},
     MutationPayloadKind payload_kind = MutationPayloadKind::DriverOnly) {
-  std::filesystem::create_directories(path.parent_path());
+  if (records.size() > std::numeric_limits<uint32_t>::max() ||
+      driver_mutations.size() > std::numeric_limits<uint32_t>::max()) {
+    return false;
+  }
+
+  const auto parent_path = path.parent_path();
+  if (!parent_path.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(parent_path, ec);
+    if (ec) {
+      return false;
+    }
+  }
 
   std::ofstream file(path, std::ios::binary);
   if (!file.is_open()) {

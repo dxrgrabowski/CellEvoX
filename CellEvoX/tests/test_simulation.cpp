@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <sstream>
+#include <stdexcept>
 #include <tbb/global_control.h>
 #include "core/RunDataEngine.hpp"
 #include "io/PopulationSnapshotIO.hpp"
@@ -56,6 +57,38 @@ TEST_CASE("SimulationConfig parses correctly from default JSON", "[SimulationCon
     REQUIRE_FALSE(config.full_mutation_payload);
     REQUIRE(config.mutations.size() == 2);
     REQUIRE(config.mutations[1].is_driver == true);
+}
+
+TEST_CASE("SimulationConfig rejects unsafe values", "[SimulationConfig][Correctness]") {
+    nlohmann::json j = {
+        {"simulation_mode", "stochastic"},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array({
+            {{"effect", 0.0}, {"probability", 0.1}, {"id", 1}, {"is_driver", false}}
+        })}
+    };
+
+    auto invalid = j;
+    invalid["statistics_resolution"] = 0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = j;
+    invalid["population_statistics_res"] = 0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = j;
+    invalid["mutations"][0]["probability"] = 1.5;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = j;
+    invalid["mutations"][0]["effect"] = -1.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
 }
 
 TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial3D]") {
@@ -263,6 +296,18 @@ TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]")
     REQUIRE(run.average_mutations == Catch::Approx(4.0 / 3.0));
 }
 
+TEST_CASE("Run handles empty populations without invalid averages", "[Run][Correctness]") {
+    CellMap cells;
+    Graveyard graveyard;
+
+    ecs::Run run(std::move(cells), {}, std::move(graveyard), {}, {}, 0, 0.0);
+
+    REQUIRE(run.total_mutations == 0);
+    REQUIRE(run.average_mutations == Catch::Approx(0.0));
+    REQUIRE(run.total_mutations_memory == 0);
+    REQUIRE(run.total_cell_memory_usage == 0);
+}
+
 TEST_CASE("Run builds compressed phylogenetic tree without changing lineage leaf", "[Run][PhylogeneticTree][Correctness]") {
     CellMap cells;
 
@@ -338,6 +383,7 @@ TEST_CASE("SimulationEngine creates memory log directory when missing", "[Simula
     REQUIRE(columns[0] == "1");
     REQUIRE(columns[2] == std::to_string(living_cells));
 
+    memory_log.close();
     std::filesystem::remove_all(output_path);
 }
 
