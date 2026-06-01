@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(CELLEVOX_PROFILE_PHASES "Enable opt-in CSV phase profiling instrumentation" OFF)
+option(CELLEVOX_ENABLE_COVERAGE "Enable GCC/Clang coverage instrumentation for tests" OFF)
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
@@ -141,6 +142,14 @@ target_link_libraries(CellEvoXTests
 
 if(WIN32)
     target_link_libraries(CellEvoXTests PRIVATE Psapi)
+endif()
+
+if(CELLEVOX_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "CELLEVOX_ENABLE_COVERAGE requires GCC or Clang")
+    endif()
+    target_compile_options(CellEvoXTests PRIVATE -O0 -g --coverage)
+    target_link_options(CellEvoXTests PRIVATE --coverage)
 endif()
 
 include(Catch)
