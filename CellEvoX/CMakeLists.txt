@@ -105,6 +105,9 @@ install(TARGETS CellEvoX
 add_executable(CellEvoXTests
     ${CORE_SOURCES}
     tests/test_simulation.cpp
+    tests/test_common_population_step.cpp
+    tests/test_population_snapshot_io.cpp
+    tests/test_run_data_engine.cpp
     tests/bench_simulation.cpp
 )
 
