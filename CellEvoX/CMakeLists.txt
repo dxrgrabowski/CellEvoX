@@ -15,6 +15,7 @@ option(CELLEVOX_STRICT_WARNINGS "Enable extra noisy project warnings for local a
 option(CELLEVOX_WARNINGS_AS_ERRORS "Treat project compiler warnings as errors" OFF)
 option(CELLEVOX_NATIVE_OPTIMIZATIONS "Enable native CPU tuning for executable targets" ON)
 option(CELLEVOX_FAST_MATH "Enable fast-math optimizations; may change floating-point behavior" OFF)
+option(CELLEVOX_ENABLE_COVERAGE "Enable GCC/Clang coverage instrumentation for tests" OFF)
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include(FetchContent)
@@ -150,6 +151,9 @@ install(TARGETS CellEvoX
 add_executable(CellEvoXTests
     ${CORE_SOURCES}
     tests/test_simulation.cpp
+    tests/test_common_population_step.cpp
+    tests/test_population_snapshot_io.cpp
+    tests/test_run_data_engine.cpp
     tests/bench_simulation.cpp
 )
 
@@ -183,6 +187,14 @@ target_link_libraries(CellEvoXTests
 
 if(WIN32)
     target_link_libraries(CellEvoXTests PRIVATE Psapi)
+endif()
+
+if(CELLEVOX_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "CELLEVOX_ENABLE_COVERAGE requires GCC or Clang")
+    endif()
+    target_compile_options(CellEvoXTests PRIVATE -O0 -g --coverage)
+    target_link_options(CellEvoXTests PRIVATE --coverage)
 endif()
 
 include(Catch)
