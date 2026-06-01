@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FileUp, Loader, Plus, Play, Square, Terminal, Trash2 } from 'lucide-react';
+import { FileDown, FileUp, Loader, Plus, Play, Square, Terminal, Trash2 } from 'lucide-react';
 import { useBatchQueueStore, useConfigStore, useSimStore } from '../stores';
 import {
   startSimulationBatch,
@@ -101,6 +101,24 @@ export default function RunPage() {
     } catch {
       setError('Invalid batch JSON file');
     }
+  };
+
+  const exportBatchJson = () => {
+    if (batchItems.length === 0) return;
+
+    const manifest = {
+      runs: batchItems.map(({ name, config }) => ({
+        name,
+        config,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cellevox_batch_queue.json';
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const addCurrentConfigToBatch = () => {
@@ -236,6 +254,10 @@ export default function RunPage() {
               <FileUp size={15} /> Import JSON
             </button>
             <input ref={batchFileRef} type="file" accept=".json" multiple hidden onChange={handleBatchFiles} />
+            <button className="btn btn--ghost" style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+              onClick={exportBatchJson} disabled={isRunning || batchItems.length === 0}>
+              <FileDown size={15} /> Export JSON
+            </button>
             <button className="btn btn--primary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}
               onClick={handleStartBatch} disabled={isRunning || batchItems.length === 0}>
               <Play size={15} /> Run Batch
