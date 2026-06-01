@@ -75,12 +75,14 @@ export default function ResultsPage() {
       void queryClient.invalidateQueries({ queryKey: ['stats', selectedRunId] });
       void queryClient.invalidateQueries({ queryKey: ['muller', selectedRunId] });
     }
-    setAnalysisMessage(
-      statusQuery.data.status === 'finished'
-        ? 'Analysis complete'
-        : `Analysis ${statusQuery.data.status}`,
-    );
-    setAnalysisRunId(null);
+    const nextAnalysisMessage = statusQuery.data.status === 'finished'
+      ? 'Analysis complete'
+      : `Analysis ${statusQuery.data.status}`;
+    const timeout = window.setTimeout(() => {
+      setAnalysisMessage(nextAnalysisMessage);
+      setAnalysisRunId(null);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [analysisRunId, queryClient, selectedRunId, statusQuery.data]);
 
   const handleAnalyzeSelected = () => {
