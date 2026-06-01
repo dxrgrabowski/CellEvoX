@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,9 +12,17 @@ class SimulationEngine3DCapacity;
 
 namespace CellEvoX::core {
 
+enum class PostprocessMode {
+  Full,
+  Exports,
+  None,
+};
+
 struct CliOptions {
   std::optional<std::string> config_path;
   std::optional<std::string> analyze_path;
+  std::optional<std::size_t> max_threads;
+  PostprocessMode postprocess_mode = PostprocessMode::Full;
 };
 
 class Application {

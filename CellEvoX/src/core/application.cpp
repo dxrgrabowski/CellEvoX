@@ -1,9 +1,11 @@
 #include "core/application.hpp"
 
 #include <spdlog/spdlog.h>
+#include <tbb/global_control.h>
 
-#include <fstream>
 #include <csignal>
+#include <cstdlib>
+#include <fstream>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -20,6 +22,63 @@ namespace CellEvoX::core {
 
 float calculateDeltaTime();
 
+namespace {
+
+std::optional<std::size_t> readThreadLimitFromEnv() {
+  const char* raw_value = std::getenv("CELLEVOX_TBB_THREADS");
+  if (raw_value == nullptr || raw_value[0] == '\0') {
+    return std::nullopt;
+  }
+
+  try {
+    std::size_t parsed_chars = 0;
+    const unsigned long long parsed = std::stoull(raw_value, &parsed_chars);
+    if (parsed_chars != std::string(raw_value).size() || parsed == 0) {
+      spdlog::warn("Ignoring invalid CELLEVOX_TBB_THREADS value: {}", raw_value);
+      return std::nullopt;
+    }
+    return static_cast<std::size_t>(parsed);
+  } catch (const std::exception&) {
+    spdlog::warn("Ignoring invalid CELLEVOX_TBB_THREADS value: {}", raw_value);
+    return std::nullopt;
+  }
+}
+
+const char* postprocessModeName(PostprocessMode mode) {
+  switch (mode) {
+    case PostprocessMode::Full:
+      return "full";
+    case PostprocessMode::Exports:
+      return "exports";
+    case PostprocessMode::None:
+      return "none";
+  }
+  return "unknown";
+}
+
+void runExportsPostprocessing(RunDataEngine& data_engine) {
+  data_engine.exportToCSV();
+  data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
+}
+
+void runFullPostprocessing(RunDataEngine& data_engine) {
+  data_engine.plotFitnessStatistics();
+  data_engine.plotMutationsStatistics();
+  data_engine.plotLivingCellsOverGenerations();
+  data_engine.exportToCSV();
+  data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
+  data_engine.plotMutationWave();
+  data_engine.plotMutationFrequency();
+  data_engine.plotMullerDiagram();
+  data_engine.plotClonePhylogenyTree();
+  data_engine.plotCloneCounts();
+  data_engine.plotCloneLifespans();
+  data_engine.plotCloneGrowthAnimation();
+  data_engine.plotTumorReplay3D();
+}
+
+}  // namespace
+
 Application::Application(CliOptions options) : options(std::move(options)) { initialize(); }
 
 Application::~Application() = default;
@@ -27,6 +86,17 @@ Application::~Application() = default;
 void Application::initialize() {
   spdlog::info("CellEvoX Application starting...");
   spdlog::set_level(spdlog::level::trace);
+
+  const auto env_thread_limit = readThreadLimitFromEnv();
+  const auto thread_limit = options.max_threads ? options.max_threads : env_thread_limit;
+  std::unique_ptr<tbb::global_control> tbb_thread_control;
+  if (thread_limit && *thread_limit > 0) {
+    tbb_thread_control = std::make_unique<tbb::global_control>(
+        tbb::global_control::max_allowed_parallelism, *thread_limit);
+    spdlog::info("TBB max parallelism capped at {} thread(s)", *thread_limit);
+  }
+  spdlog::info("Post-processing mode: {}", postprocessModeName(options.postprocess_mode));
+
   // Initialize the simulation engine
   if (options.analyze_path) {
     std::string analyze_path = *options.analyze_path;
@@ -86,40 +156,37 @@ void Application::initialize() {
     
     // Initialize DataEngine first to prepare output directory
     RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);
+    const bool run_postprocessing = options.postprocess_mode != PostprocessMode::None;
     
     if (sim_config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
       sim_engine_3d = std::make_unique<SimulationEngine3D>(sim_config);
       std::signal(SIGINT, SimulationEngine3D::signalHandler);
       std::signal(SIGTERM, SimulationEngine3D::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"))));
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"), run_postprocessing)));
     } else if (sim_config->sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
       sim_engine_3d_capacity = std::make_unique<SimulationEngine3DCapacity>(sim_config);
       std::signal(SIGINT, SimulationEngine3DCapacity::signalHandler);
       std::signal(SIGTERM, SimulationEngine3DCapacity::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_capacity->run(config.at("steps"))));
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_capacity->run(config.at("steps"), run_postprocessing)));
     } else {
       sim_engine = std::make_unique<SimulationEngine>(sim_config);
       std::signal(SIGINT, SimulationEngine::signalHandler);
       std::signal(SIGTERM, SimulationEngine::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"), run_postprocessing)));
     }
     
-    // Set the run result in data engine
-    data_engine.setRun(runs[0]);
+    if (options.postprocess_mode == PostprocessMode::None) {
+      spdlog::info("Post-processing disabled for this run");
+    } else {
+      // Set the run result in data engine
+      data_engine.setRun(runs[0]);
 
-    data_engine.plotFitnessStatistics();
-    data_engine.plotMutationsStatistics();
-    data_engine.plotLivingCellsOverGenerations();
-    data_engine.exportToCSV();
-    data_engine.exportPhylogeneticTreeToGEXF("phylogenetic.gexf");
-    data_engine.plotMutationWave();
-    data_engine.plotMutationFrequency();
-    data_engine.plotMullerDiagram();
-    data_engine.plotClonePhylogenyTree();
-    data_engine.plotCloneCounts();
-    data_engine.plotCloneLifespans();
-    data_engine.plotCloneGrowthAnimation();
-    data_engine.plotTumorReplay3D();
+      if (options.postprocess_mode == PostprocessMode::Exports) {
+        runExportsPostprocessing(data_engine);
+      } else {
+        runFullPostprocessing(data_engine);
+      }
+    }
   } else {
     spdlog::error("Neither --config nor --analyze flag was provided. Please provide one.");
   }

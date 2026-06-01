@@ -7,10 +7,26 @@ const api = axios.create({ baseURL: '/api' });
 export const startSimulation = (config: Record<string, unknown>) =>
   api.post<{ status: string; run_id: string }>('/simulation/start', { config });
 
-export const startSimulationBatch = (configs: Record<string, unknown>[], continueOnError = false) =>
-  api.post<{ status: string; run_id: string; batch_id: string; count: number }>(
+export interface BatchStartOptions {
+  continueOnError?: boolean;
+  maxParallel?: number;
+  threadsPerRun?: number | null;
+  postprocess?: 'full' | 'exports';
+}
+
+export const startSimulationBatch = (
+  configs: Record<string, unknown>[],
+  options: BatchStartOptions = {},
+) =>
+  api.post<{ status: string; run_id: string; batch_id: string; count: number; parallelism: number }>(
     '/simulation/batch/start',
-    { configs, continue_on_error: continueOnError },
+    {
+      configs,
+      continue_on_error: options.continueOnError ?? false,
+      max_parallel: options.maxParallel ?? 1,
+      threads_per_run: options.threadsPerRun ?? null,
+      postprocess: options.postprocess ?? 'exports',
+    },
   );
 
 export const stopSimulation = () =>
@@ -34,6 +50,12 @@ export const getRunStats = (runId: string) =>
 
 export const getMullerData = (runId: string) =>
   api.get<MullerData>(`/results/${encodeURIComponent(runId)}/muller`).then(r => r.data);
+
+export const analyzeRun = (runId: string, threadsPerRun?: number) =>
+  api.post<{ status: string; run_id: string; analysis_id: string }>(
+    `/results/${encodeURIComponent(runId)}/analyze`,
+    { threads_per_run: threadsPerRun ?? null },
+  );
 
 // ── WebSocket log stream helper ───────────────────────────────────────────────
 export function createLogSocket(

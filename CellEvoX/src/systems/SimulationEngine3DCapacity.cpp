@@ -29,6 +29,12 @@
 
 namespace {
 
+constexpr double kTauSnapshotEpsilon = 1e-9;
+
+int tauSnapshotIndex(double tau_value) {
+  return static_cast<int>(std::floor(tau_value + kTauSnapshotEpsilon));
+}
+
 constexpr uint32_t kInvalidSpatialIndex = std::numeric_limits<uint32_t>::max();
 
 }  // namespace
@@ -109,7 +115,7 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
                this->config->tau_step);
 }
 
-ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
+ecs::Run SimulationEngine3DCapacity::run(uint32_t steps, bool run_postprocessing) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -172,7 +178,8 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau);
+                  tau,
+                  run_postprocessing);
 }
 
 void SimulationEngine3DCapacity::step() {
@@ -191,7 +198,7 @@ void SimulationEngine3DCapacity::step() {
   rebuildSpatialState();
   mechanicalRelaxationStep();
 
-  const int current_tau = static_cast<int>(tau);
+  const int current_tau = tauSnapshotIndex(tau);
   if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
       current_tau != last_stat_snapshot_tau) {
     takeStatSnapshot();
@@ -205,6 +212,7 @@ void SimulationEngine3DCapacity::step() {
   }
 
   if (config->graveyard_pruning_interval > 0 &&
+      current_tau > 0 &&
       current_tau % config->graveyard_pruning_interval == 0 &&
       current_tau != last_pruning_tau) {
     pruneGraveyard();
@@ -545,7 +553,7 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
   }
 
   const auto filename =
-      CellEvoX::io::populationSnapshotPath(config->output_path, static_cast<int>(tau));
+      CellEvoX::io::populationSnapshotPath(config->output_path, tauSnapshotIndex(tau));
   if (!CellEvoX::io::writePopulationSnapshot(filename, tau, 3, snapshot, mutation_payload,
                                              payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", filename);

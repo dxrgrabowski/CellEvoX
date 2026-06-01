@@ -10,7 +10,8 @@ Run::Run(CellMap&& cells,
          std::vector<StatSnapshot>&& generational_stat_report,
          std::vector<std::pair<int, CellMap>> generational_popul_report,
          size_t deaths,
-         double tau)
+         double tau,
+         bool run_postprocessing)
     : cells(std::move(cells)),
       mutation_id_to_type(std::move(mutation_id_to_type)),
       cells_graveyard(std::move(cells_graveyard)),
@@ -18,6 +19,10 @@ Run::Run(CellMap&& cells,
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau) {
+  if (!run_postprocessing) {
+    return;
+  }
+
   CELLEVOX_PROFILE_PHASE("run_postprocessing");
   {
     CELLEVOX_PROFILE_PHASE("run_process_info");

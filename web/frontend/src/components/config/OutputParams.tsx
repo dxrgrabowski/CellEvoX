@@ -9,12 +9,18 @@ const VERBOSITY_DESCRIPTIONS = [
   'Shows detailed informational logs from the simulation engine.',
 ] as const;
 const FULL_MUTATION_PAYLOAD_HELP =
-  'When enabled, population snapshots include every mutation carried by each sampled cell. This is heavier, but needed for deep clone/mutation inspection. When off, snapshots keep only driver mutations.';
+  'When enabled, population snapshots include every mutation carried by each sampled cell. When off, snapshots keep only driver mutations.';
 
 interface Props { config: SimulationConfig }
 
+function formatTau(value: number) {
+  if (!Number.isFinite(value)) return '--';
+  return Number(value.toFixed(3)).toLocaleString();
+}
+
 export default function OutputParams({ config }: Props) {
   const setConfig = useConfigStore(s => s.setConfig);
+  const finalTau = config.steps * config.tau_step;
 
   return (
     <div className="flex-col gap-16">
@@ -33,7 +39,7 @@ export default function OutputParams({ config }: Props) {
           <NumberInput id="input-stat-res" min={1}
             value={config.statistics_resolution}
             onValueChange={value => setConfig({ statistics_resolution: value })} />
-          <span className="field-hint">Record fitness stats every N steps</span>
+          <span className="field-hint">Every N units of T; final T is {formatTau(finalTau)}. Controls generational_statistics.csv and memory_log.csv: population size, fitness moments, and mutation-count moments.</span>
         </div>
 
         <div className="field">
@@ -41,7 +47,7 @@ export default function OutputParams({ config }: Props) {
           <NumberInput id="input-pop-res" min={1}
             value={config.population_statistics_res}
             onValueChange={value => setConfig({ population_statistics_res: value })} />
-          <span className="field-hint">Record full population every N steps</span>
+          <span className="field-hint">Every N units of T; final T is {formatTau(finalTau)}. Writes population snapshots used for Results, Muller data, clone/mutation inspection, and CSV exports.</span>
         </div>
 
         <div className="field">
@@ -115,7 +121,7 @@ export default function OutputParams({ config }: Props) {
           </span>
         </label>
         <span className="field-hint" style={{ flexBasis: '100%' }}>
-          Stores full mutation lists in population snapshots for deeper post-run inspection.
+          Stores full mutation lists in population snapshots for deeper clone and mutation inspection.
         </span>
       </div>
     </div>
