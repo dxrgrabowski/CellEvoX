@@ -1,5 +1,5 @@
 {
-    "name": "CellEvoX Qt Development Container",
+    "name": "CellEvoX Development Container",
     "remoteUser": "${env:USER}",
     "build": {
         "dockerfile": "Dockerfile",
@@ -23,7 +23,6 @@
                 "ms-vscode.cpptools-themes",
                 "ms-vscode-remote.remote-containers",
                 "ms-azuretools.vscode-docker",
-                "bbenoist.QML",
                 "GitHub.vscode-pull-request-github",
                 "GitHub.codespaces"
             ]
@@ -31,15 +30,7 @@
     },
     "privileged": true,
     "runArgs": [
-        "--net=host",
-        "-e",
-        "QT_QPA_PLATFORM=wayland",
-        "-e",
-        "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
-        "-e",
-        "DISPLAY=${env:DISPLAY}",
-        "-e",
-        "XDG_RUNTIME_DIR=/tmp"
+        "--net=host"
     ],
     "mounts": [
         "source=${localEnv:HOME}/.ssh,target=/home/${env:USER}/.ssh,type=bind,consistency=cached"

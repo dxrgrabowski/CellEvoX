@@ -1,0 +1,15 @@
+.git
+.vs
+.vscode
+.venv
+.pipx
+.cellevox_launch_configs
+build
+build-*
+out
+output*
+compare*
+web/frontend/node_modules
+web/backend/.venv
+__pycache__
+*.pyc

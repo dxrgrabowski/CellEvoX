@@ -11,6 +11,7 @@
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <tbb/global_control.h>
 #include "core/RunDataEngine.hpp"
 #include "io/PopulationSnapshotIO.hpp"
@@ -23,6 +24,18 @@
 #include "ecs/Cell.hpp"
 
 // Namespace using removed
+
+namespace {
+
+std::filesystem::path testTempPath(std::string_view name) {
+    return std::filesystem::temp_directory_path() / "cellevox_tests" / name;
+}
+
+std::string testTempString(std::string_view name) {
+    return testTempPath(name).string();
+}
+
+}  // namespace
 
 inline std::vector<CellEvoX::io::PopulationSnapshotRecord> read_population_snapshot(
     const std::filesystem::path& path
@@ -396,10 +409,10 @@ TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     config->steps = 10;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim";
+    config->output_path = testTempString("test_sim");
 
     // Create output dirs to prevent memory log warning
-    std::filesystem::create_directories("/tmp/test_sim/statistics");
+    std::filesystem::create_directories(testTempPath("test_sim") / "statistics");
 
     SimulationEngine engine(config);
     auto runData = engine.run(10); // Runs 10 steps, tau goes from 1.0 to 10.0
@@ -428,12 +441,12 @@ TEST_CASE("Simulation Determinism", "[Determinism]") {
     config1->steps = 100;
     config1->stat_res = 1;
     config1->popul_res = 10;
-    config1->output_path = "/tmp/test_sim1";
+    config1->output_path = testTempString("test_sim1");
     config1->mutations.push_back({0.1f, 0.05f, 1, false});
 
     auto config2 = std::make_shared<SimulationConfig>();
     *config2 = *config1; // exact copy
-    config2->output_path = "/tmp/test_sim2";
+    config2->output_path = testTempString("test_sim2");
 
     SimulationEngine engine1(config1);
     auto runData1 = engine1.run(100);
@@ -515,7 +528,7 @@ inline double compute_mean_local_neighbors(
 }
 
 TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnapshotIO]") {
-    const std::filesystem::path snapshot_path = "/tmp/test_population_snapshot_driver_payload.bin";
+    const auto snapshot_path = testTempPath("test_population_snapshot_driver_payload.bin");
     std::filesystem::remove(snapshot_path);
 
     const std::vector<CellEvoX::io::PopulationSnapshotRecord> records = {
@@ -554,7 +567,7 @@ TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnap
 }
 
 TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[PopulationSnapshotIO]") {
-    const std::filesystem::path snapshot_path = "/tmp/test_population_snapshot_full_payload.bin";
+    const auto snapshot_path = testTempPath("test_population_snapshot_full_payload.bin");
     std::filesystem::remove(snapshot_path);
 
     const std::vector<CellEvoX::io::PopulationSnapshotRecord> records = {
@@ -587,7 +600,7 @@ TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[Populat
 }
 
 TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "[RunDataEngine][PopulationSnapshotIO]") {
-    const std::filesystem::path run_dir = "/tmp/test_run_data_engine_full_payload";
+    const auto run_dir = testTempPath("test_run_data_engine_full_payload");
     const auto population_dir = run_dir / "population_data";
     std::filesystem::remove_all(run_dir);
     std::filesystem::create_directories(population_dir);
@@ -664,11 +677,11 @@ TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV sna
     };
 
     const auto driver_only_csv =
-        export_csv(make_config("/tmp/test_run_data_engine_driver_only_ram_csv", false));
+        export_csv(make_config(testTempString("test_run_data_engine_driver_only_ram_csv"), false));
     REQUIRE(driver_only_csv.find(",2)") == std::string::npos);
 
     const auto full_payload_csv =
-        export_csv(make_config("/tmp/test_run_data_engine_full_ram_csv", true));
+        export_csv(make_config(testTempString("test_run_data_engine_full_ram_csv"), true));
     REQUIRE(full_payload_csv.find(",2)") != std::string::npos);
 }
 
@@ -682,7 +695,7 @@ TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D"
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_2d_driver_snapshot";
+    config->output_path = testTempString("test_sim_2d_driver_snapshot");
     config->verbosity = 0;
     config->mutations.push_back({0.1f, 1.0f, 1, true});
     config->mutations.push_back({-0.05f, 0.0f, 2, false});
@@ -725,7 +738,7 @@ TEST_CASE("SimulationEngine writes full mutation payload snapshots when enabled 
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_2d_full_snapshot";
+    config->output_path = testTempString("test_sim_2d_full_snapshot");
     config->full_mutation_payload = true;
     config->verbosity = 0;
     config->mutations.push_back({0.0f, 1.0f, 2, false});
@@ -776,7 +789,7 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     config->steps = 100;
     config->stat_res = 1;
     config->popul_res = 10;
-    config->output_path = "/tmp/test_sim_correctness";
+    config->output_path = testTempString("test_sim_correctness");
     config->mutations.push_back({0.1f, 0.05f, 1, false});
 
     SimulationEngine engine(config);
@@ -870,7 +883,7 @@ TEST_CASE("SimulationEngine3D produces binary population snapshots", "[Simulatio
     config->steps = 2;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_3d";
+    config->output_path = testTempString("test_sim_3d");
     config->sample_radius = 3.0f;
     config->max_local_density = 8.0f;
     config->spring_constant = 0.1f;
@@ -885,8 +898,8 @@ TEST_CASE("SimulationEngine3D produces binary population snapshots", "[Simulatio
     auto runData = engine.run(2);
 
     REQUIRE(runData.generational_stat_report.size() == 2);
-    REQUIRE(std::filesystem::exists("/tmp/test_sim_3d/population_data/population_generation_1.bin"));
-    REQUIRE(std::filesystem::exists("/tmp/test_sim_3d/population_data/population_generation_2.bin"));
+    REQUIRE(std::filesystem::exists(testTempPath("test_sim_3d") / "population_data" / "population_generation_1.bin"));
+    REQUIRE(std::filesystem::exists(testTempPath("test_sim_3d") / "population_data" / "population_generation_2.bin"));
 }
 
 TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[SimulationEngine3DCapacity][Determinism]") {
@@ -914,8 +927,8 @@ TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[Simulatio
         return config;
     };
 
-    auto config_2d = make_config(SimulationType::STOCHASTIC_TAU_LEAP, "/tmp/test_sim_2d_parity");
-    auto config_3d = make_config(SimulationType::SPATIAL_3D_CAPACITY, "/tmp/test_sim_3d_capacity_parity");
+    auto config_2d = make_config(SimulationType::STOCHASTIC_TAU_LEAP, testTempString("test_sim_2d_parity"));
+    auto config_3d = make_config(SimulationType::SPATIAL_3D_CAPACITY, testTempString("test_sim_3d_capacity_parity"));
 
     std::filesystem::remove_all(config_2d->output_path);
     std::filesystem::remove_all(config_3d->output_path);
@@ -970,7 +983,7 @@ TEST_CASE("SimulationEngine3DCapacity writes spatial driver-mutation snapshots",
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_3d_capacity_snapshot";
+    config->output_path = testTempString("test_sim_3d_capacity_snapshot");
     config->spatial_domain_size = 20.0f;
     config->spring_constant = 0.2f;
     config->mech_dt = 0.05f;
@@ -1020,7 +1033,7 @@ TEST_CASE("SimulationEngine3DCapacity writes full mutation payload snapshots whe
     config->steps = 1;
     config->stat_res = 1;
     config->popul_res = 1;
-    config->output_path = "/tmp/test_sim_3d_capacity_full_snapshot";
+    config->output_path = testTempString("test_sim_3d_capacity_full_snapshot");
     config->spatial_domain_size = 20.0f;
     config->spring_constant = 0.2f;
     config->mech_dt = 0.05f;
@@ -1068,7 +1081,7 @@ TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEn
     config->steps = 80;
     config->stat_res = 1;
     config->popul_res = 10;
-    config->output_path = "/tmp/test_sim_3d_sparse";
+    config->output_path = testTempString("test_sim_3d_sparse");
     config->spatial_domain_size = 32.0f;
     config->sample_radius = 3.0f;
     config->max_local_density = 8.0f;
@@ -1113,8 +1126,8 @@ TEST_CASE("SimulationEngine3D deterministic smoke test", "[SimulationEngine3D][D
         return config;
     };
 
-    auto config1 = make_config("/tmp/test_sim_3d_smoke_1");
-    auto config2 = make_config("/tmp/test_sim_3d_smoke_2");
+    auto config1 = make_config(testTempString("test_sim_3d_smoke_1"));
+    auto config2 = make_config(testTempString("test_sim_3d_smoke_2"));
 
     std::filesystem::remove_all(config1->output_path);
     std::filesystem::remove_all(config2->output_path);
@@ -1171,8 +1184,8 @@ TEST_CASE("SimulationEngine3D is repeatable with the same seed", "[SimulationEng
         return config;
     };
 
-    auto config1 = make_config("/tmp/test_sim_3d_determinism_1");
-    auto config2 = make_config("/tmp/test_sim_3d_determinism_2");
+    auto config1 = make_config(testTempString("test_sim_3d_determinism_1"));
+    auto config2 = make_config(testTempString("test_sim_3d_determinism_2"));
 
     std::filesystem::remove_all(config1->output_path);
     std::filesystem::remove_all(config2->output_path);
@@ -1216,7 +1229,7 @@ TEST_CASE("SimulationEngine3D stabilizes near local carrying capacity", "[Simula
     config->steps = 200;
     config->stat_res = 1;
     config->popul_res = 5;
-    config->output_path = "/tmp/test_sim_3d_stabilization";
+    config->output_path = testTempString("test_sim_3d_stabilization");
     config->spatial_domain_size = 24.0f;
     config->sample_radius = 3.0f;
     config->max_local_density = 8.0f;

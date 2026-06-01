@@ -25,6 +25,8 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
+        # libboost-program-options-dev is kept here so CI can still build the
+        # pre-cleanup base commit for benchmark comparison.
         sudo apt-get install -y build-essential cmake libspdlog-dev libboost-program-options-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache
 
     - name: Setup Ccache
@@ -72,8 +74,8 @@ jobs:
 
     - name: Build Head (Current PR)
       run: |
-        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON -DCELLEVOX_WARNINGS_AS_ERRORS=ON
-        cmake --build head_build --target CellEvoXTests -j$(nproc)
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON
+        cmake --build head_build --target CellEvoX CellEvoXTests -j$(nproc)
 
     - name: Run Unit Tests
       run: ./head_build/bin/CellEvoXTests "~[benchmark]"
