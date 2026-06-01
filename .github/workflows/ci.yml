@@ -74,7 +74,7 @@ jobs:
 
     - name: Build Head (Current PR)
       run: |
-        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON
         cmake --build head_build --target CellEvoX CellEvoXTests -j$(nproc)
 
     - name: Run Unit Tests

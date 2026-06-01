@@ -23,7 +23,9 @@ class Cell {
   explicit Cell(uint32_t cellId) : id(cellId) {}
 
   explicit Cell(const Cell& parent, double cellFitness)
-      : parent_id(parent.id), fitness(cellFitness), mutations(parent.mutations) {}
+      : parent_id(parent.id),
+        fitness(static_cast<float>(cellFitness)),
+        mutations(parent.mutations) {}
 
   // Move constructor
   Cell(Cell&& other) noexcept

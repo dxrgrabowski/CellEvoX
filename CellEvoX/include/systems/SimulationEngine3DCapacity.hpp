@@ -64,6 +64,7 @@ class SimulationEngine3DCapacity {
 
   int last_stat_snapshot_tau = 0;
   int last_population_snapshot_tau = 0;
+  int last_memory_log_tau = 0;
   int last_pruning_tau = -1;
 
   std::shared_ptr<SimulationConfig> config;

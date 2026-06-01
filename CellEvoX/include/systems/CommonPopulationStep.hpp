@@ -7,8 +7,11 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -69,18 +72,14 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
   CommonPopulationStepResult result;
 
   const double tau_step = config.tau_step;
-  const size_t N = actual_population;
   const size_t Nc = config.env_capacity;
-  if (N == 0 || Nc == 0) {
+  if (Nc == 0) {
     actual_population = cells.size();
     return result;
   }
-
-  const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
-  Eigen::VectorXd death_probs;
-  {
-    CELLEVOX_PROFILE_PHASE("rng_death");
-    death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
+  if (!std::isfinite(total_mutation_probability) || total_mutation_probability < 0.0 ||
+      total_mutation_probability > 1.0) {
+    throw std::invalid_argument("total_mutation_probability must be finite and in [0, 1]");
   }
 
   std::vector<uint32_t> alive_cell_indices;
@@ -97,15 +96,31 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
   }
 
+  if (alive_cell_indices.empty()) {
+    actual_population = 0;
+    return result;
+  }
+
+  if (alive_cell_indices.size() != actual_population) {
+    spdlog::error("Mismatch in alive cell count: expected {}, found {}",
+                  actual_population,
+                  alive_cell_indices.size());
+    actual_population = alive_cell_indices.size();
+  }
+
+  const size_t N = alive_cell_indices.size();
+
+  const double scaling_factor = static_cast<double>(N) / static_cast<double>(Nc);
+  Eigen::VectorXd death_probs;
+  {
+    CELLEVOX_PROFILE_PHASE("rng_death");
+    death_probs = generateExponentialDistribution(N, rng) / scaling_factor;
+  }
+
   Eigen::VectorXd birth_randoms;
   {
     CELLEVOX_PROFILE_PHASE("rng_birth");
     birth_randoms = generateExponentialDistribution(N, rng);
-  }
-
-  if (alive_cell_indices.size() != N) {
-    spdlog::error(
-        "Mismatch in alive cell count: expected {}, found {}", N, alive_cell_indices.size());
   }
 
   if (death_probs.size() != static_cast<Eigen::Index>(N) ||
@@ -142,8 +157,13 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
               continue;
             }
 
-            const double birth_prob =
-                birth_randoms[static_cast<Eigen::Index>(i)] / cell->second.fitness;
+            const double fitness = cell->second.fitness;
+            if (!std::isfinite(fitness) || fitness <= 0.0) {
+              spdlog::error("Cell {} has invalid fitness {}; skipping birth event", idx, fitness);
+              continue;
+            }
+
+            const double birth_prob = birth_randoms[static_cast<Eigen::Index>(i)] / fitness;
             if (birth_prob > tau_step) {
               continue;
             }
@@ -161,11 +181,15 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
             for (const auto& mut : available_mutation_types) {
               prob_sum += mut.second.probability;
               if (rand_val < prob_sum) {
+                const double daughter_fitness = fitness * (1.0 + mut.second.effect);
+                if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
+                  throw std::runtime_error("Mutation produced invalid daughter fitness");
+                }
                 Cell daughter_cell1 =
-                    Cell(cell->second, cell->second.fitness * (1.0 + mut.second.effect));
+                    Cell(cell->second, daughter_fitness);
                 daughter_cell1.mutations.push_back({0, mut.second.type_id});
                 new_cells.push_back(std::move(daughter_cell1));
-                new_cells.emplace_back(cell->second, cell->second.fitness);
+                new_cells.emplace_back(cell->second, fitness);
                 break;
               }
             }
@@ -184,7 +208,18 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
   }
 
+  const auto max_cell_id = std::numeric_limits<uint32_t>::max();
+  if (total_deaths > max_cell_id || N > max_cell_id - total_deaths) {
+    throw std::overflow_error("Cell id space exhausted before assigning birth ids");
+  }
+
   const uint32_t starting_id = static_cast<uint32_t>(N + total_deaths);
+  const size_t remaining_ids =
+      static_cast<size_t>(max_cell_id) - static_cast<size_t>(starting_id) + 1;
+  if (sorted_new_cells.size() > remaining_ids) {
+    throw std::overflow_error("Cell id space exhausted while assigning birth ids");
+  }
+
   {
     CELLEVOX_PROFILE_PHASE("apply_births");
     result.births.reserve(sorted_new_cells.size());
@@ -227,10 +262,12 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     }
   }
 
-  const size_t created_count = new_cells.size();
   const size_t removed_count = dead_cells.size();
+  if (removed_count > static_cast<size_t>(max_cell_id) - total_deaths) {
+    throw std::overflow_error("Cell death counter exceeds uint32_t cell id space");
+  }
   total_deaths += removed_count;
-  actual_population = actual_population + created_count - removed_count;
+  actual_population = cells.size();
 
   return result;
 }

@@ -7,8 +7,9 @@
 #include <tbb/parallel_for.h>
 
 #include <algorithm>
-#include <cmath>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -18,6 +19,9 @@
 #include <random>
 #include <regex>
 #include <sstream>
+#include <string_view>
+#include <system_error>
+#include <vector>
 
 #include "io/PopulationSnapshotIO.hpp"
 
@@ -155,12 +159,14 @@ void writePopulationCsvRow(std::ofstream& file,
 std::vector<fs::path> collectPopulationBinaryFiles(const std::string& output_dir) {
   std::vector<fs::path> files;
   const fs::path population_dir = fs::path(output_dir) / "population_data";
-  if (!fs::exists(population_dir)) {
+  std::error_code ec;
+  if (!fs::exists(population_dir, ec) || ec) {
     return files;
   }
 
-  for (const auto& entry : fs::directory_iterator(population_dir)) {
-    if (!entry.is_regular_file() || entry.path().extension() != ".bin") {
+  for (fs::directory_iterator it(population_dir, ec), end; !ec && it != end; it.increment(ec)) {
+    const auto& entry = *it;
+    if (!entry.is_regular_file(ec) || ec || entry.path().extension() != ".bin") {
       continue;
     }
     if (extractGenerationFromFilename(entry.path()) >= 0) {
@@ -174,7 +180,62 @@ std::vector<fs::path> collectPopulationBinaryFiles(const std::string& output_dir
   return files;
 }
 
-std::string quoteForShell(const std::string& value) { return "\"" + value + "\""; }
+bool ensureDirectory(const fs::path& path) {
+  if (path.empty()) {
+    return false;
+  }
+
+  std::error_code ec;
+  fs::create_directories(path, ec);
+  if (ec) {
+    spdlog::error("Failed to create directory {}: {}", path.string(), ec.message());
+    return false;
+  }
+  return true;
+}
+
+std::string quoteForShell(const std::string& value) {
+#ifdef _WIN32
+  std::string quoted = "\"";
+  for (char c : value) {
+    if (c == '"') {
+      quoted += "\\\"";
+    } else {
+      quoted += c;
+    }
+  }
+  quoted += "\"";
+  return quoted;
+#else
+  std::string quoted = "'";
+  for (char c : value) {
+    if (c == '\'') {
+      quoted += "'\\''";
+    } else {
+      quoted += c;
+    }
+  }
+  quoted += "'";
+  return quoted;
+#endif
+}
+
+std::string buildShellCommand(const std::vector<std::string>& args) {
+  std::string command;
+  for (const auto& arg : args) {
+    if (!command.empty()) {
+      command += " ";
+    }
+    command += quoteForShell(arg);
+  }
+  return command;
+}
+
+int runShellCommand(std::string_view label, const std::vector<std::string>& args) {
+  const std::string command = buildShellCommand(args);
+  spdlog::info("Running {}: {}", label, command);
+  return std::system(command.c_str());
+}
 
 fs::path resolvePythonScriptPath(const char* script_name) {
   fs::path script_path = fs::current_path() / "scripts" / script_name;
@@ -200,7 +261,11 @@ std::string resolvePythonCommand() {
   if (fs::exists(venv_python)) {
     return venv_python.string();
   }
+#ifdef _WIN32
+  return "python";
+#else
   return "python3";
+#endif
 }
 
 }  // namespace
@@ -213,18 +278,18 @@ RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
                              std::shared_ptr<ecs::Run> run,
                              const std::string& config_file_path,
                              double generation_step)
-    : config(config),
+    : generation_step(generation_step),
+      config(config),
       run(run),
-      config_file_path(config_file_path),
-      generation_step(generation_step) {
+      config_file_path(config_file_path) {
   prepareOutputDir();
 }
 
 RunDataEngine::RunDataEngine(const std::string& analyze_directory)
-    : config(nullptr),
+    : generation_step(0.0),
+      config(nullptr),
       run(nullptr),
-      config_file_path(""),
-      generation_step(0.0) {
+      config_file_path("") {
   output_dir = analyze_directory;
   if (!output_dir.empty() && output_dir.back() != '/') {
     output_dir += '/';
@@ -248,15 +313,28 @@ void RunDataEngine::prepareOutputDir() {
   output_dir = timestamped_path.string();
   config->output_path = output_dir;
 
-  if (!std::filesystem::exists(output_dir) && output_dir != "") {
-    std::filesystem::create_directories(output_dir);
+  std::error_code output_exists_error;
+  const bool output_exists = std::filesystem::exists(output_dir, output_exists_error);
+  if (output_exists_error) {
+    spdlog::error("Failed to inspect output directory {}: {}",
+                  output_dir,
+                  output_exists_error.message());
+    return;
+  }
+
+  if (!output_exists && output_dir != "") {
+    if (!ensureDirectory(output_dir)) {
+      return;
+    }
     // Create subdirectories
     std::vector<std::string> subdirs = {"vaf_diagrams",      "mutation_histograms",
                                         "population_data",   "general_plots",
                                         "muller_plots",      "phylogeny",
                                         "statistics"};
     for (const auto& subdir : subdirs) {
-      std::filesystem::create_directories(std::filesystem::path(output_dir) / subdir);
+      if (!ensureDirectory(std::filesystem::path(output_dir) / subdir)) {
+        return;
+      }
     }
   }
   output_dir += "/";
@@ -757,22 +835,27 @@ void RunDataEngine::exportPhylogeneticTreeToGEXF(const std::string& filename) {
 }
 
 void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::string& filename) {
+  if (!run || run->cells.empty() || num_cells_to_trace == 0) {
+    spdlog::warn("Skipping genealogy export: no cells available to trace");
+    return;
+  }
+
   tbb::concurrent_vector<uint32_t> selected_cells;
   tbb::concurrent_unordered_set<uint32_t> visited_nodes;
   tbb::concurrent_vector<std::pair<uint32_t, uint32_t>> edges;
   tbb::concurrent_hash_map<uint32_t, std::pair<std::string, double>> node_attributes;
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(0, run->cells.size() - 1);
 
   std::vector<uint32_t> cell_ids;
   for (auto it = run->cells.begin(); it != run->cells.end(); ++it) {
     cell_ids.push_back(it->first);
   }
 
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<size_t> dis(0, cell_ids.size() - 1);
+
   for (size_t i = 0; i < num_cells_to_trace; ++i) {
-    uint32_t idx = dis(gen);
+    const size_t idx = dis(gen);
     selected_cells.push_back(cell_ids[idx]);
   }
 
@@ -861,43 +944,22 @@ void RunDataEngine::exportGenealogyToGexf(size_t num_cells_to_trace, const std::
 void RunDataEngine::plotMullerDiagram() {
   spdlog::info("Generating Müller diagram...");
   
-  // Get the path to the Python script (relative to project structure)
-  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_muller.py";
-  
-  // If not found, try relative to the executable
-  if (!std::filesystem::exists(script_path)) {
-    // Try finding it relative to the source directory
-    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_muller.py";
-  }
-  
-  // Fallback to absolute path if needed
-  if (!std::filesystem::exists(script_path)) {
-    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_muller.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::current_path() / "../scripts/plot_muller.py";
-  }
+  const fs::path script_path = resolvePythonScriptPath("plot_muller.py");
 
   if (!std::filesystem::exists(script_path)) {
     spdlog::warn("Müller plot script not found at any locations, last tried: {}", script_path.string());
     return;
   }
   
-  // Try to use virtual environment Python if available, otherwise fall back to system python3
-  std::string python_cmd = "python3";
-  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
-  if (std::filesystem::exists(venv_python)) {
-    python_cmd = venv_python.string();
-  }
-  
-  // 1. Generate Relative Plot (Standard)
-  std::string command_relative = python_cmd + " " + script_path.string() + 
-                               " --input " + output_dir +
-                               " --output " + output_dir + "muller_plots/muller_plot.png";
-  
-  spdlog::info("Running relative plot: {}", command_relative);
-  int result_rel = std::system(command_relative.c_str());
+  const std::string python_cmd = resolvePythonCommand();
+  const int result_rel = runShellCommand(
+      "relative Muller plot",
+      {python_cmd,
+       script_path.string(),
+       "--input",
+       output_dir,
+       "--output",
+       output_dir + "muller_plots/muller_plot.png"});
   
   if (result_rel == 0) {
     spdlog::info("Relative Müller plot saved to: {}muller_plot.png", output_dir);
@@ -905,14 +967,15 @@ void RunDataEngine::plotMullerDiagram() {
     spdlog::warn("Relative Müller plot generation failed with code: {}", result_rel);
   }
 
-  // 2. Generate Absolute Plot
-  std::string command_absolute = python_cmd + " " + script_path.string() + 
-                               " --input " + output_dir +
-                               " --output " + output_dir + "muller_plots/muller_plot_absolute.png" +
-                               " --absolute";
-                               
-  spdlog::info("Running absolute plot: {}", command_absolute);
-  int result_abs = std::system(command_absolute.c_str());
+  const int result_abs = runShellCommand(
+      "absolute Muller plot",
+      {python_cmd,
+       script_path.string(),
+       "--input",
+       output_dir,
+       "--output",
+       output_dir + "muller_plots/muller_plot_absolute.png",
+       "--absolute"});
   
   if (result_abs == 0) {
     spdlog::info("Absolute Müller plot saved to: {}muller_plot_absolute.png", output_dir);
@@ -924,43 +987,28 @@ void RunDataEngine::plotMullerDiagram() {
 void RunDataEngine::plotClonePhylogenyTree() {
   spdlog::info("Generating Clone Phylogeny Tree...");
   
-  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_phylogeny.py";
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_phylogeny.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_phylogeny.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::current_path() / "../scripts/plot_phylogeny.py";
-  }
+  const fs::path script_path = resolvePythonScriptPath("plot_phylogeny.py");
   
   if (!std::filesystem::exists(script_path)) {
     spdlog::warn("Phylogeny plot script not found at any locations, last tried: {}", script_path.string());
     return;
   }
   
-  std::string python_cmd = "python3";
-  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
-  if (std::filesystem::exists(venv_python)) {
-    python_cmd = venv_python.string();
-  }
+  const std::string python_cmd = resolvePythonCommand();
   
   uint32_t num_cells = 100;
   if (config) {
     num_cells = config->phylogeny_num_cells_sampling;
   }
 
-  // 1. Clone Phylogeny Tree (default mode)
-  std::string clone_command = python_cmd + " " + script_path.string() + 
-                            " --input " + output_dir +
-                            " --output " + output_dir + "phylogeny/clone_tree.png";
-                       
-  spdlog::info("Running clone phylogeny plot: {}", clone_command);
-  int result_clone = std::system(clone_command.c_str());
+  const int result_clone = runShellCommand(
+      "clone phylogeny plot",
+      {python_cmd,
+       script_path.string(),
+       "--input",
+       output_dir,
+       "--output",
+       output_dir + "phylogeny/clone_tree.png"});
   
   if (result_clone == 0) {
     spdlog::info("Clone Phylogeny Tree saved to: {}phylogeny/clone_tree.png", output_dir);
@@ -968,13 +1016,9 @@ void RunDataEngine::plotClonePhylogenyTree() {
     spdlog::warn("Clone Phylogeny Tree generation failed with code: {}", result_clone);
   }
 
-  // 2. Cell Phylogeny Tree (with --cells)
-  std::string cell_command = python_cmd + " " + script_path.string() + 
-                           " --input " + output_dir +
-                           " --cells " + std::to_string(num_cells);
-  
-  spdlog::info("Running cell phylogeny plot: {}", cell_command);
-  int result_cell = std::system(cell_command.c_str());
+  const int result_cell = runShellCommand(
+      "cell phylogeny plot",
+      {python_cmd, script_path.string(), "--input", output_dir, "--cells", std::to_string(num_cells)});
   
   if (result_cell == 0) {
     spdlog::info("Cell Phylogeny Tree (n={}) saved to: {}phylogeny/", num_cells, output_dir);
@@ -986,35 +1030,16 @@ void RunDataEngine::plotClonePhylogenyTree() {
 void RunDataEngine::plotCloneCounts() {
   spdlog::info("Generating Clone Counts over time chart...");
   
-  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_clone_counts.py";
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_clone_counts.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_clone_counts.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::current_path() / "../scripts/plot_clone_counts.py";
-  }
+  const fs::path script_path = resolvePythonScriptPath("plot_clone_counts.py");
   
   if (!std::filesystem::exists(script_path)) {
     spdlog::warn("Clone counts script not found at any locations, last tried: {}", script_path.string());
     return;
   }
   
-  std::string python_cmd = "python3";
-  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
-  if (std::filesystem::exists(venv_python)) {
-    python_cmd = venv_python.string();
-  }
-  
-  std::string command = python_cmd + " " + script_path.string() + " --input " + output_dir;
-                       
-  spdlog::info("Running clone counts plot: {}", command);
-  int result = std::system(command.c_str());
+  const std::string python_cmd = resolvePythonCommand();
+  const int result =
+      runShellCommand("clone counts plot", {python_cmd, script_path.string(), "--input", output_dir});
   
   if (result == 0) {
     spdlog::info("Clone counts chart saved to clones/ subdirectory.");
@@ -1026,35 +1051,16 @@ void RunDataEngine::plotCloneCounts() {
 void RunDataEngine::plotCloneLifespans() {
   spdlog::info("Generating Clone Lifespans Histogram Plot...");
   
-  std::filesystem::path script_path = std::filesystem::current_path() / "scripts" / "plot_clone_lifespans.py";
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "plot_clone_lifespans.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = "/workspaces/CellEvoX/CellEvoX/scripts/plot_clone_lifespans.py";
-  }
-  
-  if (!std::filesystem::exists(script_path)) {
-    script_path = std::filesystem::current_path() / "../scripts/plot_clone_lifespans.py";
-  }
+  const fs::path script_path = resolvePythonScriptPath("plot_clone_lifespans.py");
   
   if (!std::filesystem::exists(script_path)) {
     spdlog::warn("Clone lifespans script not found at any locations, last tried: {}", script_path.string());
     return;
   }
   
-  std::string python_cmd = "python3";
-  std::filesystem::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
-  if (std::filesystem::exists(venv_python)) {
-    python_cmd = venv_python.string();
-  }
-  
-  std::string command = python_cmd + " " + script_path.string() + " --input " + output_dir;
-                       
-  spdlog::info("Running clone lifespans plot: {}", command);
-  int result = std::system(command.c_str());
+  const std::string python_cmd = resolvePythonCommand();
+  const int result = runShellCommand(
+      "clone lifespans plot", {python_cmd, script_path.string(), "--input", output_dir});
   
   if (result == 0) {
     spdlog::info("Clone lifespans charts saved to clones/ subdirectory.");
@@ -1074,13 +1080,14 @@ void RunDataEngine::plotCloneGrowthAnimation() {
   }
 
   const std::string python_cmd = resolvePythonCommand();
-  const std::string command =
-      python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
-      quoteForShell(output_dir) + " --output " +
-      quoteForShell(output_dir + "visualizations/clone_growth_2d.mp4");
-
-  spdlog::info("Running 2D clone growth animation: {}", command);
-  const int result = std::system(command.c_str());
+  const int result = runShellCommand(
+      "2D clone growth animation",
+      {python_cmd,
+       script_path.string(),
+       "--input",
+       output_dir,
+       "--output",
+       output_dir + "visualizations/clone_growth_2d.mp4"});
   if (result == 0) {
     spdlog::info("2D clone growth animation saved to: {}visualizations/clone_growth_2d.mp4",
                  output_dir);
@@ -1100,14 +1107,20 @@ void RunDataEngine::plotTumorReplay3D() {
   }
 
   const std::string python_cmd = resolvePythonCommand();
-  const std::string command =
-      python_cmd + " " + quoteForShell(script_path.string()) + " --input " +
-      quoteForShell(output_dir) + " --output " +
-      quoteForShell(output_dir + "visualizations/tumor_growth_3d.mp4") +
-      " --fps 30 --max-frames 250 --pulse-frames 3";
-
-  spdlog::info("Running 3D tumor replay: {}", command);
-  const int result = std::system(command.c_str());
+  const int result = runShellCommand(
+      "3D tumor replay",
+      {python_cmd,
+       script_path.string(),
+       "--input",
+       output_dir,
+       "--output",
+       output_dir + "visualizations/tumor_growth_3d.mp4",
+       "--fps",
+       "30",
+       "--max-frames",
+       "250",
+       "--pulse-frames",
+       "3"});
   if (result == 0) {
     spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
   } else {

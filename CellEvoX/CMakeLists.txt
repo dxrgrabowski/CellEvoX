@@ -1,14 +1,20 @@
 cmake_minimum_required(VERSION 3.16)
-project(CellEvoX VERSION 0.1.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
+project(CellEvoX VERSION 0.1.0 LANGUAGES CXX)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(CELLEVOX_PROFILE_PHASES "Enable opt-in CSV phase profiling instrumentation" OFF)
+option(CELLEVOX_ENABLE_WARNINGS "Enable project compiler warnings" ON)
+option(CELLEVOX_STRICT_WARNINGS "Enable extra noisy project warnings for local audits" OFF)
+option(CELLEVOX_WARNINGS_AS_ERRORS "Treat project compiler warnings as errors" OFF)
+option(CELLEVOX_NATIVE_OPTIMIZATIONS "Enable native CPU tuning for executable targets" ON)
+option(CELLEVOX_FAST_MATH "Enable fast-math optimizations; may change floating-point behavior" OFF)
 option(CELLEVOX_ENABLE_COVERAGE "Enable GCC/Clang coverage instrumentation for tests" OFF)
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
@@ -34,6 +40,47 @@ find_package(nlohmann_json 3 REQUIRED)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include(GNUInstallDirs)
+
+function(cellevox_apply_project_warnings target_name)
+    if(NOT CELLEVOX_ENABLE_WARNINGS)
+        return()
+    endif()
+
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W4 /permissive- /wd4996)
+        if(CELLEVOX_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target_name} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wformat=2
+            -Wno-deprecated-declarations
+        )
+        if(CELLEVOX_STRICT_WARNINGS)
+            target_compile_options(${target_name} PRIVATE -Wshadow -Wconversion)
+        endif()
+        if(CELLEVOX_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+
+function(cellevox_apply_release_optimizations target_name)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${target_name} PRIVATE -O3)
+        if(CELLEVOX_NATIVE_OPTIMIZATIONS)
+            target_compile_options(${target_name} PRIVATE -march=native)
+        endif()
+        if(CELLEVOX_FAST_MATH)
+            target_compile_options(${target_name} PRIVATE -ffast-math)
+        endif()
+    elseif(MSVC)
+        target_compile_options(${target_name} PRIVATE /O2)
+    endif()
+endfunction()
 
 set(HEADERS
     include/core/application.hpp
@@ -71,15 +118,15 @@ target_include_directories(CellEvoX
     PRIVATE
     include
     include/spatial
+)
+target_include_directories(CellEvoX SYSTEM
+    PRIVATE
     ${Python3_INCLUDE_DIRS}
     ${NUMPY_INCLUDE_DIR}
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(CellEvoX PRIVATE -O3 -march=native -ffast-math -Wno-deprecated-declarations)
-elseif(MSVC)
-    target_compile_options(CellEvoX PRIVATE /wd4996)
-endif()
+cellevox_apply_release_optimizations(CellEvoX)
+cellevox_apply_project_warnings(CellEvoX)
 if(CELLEVOX_PROFILE_PHASES)
     target_compile_definitions(CellEvoX PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
@@ -101,7 +148,6 @@ install(TARGETS CellEvoX
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# Testing Executable
 add_executable(CellEvoXTests
     ${CORE_SOURCES}
     tests/test_simulation.cpp
@@ -115,22 +161,18 @@ target_include_directories(CellEvoXTests
     PRIVATE
     include
     include/spatial
+)
+target_include_directories(CellEvoXTests SYSTEM
+    PRIVATE
     ${Python3_INCLUDE_DIRS}
     ${NUMPY_INCLUDE_DIR}
 )
 
-# Suppress deprecation warnings from external header matplotlibcpp.h
-# which uses Py_SetProgramName/PySys_SetArgv deprecated since Python 3.11
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(CellEvoXTests PRIVATE -Wno-deprecated-declarations)
-elseif(MSVC)
-    target_compile_options(CellEvoXTests PRIVATE /wd4996)
-endif()
+cellevox_apply_project_warnings(CellEvoXTests)
 if(CELLEVOX_PROFILE_PHASES)
     target_compile_definitions(CellEvoXTests PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
 
-# Inject repo source directory for robust test data discovery (e.g. JSON baselines)
 target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
 
 target_link_libraries(CellEvoXTests

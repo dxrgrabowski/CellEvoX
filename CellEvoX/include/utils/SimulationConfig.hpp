@@ -2,7 +2,13 @@
 #include <spdlog/spdlog.h>
 
 #include <nlohmann/json.hpp>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "ecs/Cell.hpp"
@@ -22,6 +28,91 @@ inline const char* toString(SimulationType type) {
       return "SPATIAL_3D_CAPACITY";
     default:
       return "UNKNOWN";
+  }
+}
+
+inline void requireFinite(double value, const char* field_name) {
+  if (!std::isfinite(value)) {
+    throw std::runtime_error(std::string("Invalid simulation config: ") + field_name +
+                             " must be finite");
+  }
+}
+
+inline void requirePositive(double value, const char* field_name) {
+  requireFinite(value, field_name);
+  if (value <= 0.0) {
+    throw std::runtime_error(std::string("Invalid simulation config: ") + field_name +
+                             " must be positive");
+  }
+}
+
+inline void requireNonNegative(double value, const char* field_name) {
+  requireFinite(value, field_name);
+  if (value < 0.0) {
+    throw std::runtime_error(std::string("Invalid simulation config: ") + field_name +
+                             " must be non-negative");
+  }
+}
+
+inline void validateConfig(const SimulationConfig& config) {
+  requirePositive(config.tau_step, "tau_step");
+  if (config.initial_population > std::numeric_limits<uint32_t>::max()) {
+    throw std::runtime_error(
+        "Invalid simulation config: initial_population exceeds uint32_t cell id space");
+  }
+  if (config.env_capacity == 0) {
+    throw std::runtime_error("Invalid simulation config: env_capacity must be positive");
+  }
+  if (config.stat_res == 0) {
+    throw std::runtime_error(
+        "Invalid simulation config: statistics_resolution must be positive");
+  }
+  if (config.popul_res == 0) {
+    throw std::runtime_error(
+        "Invalid simulation config: population_statistics_res must be positive");
+  }
+  if (config.graveyard_pruning_interval < 0) {
+    throw std::runtime_error(
+        "Invalid simulation config: graveyard_pruning_interval must be non-negative");
+  }
+  if (config.output_path.empty()) {
+    throw std::runtime_error("Invalid simulation config: output_path must not be empty");
+  }
+
+  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY ||
+      config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
+    requirePositive(config.spatial_domain_size, "spatial_domain_size");
+    requirePositive(config.max_local_density, "max_local_density");
+    requirePositive(config.sample_radius, "sample_radius");
+    requireNonNegative(config.spring_constant, "spring_constant");
+    requirePositive(config.mech_dt, "mech_dt");
+    if (config.mech_substeps <= 0) {
+      throw std::runtime_error("Invalid simulation config: mech_substeps must be positive");
+    }
+    requireNonNegative(config.epsilon, "epsilon");
+  }
+
+  double total_mutation_probability = 0.0;
+  std::unordered_set<uint8_t> mutation_ids;
+  for (const auto& mutation : config.mutations) {
+    requireFinite(mutation.effect, "mutations[].effect");
+    requireFinite(mutation.probability, "mutations[].probability");
+    if (mutation.effect <= -1.0f) {
+      throw std::runtime_error(
+          "Invalid simulation config: mutation effect must keep daughter fitness positive");
+    }
+    if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
+      throw std::runtime_error(
+          "Invalid simulation config: mutation probability must be in [0, 1]");
+    }
+    if (!mutation_ids.insert(mutation.type_id).second) {
+      throw std::runtime_error("Invalid simulation config: duplicate mutation id");
+    }
+    total_mutation_probability += mutation.probability;
+  }
+  if (total_mutation_probability > 1.0 + 1e-9) {
+    throw std::runtime_error(
+        "Invalid simulation config: total mutation probability must not exceed 1");
   }
 }
 
@@ -57,7 +148,7 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     config.env_capacity = j.at("env_capacity");
     config.steps = j.at("steps");
     config.stat_res = j.at("statistics_resolution");
-  config.popul_res = j.at("population_statistics_res");
+    config.popul_res = j.at("population_statistics_res");
     if (j.contains("graveyard_pruning_interval")) {
       config.graveyard_pruning_interval = j.at("graveyard_pruning_interval");
     } else {
@@ -107,13 +198,22 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     }
 
     for (const auto& mut : j.at("mutations")) {
-      config.mutations.push_back({mut.at("effect"),
-                                  mut.at("probability"),
-                                  mut.at("id"),
-                                  mut.at("is_driver")});
+      const auto mutation_id = mut.at("id").get<int>();
+      if (mutation_id < 0 ||
+          mutation_id > static_cast<int>(std::numeric_limits<uint8_t>::max())) {
+        throw std::runtime_error("Invalid simulation config: mutation id must fit in uint8_t");
+      }
+      config.mutations.push_back({mut.at("effect").get<float>(),
+                                  mut.at("probability").get<float>(),
+                                  static_cast<uint8_t>(mutation_id),
+                                  mut.at("is_driver").get<bool>()});
     }
+    validateConfig(config);
   } catch (const nlohmann::json::exception& e) {
     spdlog::error("Error parsing JSON: {}", e.what());
+    throw;
+  } catch (const std::runtime_error& e) {
+    spdlog::error("Error validating JSON config: {}", e.what());
     throw;
   }
   spdlog::info("Successfully parsed simulation configuration");
@@ -128,7 +228,6 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Initial population: {}", config.initial_population);
   spdlog::info("Environment capacity: {}", config.env_capacity);
   spdlog::info("Number of steps: {}", config.steps);
-  spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Statistics resolution: {}", config.stat_res);
   spdlog::info("Population statistics resolution: {}", config.popul_res);
   spdlog::info("Graveyard pruning interval: {}", config.graveyard_pruning_interval);

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <system_error>
 #include <unordered_set>
 
 #include "io/PopulationSnapshotIO.hpp"
@@ -60,10 +61,18 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
       break;
   }
 
+  std::error_code create_dir_error;
   std::filesystem::create_directories(
-      std::filesystem::path(this->config->output_path) / "statistics");
+      std::filesystem::path(this->config->output_path) / "statistics", create_dir_error);
+  if (create_dir_error) {
+    spdlog::warn("Failed to create statistics directory: {}", create_dir_error.message());
+  }
+  create_dir_error.clear();
   std::filesystem::create_directories(
-      std::filesystem::path(this->config->output_path) / "population_data");
+      std::filesystem::path(this->config->output_path) / "population_data", create_dir_error);
+  if (create_dir_error) {
+    spdlog::warn("Failed to create population_data directory: {}", create_dir_error.message());
+  }
 
   cells.rehash(this->config->initial_population * 2 + 1);
   for (uint32_t id = 0; id < this->config->initial_population; ++id) {
@@ -183,12 +192,14 @@ void SimulationEngine3DCapacity::step() {
   mechanicalRelaxationStep();
 
   const int current_tau = static_cast<int>(tau);
-  if (current_tau % config->stat_res == 0 && current_tau != last_stat_snapshot_tau) {
+  if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
+      current_tau != last_stat_snapshot_tau) {
     takeStatSnapshot();
     last_stat_snapshot_tau = current_tau;
   }
 
-  if (current_tau % config->popul_res == 0 && current_tau != last_population_snapshot_tau) {
+  if (config->popul_res > 0 && current_tau % config->popul_res == 0 &&
+      current_tau != last_population_snapshot_tau) {
     takePopulationSnapshot();
     last_population_snapshot_tau = current_tau;
   }
@@ -200,8 +211,10 @@ void SimulationEngine3DCapacity::step() {
     last_pruning_tau = current_tau;
   }
 
-  if (config->stat_res > 0 && current_tau % config->stat_res == 0) {
+  if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
+      current_tau != last_memory_log_tau) {
     logMemoryUsage();
+    last_memory_log_tau = current_tau;
   }
 }
 
@@ -500,6 +513,10 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
       continue;
     }
 
+    if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
+      spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
+      return;
+    }
     const uint32_t mutation_payload_offset = static_cast<uint32_t>(mutation_payload.size());
     for (const auto& [mutation_id, mutation_type] : accessor->second.mutations) {
       const auto type_it = available_mutation_types.find(mutation_type);
@@ -605,8 +622,10 @@ void SimulationEngine3DCapacity::ensurePositionCapacity(uint32_t id) {
 
 size_t SimulationEngine3DCapacity::getRSS() {
 #ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS counters{};
-  if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) {
+  PROCESS_MEMORY_COUNTERS_EX counters{};
+  if (GetProcessMemoryInfo(GetCurrentProcess(),
+                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                           sizeof(counters))) {
     return static_cast<size_t>(counters.WorkingSetSize / 1024);
   }
   return 0;
@@ -636,5 +655,4 @@ void SimulationEngine3DCapacity::logMemoryUsage() {
 
   memory_log_file << tau << "," << rss_kb << "," << cells_count << "," << graveyard_count << ","
                   << estimated_cells_kb << "," << estimated_graveyard_kb << "\n";
-  memory_log_file.flush();
 }

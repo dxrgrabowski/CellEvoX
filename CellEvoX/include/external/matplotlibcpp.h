@@ -399,7 +399,7 @@ PyObject* get_array(const std::vector<Numeric>& v) {
   if (type == NPY_NOTYPE) {
     size_t memsize = v.size() * sizeof(double);
     double* dp = static_cast<double*>(::malloc(memsize));
-    for (size_t i = 0; i < v.size(); ++i) dp[i] = v[i];
+    for (size_t i = 0; i < v.size(); ++i) dp[i] = static_cast<double>(v[i]);
     PyObject* varray = PyArray_SimpleNewFromData(1, &vsize, NPY_DOUBLE, dp);
     PyArray_UpdateFlags(reinterpret_cast<PyArrayObject*>(varray), NPY_ARRAY_OWNDATA);
     return varray;
@@ -1911,21 +1911,21 @@ bool named_loglog(const std::string& name,
 template <typename Numeric>
 bool plot(const std::vector<Numeric>& y, const std::string& format = "") {
   std::vector<Numeric> x(y.size());
-  for (size_t i = 0; i < x.size(); ++i) x.at(i) = i;
+  for (size_t i = 0; i < x.size(); ++i) x.at(i) = static_cast<Numeric>(i);
   return plot(x, y, format);
 }
 
 template <typename Numeric>
 bool plot(const std::vector<Numeric>& y, const std::map<std::string, std::string>& keywords) {
   std::vector<Numeric> x(y.size());
-  for (size_t i = 0; i < x.size(); ++i) x.at(i) = i;
+  for (size_t i = 0; i < x.size(); ++i) x.at(i) = static_cast<Numeric>(i);
   return plot(x, y, keywords);
 }
 
 template <typename Numeric>
 bool stem(const std::vector<Numeric>& y, const std::string& format = "") {
   std::vector<Numeric> x(y.size());
-  for (size_t i = 0; i < x.size(); ++i) x.at(i) = i;
+  for (size_t i = 0; i < x.size(); ++i) x.at(i) = static_cast<Numeric>(i);
   return stem(x, y, format);
 }
 

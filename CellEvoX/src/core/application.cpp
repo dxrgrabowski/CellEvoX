@@ -126,7 +126,7 @@ void Application::initialize() {
   spdlog::info("CellEvoX Application finished run successfully");
 }
 
-void Application::update() { const float deltaTime = calculateDeltaTime(); }
+void Application::update() { (void)calculateDeltaTime(); }
 
 float Application::calculateDeltaTime() {
   static auto lastFrame = std::chrono::high_resolution_clock::now();
