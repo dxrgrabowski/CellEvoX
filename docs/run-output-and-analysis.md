@@ -57,9 +57,15 @@ Current binary format:
 2D snapshots write invalid/NaN position fields and `spatial_dimensions == 0`.
 3D snapshots write valid positions and `spatial_dimensions == 3`.
 
-By default, snapshot payloads include driver mutations only. With
-`full_mutation_payload: true`, snapshots and CSV export include full mutation
-payloads.
+`full_mutation_payload` is enabled by default, so snapshots and CSV export
+include full mutation payloads. Set it to `false` to store driver mutations only
+when smaller snapshot files matter more than deep mutation inspection.
+
+Snapshot and statistics resolutions are measured in integer `T` units, not raw
+loop steps. `statistics_resolution` controls rows in
+`statistics/generational_statistics.csv` and `statistics/memory_log.csv`.
+`population_statistics_res` controls population snapshots in `population_data`,
+which feed Results, Muller data, clone/mutation inspection, and CSV exports.
 
 ## Statistics
 

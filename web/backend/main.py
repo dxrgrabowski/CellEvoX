@@ -62,7 +62,7 @@ async def get_config_schema():
             "statistics_resolution": {"type": "integer", "default": 10, "min": 1},
             "population_statistics_res": {"type": "integer", "default": 500, "min": 1},
             "graveyard_pruning_interval": {"type": "integer", "default": 500, "min": 0},
-            "full_mutation_payload": {"type": "boolean", "default": False},
+            "full_mutation_payload": {"type": "boolean", "default": True},
             "verbosity": {"type": "enum", "values": [0, 1, 2], "labels": ["Off", "Minimal", "Full"], "default": 2},
             "phylogeny_num_cells_sampling": {"type": "integer", "default": 100, "min": 10, "max": 10000},
         },
@@ -93,12 +93,79 @@ class SimulationStartRequest(BaseModel):
 class SimulationBatchStartRequest(BaseModel):
     configs: list[dict]
     continue_on_error: bool = False
+    max_parallel: int = 1
+    threads_per_run: Optional[int] = None
+    postprocess: str = "full"
+
+
+class RunAnalyzeRequest(BaseModel):
+    threads_per_run: Optional[int] = None
+
+
+def _numeric_config_field(config: dict, field: str, run_index: int) -> float:
+    value = config.get(field)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run #{run_index}: {field} must be numeric",
+        )
+    return float(value)
+
+
+def _integer_config_field(config: dict, field: str, run_index: int) -> int:
+    value = _numeric_config_field(config, field, run_index)
+    if not value.is_integer():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run #{run_index}: {field} must be an integer",
+        )
+    return int(value)
+
+
+def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:
+    normalized_postprocess = postprocess.lower().strip()
+    if normalized_postprocess not in {"full", "exports"}:
+        raise HTTPException(
+            status_code=400,
+            detail="postprocess must be either full or exports in the web API.",
+        )
+
+    for index, config in enumerate(configs, start=1):
+        steps = _integer_config_field(config, "steps", index)
+        tau_step = _numeric_config_field(config, "tau_step", index)
+        stat_res = _integer_config_field(config, "statistics_resolution", index)
+        population_res = _integer_config_field(config, "population_statistics_res", index)
+
+        if steps <= 0 or tau_step <= 0 or stat_res <= 0 or population_res <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Run #{index}: steps, tau_step, and output resolutions must be positive",
+            )
+
+        final_tau_floor = int((steps * tau_step) + 1e-9)
+        if final_tau_floor < stat_res:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{index}: final tau {steps * tau_step:.3g} is below "
+                    f"statistics_resolution {stat_res:g}; no statistics chart would be produced."
+                ),
+            )
+        if final_tau_floor < population_res:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{index}: final tau {steps * tau_step:.3g} is below "
+                    f"population_statistics_res {population_res:g}; no population/Müller data would be produced."
+                ),
+            )
 
 
 @app.post("/api/simulation/start")
 async def start_simulation(req: SimulationStartRequest):
     if runner.is_running():
         raise HTTPException(status_code=409, detail="Simulation already running")
+    _validate_web_batch_outputs([req.config], "full")
     try:
         run_id = await runner.start(req.config)
         return {"status": "started", "run_id": run_id}
@@ -110,9 +177,28 @@ async def start_simulation(req: SimulationStartRequest):
 async def start_simulation_batch(req: SimulationBatchStartRequest):
     if runner.is_running():
         raise HTTPException(status_code=409, detail="Simulation already running")
+    if not req.configs:
+        raise HTTPException(status_code=400, detail="At least one simulation config is required")
+    if req.max_parallel < 1:
+        raise HTTPException(status_code=400, detail="max_parallel must be at least 1")
+    if req.threads_per_run is not None and req.threads_per_run < 1:
+        raise HTTPException(status_code=400, detail="threads_per_run must be at least 1")
+    _validate_web_batch_outputs(req.configs, req.postprocess)
     try:
-        batch_id = await runner.start_many(req.configs, continue_on_error=req.continue_on_error)
-        return {"status": "started", "run_id": batch_id, "batch_id": batch_id, "count": len(req.configs)}
+        batch_id = await runner.start_many(
+            req.configs,
+            continue_on_error=req.continue_on_error,
+            max_parallel=req.max_parallel,
+            threads_per_run=req.threads_per_run,
+            postprocess=req.postprocess,
+        )
+        return {
+            "status": "started",
+            "run_id": batch_id,
+            "batch_id": batch_id,
+            "count": len(req.configs),
+            "parallelism": min(req.max_parallel, len(req.configs)),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -147,6 +233,24 @@ async def websocket_logs(websocket: WebSocket):
 async def list_results():
     """List all available simulation run directories"""
     return results_parser.list_runs()
+
+
+@app.post("/api/results/{run_id}/analyze")
+async def analyze_run(run_id: str, req: RunAnalyzeRequest):
+    if runner.is_running():
+        raise HTTPException(status_code=409, detail="Simulation or analysis already running")
+    if req.threads_per_run is not None and req.threads_per_run < 1:
+        raise HTTPException(status_code=400, detail="threads_per_run must be at least 1")
+
+    run_dir = results_parser.resolve_run_dir(run_id)
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    try:
+        analysis_id = await runner.analyze(run_dir, threads_per_run=req.threads_per_run)
+        return {"status": "started", "run_id": analysis_id, "analysis_id": analysis_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/results/{run_id}/config")

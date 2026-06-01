@@ -45,7 +45,8 @@ class Run {
       std::vector<StatSnapshot> &&generational_stat_report,
       std::vector<std::pair<int, CellMap>> generational_popul_report,
       size_t deaths,
-      double tau);
+      double tau,
+      bool run_postprocessing = true);
 
   Run(const Run &) = delete;
   Run &operator=(const Run &) = delete;

@@ -9,6 +9,7 @@
 
 #include <Eigen/Dense>
 #include <chrono>
+#include <cmath>
 #include <execution>
 #include <filesystem>
 #include <iomanip>
@@ -32,6 +33,16 @@
 #include "systems/CommonPopulationStep.hpp"
 #include "utils/SimulationConfig.hpp"
 #include "utils/PhaseProfiler.hpp"
+
+namespace {
+
+constexpr double kTauSnapshotEpsilon = 1e-9;
+
+int tauSnapshotIndex(double tau_value) {
+  return static_cast<int>(std::floor(tau_value + kTauSnapshotEpsilon));
+}
+
+}  // namespace
 
 using namespace utils;
 
@@ -118,7 +129,7 @@ void SimulationEngine::step() {
   }
 }
 
-ecs::Run SimulationEngine::run(uint32_t steps) {
+ecs::Run SimulationEngine::run(uint32_t steps, bool run_postprocessing) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -183,7 +194,8 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau);
+                  tau,
+                  run_postprocessing);
 }
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
@@ -201,7 +213,7 @@ void SimulationEngine::stochasticStep() {
                                                tau,
                                                rng);
 
-  int current_tau = static_cast<int>(tau);
+  const int current_tau = tauSnapshotIndex(tau);
   if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
       current_tau != last_stat_snapshot_tau) {
     CELLEVOX_PROFILE_PHASE("stat_snapshot");
@@ -216,6 +228,7 @@ void SimulationEngine::stochasticStep() {
   }
 
   if (config->graveyard_pruning_interval > 0 && 
+      current_tau > 0 &&
       current_tau % config->graveyard_pruning_interval == 0 && 
       current_tau != last_pruning_tau) {
       CELLEVOX_PROFILE_PHASE("graveyard_pruning");
@@ -373,13 +386,13 @@ void SimulationEngine::takePopulationSnapshot() {
   }
 
   const auto snapshot_path =
-      CellEvoX::io::populationSnapshotPath(config->output_path, static_cast<int>(tau));
+      CellEvoX::io::populationSnapshotPath(config->output_path, tauSnapshotIndex(tau));
   if (!CellEvoX::io::writePopulationSnapshot(
           snapshot_path, tau, 0, snapshot_records, mutation_payload, payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", snapshot_path);
   }
 
-  generational_popul_report.push_back({static_cast<int>(tau), std::move(cells_copy)});
+  generational_popul_report.push_back({tauSnapshotIndex(tau), std::move(cells_copy)});
 }
 
 void SimulationEngine::pruneGraveyard() {

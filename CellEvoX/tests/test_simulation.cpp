@@ -67,7 +67,7 @@ TEST_CASE("SimulationConfig parses correctly from default JSON", "[SimulationCon
     REQUIRE(config.stat_res == 1);
     REQUIRE(config.popul_res == 5);
     REQUIRE(config.output_path == "./output/");
-    REQUIRE_FALSE(config.full_mutation_payload);
+    REQUIRE(config.full_mutation_payload);
     REQUIRE(config.mutations.size() == 2);
     REQUIRE(config.mutations[1].is_driver == true);
 }
@@ -431,6 +431,31 @@ TEST_CASE("SimulationEngine Core Processing", "[SimulationEngine]") {
     }));
 }
 
+TEST_CASE("SimulationEngine writes final snapshots near integer tau boundaries", "[SimulationEngine][PopulationSnapshotIO][Correctness]") {
+    const auto output_path = testTempPath("test_sim_fractional_final_snapshot");
+    std::filesystem::remove_all(output_path);
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 0.1;
+    config->initial_population = 8;
+    config->env_capacity = 100000;
+    config->steps = 10;
+    config->stat_res = 1;
+    config->popul_res = 1;
+    config->output_path = output_path.string();
+    config->verbosity = 0;
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(config->steps, false);
+
+    REQUIRE(runData.generational_stat_report.size() == 1);
+    REQUIRE(runData.generational_popul_report.size() == 1);
+    REQUIRE(std::filesystem::exists(output_path / "population_data" / "population_generation_1.bin"));
+
+    std::filesystem::remove_all(output_path);
+}
+
 TEST_CASE("Simulation Determinism", "[Determinism]") {
     auto config1 = std::make_shared<SimulationConfig>();
     config1->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
@@ -697,6 +722,7 @@ TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D"
     config->popul_res = 1;
     config->output_path = testTempString("test_sim_2d_driver_snapshot");
     config->verbosity = 0;
+    config->full_mutation_payload = false;
     config->mutations.push_back({0.1f, 1.0f, 1, true});
     config->mutations.push_back({-0.05f, 0.0f, 2, false});
 
@@ -990,6 +1016,7 @@ TEST_CASE("SimulationEngine3DCapacity writes spatial driver-mutation snapshots",
     config->mech_substeps = 1;
     config->epsilon = 0.1f;
     config->verbosity = 0;
+    config->full_mutation_payload = false;
     config->mutations.push_back({0.1f, 1.0f, 1, true});
 
     std::filesystem::remove_all(config->output_path);

@@ -32,7 +32,7 @@ struct SimulationConfig {
   size_t max_population_cutoff = 0;  // 0 = disabled; stop when N >= this value
   std::string output_path;
   std::vector<MutationType> mutations;
-  bool full_mutation_payload = false;
+  bool full_mutation_payload = true;
   int verbosity = 2; // 0: off, 1: minimal, 2: full
   uint32_t phylogeny_num_cells_sampling = 100;
   float spatial_domain_size = 200.0f;
@@ -65,7 +65,7 @@ class SimulationEngine {
   static void signalHandler(int signum);
 
   void step();
-  ecs::Run run(uint32_t steps);
+  ecs::Run run(uint32_t steps, bool run_postprocessing = true);
   void stop();
 
  private:

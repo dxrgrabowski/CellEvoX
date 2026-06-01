@@ -75,8 +75,17 @@ async def run(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).expanduser().resolve()
     configs = load_configs(args.configs, args.manifest)
     runner = SimulationRunner(repo_root=repo_root)
-    run_id = await runner.start_many(configs, continue_on_error=args.continue_on_error)
-    print(f"[runner] Started {run_id} with {len(configs)} config(s)")
+    run_id = await runner.start_many(
+        configs,
+        continue_on_error=args.continue_on_error,
+        max_parallel=args.parallel,
+        threads_per_run=args.threads_per_run,
+        postprocess=args.postprocess,
+    )
+    print(
+        f"[runner] Started {run_id} with {len(configs)} config(s), "
+        f"parallelism={min(args.parallel, len(configs))}, postprocess={args.postprocess}"
+    )
 
     async for line in runner.log_stream():
         print(line, flush=True)
@@ -91,11 +100,36 @@ def main() -> int:
     parser.add_argument("--manifest", help="Batch manifest JSON with a 'runs' array")
     parser.add_argument("--continue-on-error", action="store_true", help="Continue after a failed run")
     parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Maximum number of simulations to run concurrently",
+    )
+    parser.add_argument(
+        "--threads-per-run",
+        type=int,
+        default=None,
+        help="Cap TBB threads inside each simulation process",
+    )
+    parser.add_argument(
+        "--postprocess",
+        choices=["full", "exports", "none"],
+        default="full",
+        help="Post-run work per simulation: full plots, exports only, or none",
+    )
+    parser.add_argument(
         "--repo-root",
         default=str(Path(__file__).resolve().parents[2]),
         help="Repository root containing the CellEvoX build and output directories",
     )
     args = parser.parse_args()
+
+    if args.parallel < 1:
+        print("[runner error] --parallel must be at least 1", file=sys.stderr)
+        return 1
+    if args.threads_per_run is not None and args.threads_per_run < 1:
+        print("[runner error] --threads-per-run must be at least 1", file=sys.stderr)
+        return 1
 
     try:
         return asyncio.run(run(args))

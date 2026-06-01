@@ -76,6 +76,9 @@ class ResultsParser:
             return candidate
         return None
 
+    def resolve_run_dir(self, run_id: str) -> Optional[Path]:
+        return self._id_to_dir(run_id)
+
     # ── Data Accessors ─────────────────────────────────────────────────────────
 
     def get_config(self, run_id: str) -> Optional[dict]:

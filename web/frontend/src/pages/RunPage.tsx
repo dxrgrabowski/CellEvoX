@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FileUp, Loader, Plus, Play, Square, Terminal, Trash2 } from 'lucide-react';
+import { FileUp, Loader, Plus, Play, SlidersHorizontal, Square, Terminal, Trash2 } from 'lucide-react';
 import { useBatchQueueStore, useConfigStore, useSimStore } from '../stores';
 import {
   startSimulationBatch,
@@ -47,6 +47,40 @@ function totalGenerations(items: Record<string, unknown>[]) {
   }, 0);
 }
 
+type PostprocessMode = 'exports' | 'full';
+
+function numericConfigValue(config: Record<string, unknown>, field: string): number | null {
+  const value = config[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function validateResultArtifacts(items: Record<string, unknown>[]): string | null {
+  for (let i = 0; i < items.length; i += 1) {
+    const config = items[i];
+    const steps = numericConfigValue(config, 'steps');
+    const tauStep = numericConfigValue(config, 'tau_step');
+    const statRes = numericConfigValue(config, 'statistics_resolution');
+    const populationRes = numericConfigValue(config, 'population_statistics_res');
+
+    if (steps == null || tauStep == null || statRes == null || populationRes == null) {
+      return `Run #${i + 1}: missing numeric output settings`;
+    }
+    if (steps <= 0 || tauStep <= 0 || statRes <= 0 || populationRes <= 0) {
+      return `Run #${i + 1}: output settings must be positive`;
+    }
+
+    const finalTau = steps * tauStep;
+    const finalTauFloor = Math.floor(finalTau + 1e-9);
+    if (finalTauFloor < statRes) {
+      return `Run #${i + 1}: final T ${Number(finalTau.toFixed(3))} is below statistics resolution ${statRes}`;
+    }
+    if (finalTauFloor < populationRes) {
+      return `Run #${i + 1}: final T ${Number(finalTau.toFixed(3))} is below population snapshot resolution ${populationRes}`;
+    }
+  }
+  return null;
+}
+
 export default function RunPage() {
   const config = useConfigStore(s => s.config);
   const batchItems = useBatchQueueStore(s => s.items);
@@ -60,6 +94,9 @@ export default function RunPage() {
   const autoRunHandledRef = useRef(false);
   const batchFileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [postprocessMode, setPostprocessMode] = useState<PostprocessMode>('exports');
+  const [maxParallel, setMaxParallel] = useState(1);
+  const [threadsPerRun, setThreadsPerRun] = useState(1);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -109,16 +146,28 @@ export default function RunPage() {
 
   const handleStartBatch = useCallback(async () => {
     if (batchItems.length === 0) return;
+    const launchConfigs = batchItems.map(item => item.config);
+    const artifactError = validateResultArtifacts(launchConfigs);
+    if (artifactError) {
+      setError(artifactError);
+      return;
+    }
+
     setError(null);
     clearLogs();
     try {
-      const res = await startSimulationBatch(batchItems.map(item => item.config));
+      const res = await startSimulationBatch(launchConfigs, {
+        maxParallel,
+        threadsPerRun,
+        postprocess: postprocessMode,
+      });
       setStatus({
         status: 'running',
         run_id: res.data.batch_id,
         current_run_id: null,
         run_index: 0,
         run_total: res.data.count,
+        parallelism: res.data.parallelism,
         elapsed_seconds: 0,
       });
 
@@ -135,7 +184,7 @@ export default function RunPage() {
       setError(getErrorMessage(e));
       setStatus({ status: 'error', run_id: null, elapsed_seconds: null });
     }
-  }, [appendLog, batchItems, clearLogs, setStatus]);
+  }, [appendLog, batchItems, clearLogs, maxParallel, postprocessMode, setStatus, threadsPerRun]);
 
   useEffect(() => {
     const state = location.state as { autoRunQueue?: boolean } | null;
@@ -198,6 +247,61 @@ export default function RunPage() {
 
       {/* Queue launch */}
       <div className={`card fade-up-2 ${isRunning ? 'pulse-border' : ''}`} style={{ marginBottom: 24 }}>
+        <div className="run-options-grid" style={{ marginBottom: 18 }}>
+          <div className="field">
+            <label className="field-label">Analysis Mode</label>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={`segmented-control__item ${postprocessMode === 'exports' ? 'is-active' : ''}`}
+                onClick={() => setPostprocessMode('exports')}
+                disabled={isRunning}
+              >
+                Exports only
+              </button>
+              <button
+                type="button"
+                className={`segmented-control__item ${postprocessMode === 'full' ? 'is-active' : ''}`}
+                onClick={() => setPostprocessMode('full')}
+                disabled={isRunning}
+              >
+                Full
+              </button>
+            </div>
+          </div>
+
+          <label className="field">
+            <span className="field-label">Parallel Runs</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={72}
+              value={maxParallel}
+              onChange={(event) => setMaxParallel(Math.max(1, Number(event.target.value) || 1))}
+              disabled={isRunning}
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">Threads / Run</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={64}
+              value={threadsPerRun}
+              onChange={(event) => setThreadsPerRun(Math.max(1, Number(event.target.value) || 1))}
+              disabled={isRunning}
+            />
+          </label>
+
+          <div className="run-options-summary">
+            <SlidersHorizontal size={16} />
+            <span>{postprocessMode === 'exports' ? 'Exports' : 'Full'} · {maxParallel} x {threadsPerRun}</span>
+          </div>
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           {isRunning ? (
             <button id="btn-stop-sim" className="btn btn--danger btn--lg" onClick={handleStop}>

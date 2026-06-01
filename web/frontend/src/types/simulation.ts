@@ -56,7 +56,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   statistics_resolution: 10,
   population_statistics_res: 500,
   graveyard_pruning_interval: 500,
-  full_mutation_payload: false,
+  full_mutation_payload: true,
   verbosity: 2,
   phylogeny_num_cells_sampling: 100,
   spatial_domain_size: 200.0,
@@ -79,7 +79,11 @@ export interface SimulationStatus {
   run_id: string | null;
   current_run_id?: string | null;
   run_index?: number;
+  run_completed?: number;
+  run_failures?: number;
   run_total?: number;
+  parallelism?: number;
+  active_runs?: number;
   elapsed_seconds: number | null;
 }
 
