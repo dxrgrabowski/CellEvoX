@@ -278,18 +278,18 @@ RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
                              std::shared_ptr<ecs::Run> run,
                              const std::string& config_file_path,
                              double generation_step)
-    : config(config),
+    : generation_step(generation_step),
+      config(config),
       run(run),
-      config_file_path(config_file_path),
-      generation_step(generation_step) {
+      config_file_path(config_file_path) {
   prepareOutputDir();
 }
 
 RunDataEngine::RunDataEngine(const std::string& analyze_directory)
-    : config(nullptr),
+    : generation_step(0.0),
+      config(nullptr),
       run(nullptr),
-      config_file_path(""),
-      generation_step(0.0) {
+      config_file_path("") {
   output_dir = analyze_directory;
   if (!output_dir.empty() && output_dir.back() != '/') {
     output_dir += '/';

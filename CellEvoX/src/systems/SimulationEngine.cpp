@@ -43,7 +43,11 @@ void SimulationEngine::signalHandler(int signum) {
 }
 
 SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
-    : tau(0.0), config(config), actual_population(config->initial_population), total_deaths(0), rng(config->seed) {
+    : actual_population(config->initial_population),
+      total_deaths(0),
+      tau(0.0),
+      config(config),
+      rng(config->seed) {
   
   // Set global spdlog level based on config verbosity
   // 0 = off, 1 = warnings only, 2 = full info/debug
@@ -105,6 +109,8 @@ void SimulationEngine::step() {
   switch (config->sim_type) {
     case SimulationType::STOCHASTIC_TAU_LEAP:
       stochasticStep();
+      break;
+    default:
       break;
       // case SimulationType::DETERMINISTIC_RK4:
       //     deterministicStep();
