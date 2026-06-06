@@ -6,6 +6,11 @@ endif()
 
 project(CellEvoX VERSION 0.1.0 LANGUAGES CXX)
 
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -92,6 +97,8 @@ set(HEADERS
     include/ecs/Run.hpp
     include/spatial/SpatialHashGrid.hpp
     include/utils/MathUtils.hpp
+    include/utils/DeterministicRng.hpp
+    include/utils/ParallelAlgorithms.hpp
     include/utils/PhaseProfiler.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp

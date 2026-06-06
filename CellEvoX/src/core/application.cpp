@@ -172,7 +172,11 @@ void Application::initialize() {
       sim_engine = std::make_unique<SimulationEngine>(sim_config);
       std::signal(SIGINT, SimulationEngine::signalHandler);
       std::signal(SIGTERM, SimulationEngine::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"), run_postprocessing)));
+      if (options.postprocess_mode == PostprocessMode::None) {
+        sim_engine->runSimulationOnly(config.at("steps"));
+      } else {
+        runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"), run_postprocessing)));
+      }
     }
     
     if (options.postprocess_mode == PostprocessMode::None) {
