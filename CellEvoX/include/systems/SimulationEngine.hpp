@@ -67,8 +67,7 @@ class SimulationEngine {
   static void signalHandler(int signum);
 
   void step();
-  ecs::Run run(uint32_t steps, bool run_postprocessing = true);
-  void runSimulationOnly(uint32_t steps);
+  ecs::Run run(uint32_t steps);
   void stop();
 
  private:

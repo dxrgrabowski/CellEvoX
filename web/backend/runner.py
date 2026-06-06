@@ -15,7 +15,7 @@ from typing import AsyncIterator, Optional, Sequence
 class SimulationRunner:
     _stdout_chunk_size = 8192
     _max_buffered_log_bytes = 32768
-    _valid_postprocess_modes = {"full", "exports", "csv", "none", "off"}
+    _valid_postprocess_modes = {"full", "exports", "csv"}
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -199,11 +199,9 @@ class SimulationRunner:
     def _normalize_postprocess(self, postprocess: str) -> str:
         normalized = postprocess.lower().strip()
         if normalized not in self._valid_postprocess_modes:
-            raise ValueError("postprocess must be one of: full, exports, csv, none, off")
+            raise ValueError("postprocess must be one of: full, exports, csv")
         if normalized == "csv":
             return "exports"
-        if normalized == "off":
-            return "none"
         return normalized
 
     def _resolve_output_base(self, output_path: object) -> Path:

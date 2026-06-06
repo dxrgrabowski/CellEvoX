@@ -15,8 +15,7 @@ void printUsage(std::ostream& out) {
       << "  --config <path>            path to config file\n"
       << "  --analyze <path>           path to existing output directory to analyze\n"
       << "  --threads <count>          cap TBB worker parallelism for this process\n"
-      << "  --postprocess <mode>       post-run work: full, exports, none\n"
-      << "  --simulate-only            alias for --postprocess none\n";
+      << "  --postprocess <mode>       post-run work: full, exports\n";
 }
 
 bool readOptionValue(int& index, int argc, char* argv[], const std::string& option, std::string& value) {
@@ -49,10 +48,6 @@ bool parsePostprocessMode(const std::string& raw, CellEvoX::core::PostprocessMod
   }
   if (raw == "exports" || raw == "csv") {
     mode = CellEvoX::core::PostprocessMode::Exports;
-    return true;
-  }
-  if (raw == "none" || raw == "off") {
-    mode = CellEvoX::core::PostprocessMode::None;
     return true;
   }
   return false;
@@ -127,11 +122,6 @@ int main(int argc, char *argv[]) {
       }
       continue;
     }
-    if (arg == "--simulate-only") {
-      options.postprocess_mode = CellEvoX::core::PostprocessMode::None;
-      continue;
-    }
-
     std::cerr << "Unknown option: " << arg << std::endl;
     printUsage(std::cerr);
     return 1;

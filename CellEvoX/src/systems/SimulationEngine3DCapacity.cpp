@@ -147,7 +147,7 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
                this->config->tau_step);
 }
 
-ecs::Run SimulationEngine3DCapacity::run(uint32_t steps, bool run_postprocessing) {
+ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -210,8 +210,7 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps, bool run_postprocessing
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau,
-                  run_postprocessing);
+                  tau);
 }
 
 void SimulationEngine3DCapacity::step() {
