@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <map>
+#include <numeric>
 #include <random>
 #include <cmath>
 #include <cstring>
@@ -177,6 +178,39 @@ TEST_CASE("SpatialHashGrid returns neighbors from nearby voxels", "[SpatialHashG
 
     std::sort(neighbors.begin(), neighbors.end());
     REQUIRE(neighbors == std::vector<uint32_t>{10, 11});
+}
+
+TEST_CASE("SpatialHashGrid handles large rebuilds through the parallel sort path", "[SpatialHashGrid][Parallel]") {
+    constexpr uint32_t cell_count = 4096;
+    SpatialHashGrid grid(2.0f, 64.0f);
+    std::vector<uint32_t> ids;
+    std::vector<float> px;
+    std::vector<float> py;
+    std::vector<float> pz;
+    ids.reserve(cell_count);
+    px.reserve(cell_count);
+    py.reserve(cell_count);
+    pz.reserve(cell_count);
+
+    for (uint32_t i = 0; i < cell_count; ++i) {
+        const uint32_t id = cell_count - i;
+        ids.push_back(id);
+        px.push_back(static_cast<float>((i * 17) % 63));
+        py.push_back(static_cast<float>((i * 31) % 63));
+        pz.push_back(static_cast<float>((i * 47) % 63));
+    }
+
+    grid.rebuild(ids, px, py, pz);
+
+    std::vector<uint32_t> neighbors;
+    grid.queryRadius(32.0f, 32.0f, 32.0f, 128.0f, [&](uint32_t id) {
+        neighbors.push_back(id);
+    });
+
+    std::sort(neighbors.begin(), neighbors.end());
+    std::vector<uint32_t> expected(cell_count);
+    std::iota(expected.begin(), expected.end(), 1u);
+    REQUIRE(neighbors == expected);
 }
 
 TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
@@ -1094,6 +1128,49 @@ TEST_CASE("SimulationEngine3DCapacity writes full mutation payload snapshots whe
     REQUIRE(std::all_of(mutations.begin(), mutations.end(), [](const auto& mutation) {
         return mutation.mutation_type == 2;
     }));
+}
+
+TEST_CASE("SimulationEngine3DCapacity mechanics are deterministic across worker counts", "[SimulationEngine3DCapacity][Determinism][Parallel]") {
+    auto make_config = [](const std::string& output_path) {
+        auto config = std::make_shared<SimulationConfig>();
+        config->sim_type = SimulationType::SPATIAL_3D_CAPACITY;
+        config->tau_step = 1.0;
+        config->seed = 2026;
+        config->initial_population = 64;
+        config->env_capacity = 0;
+        config->steps = 1;
+        config->stat_res = 1;
+        config->popul_res = 1;
+        config->output_path = output_path;
+        config->spatial_domain_size = 8.0f;
+        config->spring_constant = 0.35f;
+        config->mech_dt = 0.08f;
+        config->mech_substeps = 3;
+        config->epsilon = 0.1f;
+        config->verbosity = 0;
+        return config;
+    };
+
+    auto run_snapshot = [&](int parallelism, const std::string& output_name) {
+        auto config = make_config(testTempString(output_name));
+        std::filesystem::remove_all(config->output_path);
+        std::filesystem::create_directories(config->output_path);
+
+        {
+            tbb::global_control control(tbb::global_control::max_allowed_parallelism, parallelism);
+            SimulationEngine3DCapacity engine(config);
+            auto runData = engine.run(config->steps, false);
+            REQUIRE(runData.cells.size() == config->initial_population);
+        }
+
+        return read_binary_file(
+            std::filesystem::path(config->output_path) / "population_data" / "population_generation_1.bin");
+    };
+
+    const auto single_thread_snapshot = run_snapshot(1, "test_sim_3d_capacity_parallel_det_1");
+    const auto five_thread_snapshot = run_snapshot(5, "test_sim_3d_capacity_parallel_det_5");
+
+    REQUIRE(single_thread_snapshot == five_thread_snapshot);
 }
 
 TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEngine3D]") {

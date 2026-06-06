@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
+#include <tbb/parallel_scan.h>
 
 #include <algorithm>
 #include <chrono>
@@ -17,6 +18,8 @@
 
 #include "io/PopulationSnapshotIO.hpp"
 #include "systems/CommonPopulationStep.hpp"
+#include "utils/ParallelAlgorithms.hpp"
+#include "utils/PhaseProfiler.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -36,6 +39,35 @@ int tauSnapshotIndex(double tau_value) {
 }
 
 constexpr uint32_t kInvalidSpatialIndex = std::numeric_limits<uint32_t>::max();
+
+struct SurvivorOffsetScan {
+  const std::vector<uint8_t>& dead_flags;
+  std::vector<size_t>& offsets;
+  size_t sum{0};
+
+  SurvivorOffsetScan(const std::vector<uint8_t>& dead_flags, std::vector<size_t>& offsets)
+      : dead_flags(dead_flags), offsets(offsets) {}
+
+  SurvivorOffsetScan(SurvivorOffsetScan& other, tbb::split)
+      : dead_flags(other.dead_flags), offsets(other.offsets) {}
+
+  template <typename Tag>
+  void operator()(const tbb::blocked_range<size_t>& range, Tag) {
+    size_t running = sum;
+    for (size_t i = range.begin(); i != range.end(); ++i) {
+      if (dead_flags[i] == 0) {
+        if (Tag::is_final_scan()) {
+          offsets[i] = running;
+        }
+        ++running;
+      }
+    }
+    sum = running;
+  }
+
+  void reverse_join(SurvivorOffsetScan& rhs) { sum += rhs.sum; }
+  void assign(SurvivorOffsetScan& rhs) { sum = rhs.sum; }
+};
 
 }  // namespace
 
@@ -183,30 +215,47 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps, bool run_postprocessing
 }
 
 void SimulationEngine3DCapacity::step() {
+  CELLEVOX_PROFILE_PHASE("3d_capacity_step_total");
   tau += config->tau_step;
-  const auto step_result = CellEvoX::systems::applyCommonPopulationStep(cells,
-                                                                        cells_graveyard,
-                                                                        *config,
-                                                                        available_mutation_types,
-                                                                        total_mutation_probability,
-                                                                        actual_population,
-                                                                        total_deaths,
-                                                                        tau,
-                                                                        event_rng_);
 
-  assignBirthPositions(step_result.births);
-  rebuildSpatialState();
-  mechanicalRelaxationStep();
+  CellEvoX::systems::CommonPopulationStepResult step_result;
+  {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_common_population_step");
+    step_result = CellEvoX::systems::applyCommonPopulationStep(cells,
+                                                               cells_graveyard,
+                                                               *config,
+                                                               available_mutation_types,
+                                                               total_mutation_probability,
+                                                               actual_population,
+                                                               total_deaths,
+                                                               tau,
+                                                               event_rng_);
+  }
+
+  {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_assign_birth_positions");
+    assignBirthPositions(step_result.births);
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_update_spatial_state");
+    updateSpatialState(step_result);
+  }
+  {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_mechanical_relaxation");
+    mechanicalRelaxationStep();
+  }
 
   const int current_tau = tauSnapshotIndex(tau);
   if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
       current_tau != last_stat_snapshot_tau) {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_stat_snapshot");
     takeStatSnapshot();
     last_stat_snapshot_tau = current_tau;
   }
 
   if (config->popul_res > 0 && current_tau % config->popul_res == 0 &&
       current_tau != last_population_snapshot_tau) {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_population_snapshot");
     takePopulationSnapshot();
     last_population_snapshot_tau = current_tau;
   }
@@ -215,12 +264,14 @@ void SimulationEngine3DCapacity::step() {
       current_tau > 0 &&
       current_tau % config->graveyard_pruning_interval == 0 &&
       current_tau != last_pruning_tau) {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_graveyard_pruning");
     pruneGraveyard();
     last_pruning_tau = current_tau;
   }
 
   if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
       current_tau != last_memory_log_tau) {
+    CELLEVOX_PROFILE_PHASE("3d_capacity_memory_log");
     logMemoryUsage();
     last_memory_log_tau = current_tau;
   }
@@ -261,38 +312,154 @@ void SimulationEngine3DCapacity::initializePopulationPositions() {
 }
 
 void SimulationEngine3DCapacity::rebuildSpatialState() {
-  for (uint32_t id : spatial_state_.cell_ids) {
-    if (id < id_to_spatial_index_.size()) {
-      id_to_spatial_index_[id] = kInvalidSpatialIndex;
-    }
-  }
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, spatial_state_.cell_ids.size()),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          const uint32_t id = spatial_state_.cell_ids[i];
+          if (id < id_to_spatial_index_.size()) {
+            id_to_spatial_index_[id] = kInvalidSpatialIndex;
+          }
+        }
+      });
 
   spatial_state_.cell_ids.clear();
-  spatial_state_.pos_x.clear();
-  spatial_state_.pos_y.clear();
-  spatial_state_.pos_z.clear();
-
   spatial_state_.cell_ids.reserve(cells.size());
   for (const auto& cell_entry : cells) {
     spatial_state_.cell_ids.push_back(cell_entry.first);
   }
-  std::sort(spatial_state_.cell_ids.begin(), spatial_state_.cell_ids.end());
+  CellEvoX::parallel_algorithms::sortMaybeParallel(
+      spatial_state_.cell_ids.begin(), spatial_state_.cell_ids.end());
 
-  spatial_state_.pos_x.reserve(spatial_state_.cell_ids.size());
-  spatial_state_.pos_y.reserve(spatial_state_.cell_ids.size());
-  spatial_state_.pos_z.reserve(spatial_state_.cell_ids.size());
+  const size_t count = spatial_state_.cell_ids.size();
+  spatial_state_.pos_x.resize(count);
+  spatial_state_.pos_y.resize(count);
+  spatial_state_.pos_z.resize(count);
 
-  for (size_t i = 0; i < spatial_state_.cell_ids.size(); ++i) {
-    const uint32_t id = spatial_state_.cell_ids[i];
-    ensurePositionCapacity(id);
-    spatial_state_.pos_x.push_back(id_pos_x_[id]);
-    spatial_state_.pos_y.push_back(id_pos_y_[id]);
-    spatial_state_.pos_z.push_back(id_pos_z_[id]);
-    id_to_spatial_index_[id] = static_cast<uint32_t>(i);
+  if (count > 0) {
+    ensurePositionCapacity(spatial_state_.cell_ids.back());
   }
+
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, count),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          const uint32_t id = spatial_state_.cell_ids[i];
+          spatial_state_.pos_x[i] = id_pos_x_[id];
+          spatial_state_.pos_y[i] = id_pos_y_[id];
+          spatial_state_.pos_z[i] = id_pos_z_[id];
+          id_to_spatial_index_[id] = static_cast<uint32_t>(i);
+        }
+      });
 
   spatial_grid_.rebuild(
       spatial_state_.cell_ids, spatial_state_.pos_x, spatial_state_.pos_y, spatial_state_.pos_z);
+}
+
+void SimulationEngine3DCapacity::updateSpatialState(
+    const CellEvoX::systems::CommonPopulationStepResult& step_result) {
+  const auto& births = step_result.births;
+  const auto& deaths = step_result.deaths;
+  if (births.empty() && deaths.empty()) {
+    return;
+  }
+
+  if (deaths.empty()) {
+    const size_t old_count = spatial_state_.cell_ids.size();
+    const size_t new_count = old_count + births.size();
+    spatial_state_.cell_ids.resize(new_count);
+    spatial_state_.pos_x.resize(new_count);
+    spatial_state_.pos_y.resize(new_count);
+    spatial_state_.pos_z.resize(new_count);
+
+    if (!births.empty()) {
+      ensurePositionCapacity(births.back().id);
+    }
+
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, births.size()),
+        [&](const tbb::blocked_range<size_t>& range) {
+          for (size_t i = range.begin(); i != range.end(); ++i) {
+            const uint32_t id = births[i].id;
+            const size_t target = old_count + i;
+            spatial_state_.cell_ids[target] = id;
+            spatial_state_.pos_x[target] = id_pos_x_[id];
+            spatial_state_.pos_y[target] = id_pos_y_[id];
+            spatial_state_.pos_z[target] = id_pos_z_[id];
+            id_to_spatial_index_[id] = static_cast<uint32_t>(target);
+          }
+        });
+    return;
+  }
+
+  const size_t old_count = spatial_state_.cell_ids.size();
+  dead_spatial_flags_.assign(old_count, uint8_t{0});
+  survivor_offsets_.resize(old_count);
+
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, deaths.size()),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          const uint32_t id = deaths[i].id;
+          if (id >= id_to_spatial_index_.size()) {
+            continue;
+          }
+          const uint32_t spatial_index = id_to_spatial_index_[id];
+          if (spatial_index != kInvalidSpatialIndex && spatial_index < old_count) {
+            dead_spatial_flags_[spatial_index] = 1;
+          }
+          id_to_spatial_index_[id] = kInvalidSpatialIndex;
+        }
+      });
+
+  SurvivorOffsetScan offset_scan(dead_spatial_flags_, survivor_offsets_);
+  tbb::parallel_scan(tbb::blocked_range<size_t>(0, old_count), offset_scan);
+  const size_t survivor_count = offset_scan.sum;
+  const size_t new_count = survivor_count + births.size();
+
+  next_cell_ids_.resize(new_count);
+  next_pos_x_.resize(new_count);
+  next_pos_y_.resize(new_count);
+  next_pos_z_.resize(new_count);
+
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, old_count),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          if (dead_spatial_flags_[i] != 0) {
+            continue;
+          }
+          const size_t target = survivor_offsets_[i];
+          const uint32_t id = spatial_state_.cell_ids[i];
+          next_cell_ids_[target] = id;
+          next_pos_x_[target] = spatial_state_.pos_x[i];
+          next_pos_y_[target] = spatial_state_.pos_y[i];
+          next_pos_z_[target] = spatial_state_.pos_z[i];
+          id_to_spatial_index_[id] = static_cast<uint32_t>(target);
+        }
+      });
+
+  if (!births.empty()) {
+    ensurePositionCapacity(births.back().id);
+  }
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, births.size()),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          const uint32_t id = births[i].id;
+          const size_t target = survivor_count + i;
+          next_cell_ids_[target] = id;
+          next_pos_x_[target] = id_pos_x_[id];
+          next_pos_y_[target] = id_pos_y_[id];
+          next_pos_z_[target] = id_pos_z_[id];
+          id_to_spatial_index_[id] = static_cast<uint32_t>(target);
+        }
+      });
+
+  spatial_state_.cell_ids.swap(next_cell_ids_);
+  spatial_state_.pos_x.swap(next_pos_x_);
+  spatial_state_.pos_y.swap(next_pos_y_);
+  spatial_state_.pos_z.swap(next_pos_z_);
 }
 
 void SimulationEngine3DCapacity::assignBirthPositions(
@@ -336,23 +503,32 @@ void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
   const float interaction_radius = 2.0f * CELL_RADIUS;
   const float interaction_radius_sq = interaction_radius * interaction_radius;
 
-  std::vector<float> read_x = spatial_state_.pos_x;
-  std::vector<float> read_y = spatial_state_.pos_y;
-  std::vector<float> read_z = spatial_state_.pos_z;
-  std::vector<float> write_x = read_x;
-  std::vector<float> write_y = read_y;
-  std::vector<float> write_z = read_z;
+  mech_read_x_.resize(count);
+  mech_read_y_.resize(count);
+  mech_read_z_.resize(count);
+  mech_write_x_.resize(count);
+  mech_write_y_.resize(count);
+  mech_write_z_.resize(count);
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, count),
+      [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t i = range.begin(); i != range.end(); ++i) {
+          mech_read_x_[i] = spatial_state_.pos_x[i];
+          mech_read_y_[i] = spatial_state_.pos_y[i];
+          mech_read_z_[i] = spatial_state_.pos_z[i];
+        }
+      });
 
   for (int substep = 0; substep < config->mech_substeps; ++substep) {
-    spatial_grid_.rebuild(spatial_state_.cell_ids, read_x, read_y, read_z);
+    spatial_grid_.rebuild(spatial_state_.cell_ids, mech_read_x_, mech_read_y_, mech_read_z_);
 
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, count),
         [&](const tbb::blocked_range<size_t>& range) {
           for (size_t i = range.begin(); i != range.end(); ++i) {
-            const float xi = read_x[i];
-            const float yi = read_y[i];
-            const float zi = read_z[i];
+            const float xi = mech_read_x_[i];
+            const float yi = mech_read_y_[i];
+            const float zi = mech_read_z_[i];
 
             Eigen::Vector3f force = Eigen::Vector3f::Zero();
             spatial_grid_.queryRadius(xi, yi, zi, interaction_radius, [&](uint32_t neighbor_id) {
@@ -361,9 +537,9 @@ void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
                 return;
               }
 
-              const float dx = xi - read_x[neighbor_index];
-              const float dy = yi - read_y[neighbor_index];
-              const float dz = zi - read_z[neighbor_index];
+              const float dx = xi - mech_read_x_[neighbor_index];
+              const float dy = yi - mech_read_y_[neighbor_index];
+              const float dz = zi - mech_read_z_[neighbor_index];
               const float dist_sq = dx * dx + dy * dy + dz * dz;
               if (dist_sq <= 1e-12f || dist_sq >= interaction_radius_sq) {
                 return;
@@ -381,20 +557,20 @@ void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
               force.z() += scale * dz;
             });
 
-            write_x[i] = clampToDomain(xi + force.x() * config->mech_dt);
-            write_y[i] = clampToDomain(yi + force.y() * config->mech_dt);
-            write_z[i] = clampToDomain(zi + force.z() * config->mech_dt);
+            mech_write_x_[i] = clampToDomain(xi + force.x() * config->mech_dt);
+            mech_write_y_[i] = clampToDomain(yi + force.y() * config->mech_dt);
+            mech_write_z_[i] = clampToDomain(zi + force.z() * config->mech_dt);
           }
         });
 
-    read_x.swap(write_x);
-    read_y.swap(write_y);
-    read_z.swap(write_z);
+    mech_read_x_.swap(mech_write_x_);
+    mech_read_y_.swap(mech_write_y_);
+    mech_read_z_.swap(mech_write_z_);
   }
 
-  spatial_state_.pos_x = std::move(read_x);
-  spatial_state_.pos_y = std::move(read_y);
-  spatial_state_.pos_z = std::move(read_z);
+  spatial_state_.pos_x.swap(mech_read_x_);
+  spatial_state_.pos_y.swap(mech_read_y_);
+  spatial_state_.pos_z.swap(mech_read_z_);
 
   tbb::parallel_for(
       tbb::blocked_range<size_t>(0, count),
@@ -434,7 +610,7 @@ void SimulationEngine3DCapacity::takeStatSnapshot() {
   for (const auto& cell : cells) {
     sorted_keys.push_back(cell.first);
   }
-  std::sort(sorted_keys.begin(), sorted_keys.end());
+  CellEvoX::parallel_algorithms::sortMaybeParallel(sorted_keys.begin(), sorted_keys.end());
 
   for (uint32_t key : sorted_keys) {
     CellMap::const_accessor accessor;

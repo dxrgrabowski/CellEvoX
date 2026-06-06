@@ -37,6 +37,8 @@ class SimulationEngine3DCapacity {
 
   void initializePopulationPositions();
   void rebuildSpatialState();
+  void updateSpatialState(
+      const CellEvoX::systems::CommonPopulationStepResult& step_result);
   void assignBirthPositions(
       const std::vector<CellEvoX::systems::CommonBirthEvent>& births);
   void mechanicalRelaxationStep();
@@ -77,6 +79,18 @@ class SimulationEngine3DCapacity {
   std::vector<float> id_pos_y_;
   std::vector<float> id_pos_z_;
   std::vector<uint32_t> id_to_spatial_index_;
+  std::vector<uint8_t> dead_spatial_flags_;
+  std::vector<size_t> survivor_offsets_;
+  std::vector<uint32_t> next_cell_ids_;
+  std::vector<float> next_pos_x_;
+  std::vector<float> next_pos_y_;
+  std::vector<float> next_pos_z_;
+  std::vector<float> mech_read_x_;
+  std::vector<float> mech_read_y_;
+  std::vector<float> mech_read_z_;
+  std::vector<float> mech_write_x_;
+  std::vector<float> mech_write_y_;
+  std::vector<float> mech_write_z_;
 
   std::ofstream memory_log_file;
 };
