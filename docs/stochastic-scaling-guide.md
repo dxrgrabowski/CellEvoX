@@ -73,10 +73,11 @@ per-run thread counts to pay off.
 
 ## Post-processing caveats
 
-`--postprocess none` measures the simulation path most cleanly. `exports` and
-`full` add IO, CSV/GEXF generation, and optionally plots or animations. Those
-stages can become the wall-clock bottleneck and should not be interpreted as
-stochastic-step scaling.
+`exports` is the lightest supported production mode. It still adds IO and
+CSV/GEXF generation, while `full` also adds plots and animations. Those stages
+can become the wall-clock bottleneck and should not be interpreted as pure
+stochastic-step scaling. For raw step-throughput work, use a profiler or a
+dedicated benchmark build instead of disabling production artifacts.
 
 When using `full_mutation_payload`, frequent population snapshots, or large GEXF
 exports, budget RAM and filesystem bandwidth separately from CPU. If the node is

@@ -113,9 +113,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--postprocess",
-        choices=["full", "exports", "none"],
+        choices=["full", "exports"],
         default="full",
-        help="Post-run work per simulation: full plots, exports only, or none",
+        help="Post-run work per simulation: full plots or exports only",
     )
     parser.add_argument(
         "--repo-root",
