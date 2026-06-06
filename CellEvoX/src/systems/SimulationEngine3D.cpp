@@ -31,6 +31,12 @@
 
 namespace {
 
+constexpr double kTauSnapshotEpsilon = 1e-9;
+
+int tauSnapshotIndex(double tau_value) {
+  return static_cast<int>(std::floor(tau_value + kTauSnapshotEpsilon));
+}
+
 constexpr uint32_t kInvalidSpatialIndex = std::numeric_limits<uint32_t>::max();
 constexpr float kBirthSuppressionFloor = 0.01f;
 constexpr float kDeathRateFloor = 0.01f;
@@ -113,7 +119,7 @@ SimulationEngine3D::SimulationEngine3D(std::shared_ptr<SimulationConfig> config)
                this->config->tau_step);
 }
 
-ecs::Run SimulationEngine3D::run(uint32_t steps) {
+ecs::Run SimulationEngine3D::run(uint32_t steps, bool run_postprocessing) {
   auto last_update_time = std::chrono::steady_clock::now();
   const char* spinner = "|/-\\";
   int spinner_index = 0;
@@ -176,7 +182,8 @@ ecs::Run SimulationEngine3D::run(uint32_t steps) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau);
+                  tau,
+                  run_postprocessing);
 }
 
 void SimulationEngine3D::step() {
@@ -443,7 +450,7 @@ void SimulationEngine3D::stochasticStep3D() {
   rebuildSpatialState();
   mechanicalRelaxationStep();
 
-  const int current_tau = static_cast<int>(tau);
+  const int current_tau = tauSnapshotIndex(tau);
   if (config->stat_res > 0 && current_tau % config->stat_res == 0 &&
       current_tau != last_stat_snapshot_tau) {
     takeStatSnapshot();
@@ -457,6 +464,7 @@ void SimulationEngine3D::stochasticStep3D() {
   }
 
   if (config->graveyard_pruning_interval > 0 &&
+      current_tau > 0 &&
       current_tau % config->graveyard_pruning_interval == 0 &&
       current_tau != last_pruning_tau) {
     pruneGraveyard();
@@ -698,7 +706,7 @@ void SimulationEngine3D::takePopulationSnapshot() {
   }
 
   const auto filename =
-      CellEvoX::io::populationSnapshotPath(config->output_path, static_cast<int>(tau));
+      CellEvoX::io::populationSnapshotPath(config->output_path, tauSnapshotIndex(tau));
   if (!CellEvoX::io::writePopulationSnapshot(filename, tau, 3, snapshot, mutation_payload,
                                              payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", filename);

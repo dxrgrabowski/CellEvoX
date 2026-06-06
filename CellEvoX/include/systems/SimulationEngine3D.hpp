@@ -22,7 +22,7 @@ class SimulationEngine3D {
   static std::atomic<bool> shutdown_requested;
   static void signalHandler(int signum);
 
-  ecs::Run run(uint32_t steps);
+  ecs::Run run(uint32_t steps, bool run_postprocessing = true);
   void step();
   void stop();
 
