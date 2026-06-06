@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "systems/SimulationEngine.hpp"
+#include "utils/ParallelAlgorithms.hpp"
 #include "utils/PhaseProfiler.hpp"
 
 namespace CellEvoX::systems {
@@ -93,7 +94,7 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
 
   {
     CELLEVOX_PROFILE_PHASE("sort_alive_ids");
-    std::sort(alive_cell_indices.begin(), alive_cell_indices.end());
+    CellEvoX::parallel_algorithms::sortMaybeParallel(alive_cell_indices.begin(), alive_cell_indices.end());
   }
 
   if (alive_cell_indices.empty()) {
@@ -205,7 +206,8 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
       sorted_new_cells.push_back(std::move(cell));
     }
 
-    std::sort(sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
+    CellEvoX::parallel_algorithms::sortMaybeParallel(
+        sorted_new_cells.begin(), sorted_new_cells.end(), commonDaughterCellLess);
   }
 
   const auto max_cell_id = std::numeric_limits<uint32_t>::max();
@@ -249,9 +251,10 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
     for (const auto& death : dead_cells) {
       result.deaths.push_back(death);
     }
-    std::sort(result.deaths.begin(), result.deaths.end(), [](const auto& lhs, const auto& rhs) {
-      return lhs.id < rhs.id;
-    });
+    CellEvoX::parallel_algorithms::sortMaybeParallel(
+        result.deaths.begin(), result.deaths.end(), [](const auto& lhs, const auto& rhs) {
+          return lhs.id < rhs.id;
+        });
   }
 
   {

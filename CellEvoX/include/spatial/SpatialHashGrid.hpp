@@ -40,12 +40,18 @@ class SpatialHashGrid {
       for (int iy = iy_min; iy <= iy_max; ++iy) {
         for (int ix = ix_min; ix <= ix_max; ++ix) {
           const int64_t hash = hashVoxel(ix, iy, iz);
-          const auto range_it = voxel_ranges_.find(hash);
-          if (range_it == voxel_ranges_.end()) {
-            continue;
+          std::pair<int32_t, int32_t> voxel_range{0, 0};
+          if (use_dense_ranges_) {
+            voxel_range = dense_voxel_ranges_[static_cast<size_t>(hash)];
+          } else {
+            const auto range_it = voxel_ranges_.find(hash);
+            if (range_it == voxel_ranges_.end()) {
+              continue;
+            }
+            voxel_range = range_it->second;
           }
 
-          const auto [begin_idx, end_idx] = range_it->second;
+          const auto [begin_idx, end_idx] = voxel_range;
           for (int32_t idx = begin_idx; idx < end_idx; ++idx) {
             cb(sorted_ids_[static_cast<size_t>(idx)]);
           }
@@ -64,5 +70,7 @@ class SpatialHashGrid {
 
   std::vector<uint32_t> sorted_ids_;
   std::vector<int32_t> cell_voxel_;
+  std::vector<std::pair<int32_t, int32_t>> dense_voxel_ranges_;
   std::unordered_map<int64_t, std::pair<int32_t, int32_t>> voxel_ranges_;
+  bool use_dense_ranges_ = false;
 };

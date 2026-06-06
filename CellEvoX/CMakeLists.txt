@@ -92,6 +92,7 @@ set(HEADERS
     include/ecs/Run.hpp
     include/spatial/SpatialHashGrid.hpp
     include/utils/MathUtils.hpp
+    include/utils/ParallelAlgorithms.hpp
     include/utils/PhaseProfiler.hpp
     include/utils/SimulationConfig.hpp
     include/core/RunDataEngine.hpp
