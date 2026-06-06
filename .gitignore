@@ -46,5 +46,6 @@ compare*
 CMakeLists.txt.user
 CellEvoX/tests/benchmarks/baseline.json
 CellEvoX/build_skip_gui/
+CellEvoX/build_*/
 .codex
 __pycache__

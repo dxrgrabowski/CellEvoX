@@ -2,7 +2,7 @@
 
 CellEvoX batch runs use the same launch path as a single web run: each config is written as an atomic launch JSON file and then passed to the C++ binary with `--config`.
 
-Related docs: [docs index](README.md), [architecture](architecture.md), [development workflows](development-workflows.md).
+Related docs: [docs index](README.md), [architecture](architecture.md), [development workflows](development-workflows.md), [stochastic scaling guide](stochastic-scaling-guide.md).
 
 ## Console
 
@@ -32,7 +32,10 @@ python3 web/backend/run_batch.py --manifest batch_manifest.json \
 `CELLEVOX_TBB_THREADS`, capping TBB inside each process. For a 22-core machine,
 start with combinations whose product is near the available core count, for
 example `--parallel 4 --threads-per-run 5` or `--parallel 6 --threads-per-run 3`,
-then benchmark a small representative batch.
+then benchmark a small representative batch. For stochastic runs, see the
+[stochastic scaling guide](stochastic-scaling-guide.md) before assigning many
+threads to one process; cutoff-limited 50k runs usually benefit more from higher
+`--parallel` than from high `--threads-per-run`.
 
 `--postprocess` can be:
 

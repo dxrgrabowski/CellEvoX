@@ -6,6 +6,8 @@
 #include <csignal>
 #include <fstream>
 #include <map>
+#include <utility>
+#include <vector>
 
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
@@ -66,15 +68,28 @@ class SimulationEngine {
 
   void step();
   ecs::Run run(uint32_t steps, bool run_postprocessing = true);
+  void runSimulationOnly(uint32_t steps);
   void stop();
 
  private:
+  void runSteps(uint32_t steps);
   void stochasticStep();
+  void stochasticDenseStep();
   void pruneGraveyard();
   // void rk4DeterministicStep(double deltaTime);
   void takeStatSnapshot();
   void takePopulationSnapshot();
+  void materializeCellsFromDense();
+  void materializeGraveyardFromDense();
   CellMap cells;
+  std::vector<uint32_t> alive_cell_indices_cache;
+  std::vector<Cell> dense_cells;
+  std::vector<uint32_t> dense_alive_cell_ids;
+  std::vector<uint32_t> dense_cell_slot_by_id;
+  std::vector<uint8_t> dense_alive_flags;
+  std::vector<uint32_t> dense_free_slots;
+  std::vector<std::pair<uint32_t, std::pair<uint32_t, double>>> dense_pending_graveyard_entries;
+  bool cells_dirty_from_dense = true;
   // <id, <parent_id, death_time>>
   Graveyard cells_graveyard;
   std::map<uint8_t, MutationType> available_mutation_types;

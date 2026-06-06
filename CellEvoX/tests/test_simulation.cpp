@@ -528,6 +528,67 @@ inline void require_approx(double actual, double expected, double margin = 1e-6)
     REQUIRE(std::abs(actual - expected) <= margin);
 }
 
+TEST_CASE("SimulationEngine stochastic population step is deterministic across worker counts",
+          "[SimulationEngine][Determinism][Parallel]") {
+    auto make_config = [](const std::string& output_path) {
+        auto config = std::make_shared<SimulationConfig>();
+        config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+        config->tau_step = 0.02;
+        config->seed = 2026;
+        config->initial_population = 500;
+        config->env_capacity = 5000;
+        config->steps = 80;
+        config->stat_res = 1;
+        config->popul_res = 1000000;
+        config->output_path = output_path;
+        config->verbosity = 0;
+        config->mutations.push_back({0.05f, 0.02f, 1, true});
+        config->mutations.push_back({-0.02f, 0.01f, 2, false});
+        return config;
+    };
+
+    auto run_with_threads = [&](int parallelism, const std::string& output_name) {
+        auto config = make_config(testTempString(output_name));
+        std::filesystem::remove_all(config->output_path);
+        tbb::global_control control(tbb::global_control::max_allowed_parallelism, parallelism);
+        SimulationEngine engine(config);
+        return engine.run(config->steps, false);
+    };
+
+    auto single_thread_run = run_with_threads(1, "test_sim_stochastic_parallel_det_1");
+    auto four_thread_run = run_with_threads(4, "test_sim_stochastic_parallel_det_4");
+
+    REQUIRE(single_thread_run.generational_stat_report.size() ==
+            four_thread_run.generational_stat_report.size());
+    for (size_t i = 0; i < single_thread_run.generational_stat_report.size(); ++i) {
+        const auto& lhs = single_thread_run.generational_stat_report[i];
+        const auto& rhs = four_thread_run.generational_stat_report[i];
+        require_approx(lhs.tau, rhs.tau);
+        require_approx(lhs.mean_fitness, rhs.mean_fitness);
+        require_approx(lhs.fitness_variance, rhs.fitness_variance);
+        require_approx(lhs.mean_mutations, rhs.mean_mutations);
+        require_approx(lhs.mutations_variance, rhs.mutations_variance);
+        REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
+    }
+
+    REQUIRE(single_thread_run.cells.size() == four_thread_run.cells.size());
+    for (const auto& [cell_id, cell] : single_thread_run.cells) {
+        CellMap::const_accessor accessor;
+        REQUIRE(four_thread_run.cells.find(accessor, cell_id));
+        REQUIRE(accessor->second.parent_id == cell.parent_id);
+        REQUIRE(accessor->second.fitness == cell.fitness);
+        REQUIRE(accessor->second.mutations == cell.mutations);
+    }
+
+    REQUIRE(single_thread_run.cells_graveyard.size() == four_thread_run.cells_graveyard.size());
+    for (const auto& [cell_id, graveyard_entry] : single_thread_run.cells_graveyard) {
+        Graveyard::const_accessor accessor;
+        REQUIRE(four_thread_run.cells_graveyard.find(accessor, cell_id));
+        REQUIRE(accessor->second.first == graveyard_entry.first);
+        require_approx(accessor->second.second, graveyard_entry.second);
+    }
+}
+
 inline std::vector<char> read_binary_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     REQUIRE(in.is_open());

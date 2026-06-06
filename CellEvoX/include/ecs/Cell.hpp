@@ -20,6 +20,8 @@ class Cell {
   // <mutation_id> (id of parent where mutation was created), mutation_type_id>
   std::vector<std::pair<uint32_t, uint8_t>> mutations;
 
+  Cell() = default;
+
   explicit Cell(uint32_t cellId) : id(cellId) {}
 
   explicit Cell(const Cell& parent, double cellFitness)

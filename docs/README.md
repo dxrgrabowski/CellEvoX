@@ -17,6 +17,7 @@ Read in this order when you are new to the project:
 7. [Development workflows](development-workflows.md) - build, test, benchmark, web, and review routines.
 8. [High-risk areas](high-risk-areas.md) - files and contracts that need extra verification.
 9. [Batch runs](batch-runs.md) - console and web batch-run behavior.
+10. [Stochastic scaling guide](stochastic-scaling-guide.md) - practical thread/process recommendations for headless stochastic batches.
 
 ## Task routing
 
@@ -28,6 +29,7 @@ Read in this order when you are new to the project:
 | Change output files | [Run output and analysis](run-output-and-analysis.md), [High-risk areas](high-risk-areas.md) | C++ writer/reader, Python loader/parser, web results parser, snapshot tests |
 | Work on web UI/backend | [Architecture](architecture.md), [Batch runs](batch-runs.md), [Development workflows](development-workflows.md) | Frontend build/lint when available, backend smoke path, binary path assumptions |
 | Investigate flaky correctness | [Simulation engines](simulation-engines.md), [High-risk areas](high-risk-areas.md) | Seeded repeatability tests, single-thread TBB control where determinism is required |
+| Plan large stochastic batches | [Stochastic scaling guide](stochastic-scaling-guide.md), [Batch runs](batch-runs.md) | Short 1/2/4-thread pilot on the target machine before launching the full grid |
 
 ## Source of truth rules
 
