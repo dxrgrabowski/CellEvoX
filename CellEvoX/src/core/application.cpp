@@ -50,8 +50,6 @@ const char* postprocessModeName(PostprocessMode mode) {
       return "full";
     case PostprocessMode::Exports:
       return "exports";
-    case PostprocessMode::None:
-      return "none";
   }
   return "unknown";
 }
@@ -156,40 +154,31 @@ void Application::initialize() {
     
     // Initialize DataEngine first to prepare output directory
     RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);
-    const bool run_postprocessing = options.postprocess_mode != PostprocessMode::None;
     
     if (sim_config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
       sim_engine_3d = std::make_unique<SimulationEngine3D>(sim_config);
       std::signal(SIGINT, SimulationEngine3D::signalHandler);
       std::signal(SIGTERM, SimulationEngine3D::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"), run_postprocessing)));
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"))));
     } else if (sim_config->sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
       sim_engine_3d_capacity = std::make_unique<SimulationEngine3DCapacity>(sim_config);
       std::signal(SIGINT, SimulationEngine3DCapacity::signalHandler);
       std::signal(SIGTERM, SimulationEngine3DCapacity::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_capacity->run(config.at("steps"), run_postprocessing)));
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d_capacity->run(config.at("steps"))));
     } else {
       sim_engine = std::make_unique<SimulationEngine>(sim_config);
       std::signal(SIGINT, SimulationEngine::signalHandler);
       std::signal(SIGTERM, SimulationEngine::signalHandler);
-      if (options.postprocess_mode == PostprocessMode::None) {
-        sim_engine->runSimulationOnly(config.at("steps"));
-      } else {
-        runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"), run_postprocessing)));
-      }
+      runs.push_back(std::make_shared<ecs::Run>(sim_engine->run(config.at("steps"))));
     }
     
-    if (options.postprocess_mode == PostprocessMode::None) {
-      spdlog::info("Post-processing disabled for this run");
-    } else {
-      // Set the run result in data engine
-      data_engine.setRun(runs[0]);
+    // Set the run result in data engine
+    data_engine.setRun(runs[0]);
 
-      if (options.postprocess_mode == PostprocessMode::Exports) {
-        runExportsPostprocessing(data_engine);
-      } else {
-        runFullPostprocessing(data_engine);
-      }
+    if (options.postprocess_mode == PostprocessMode::Exports) {
+      runExportsPostprocessing(data_engine);
+    } else {
+      runFullPostprocessing(data_engine);
     }
   } else {
     spdlog::error("Neither --config nor --analyze flag was provided. Please provide one.");

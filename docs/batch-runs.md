@@ -41,21 +41,14 @@ threads to one process; cutoff-limited 50k runs usually benefit more from higher
 
 - `full`: current behavior, including plots and visualizations.
 - `exports`: write CSV/GEXF outputs but skip expensive plot and animation steps.
-- `none`: run the simulation and keep in-run artifacts such as binary population
-  snapshots and memory logs, skipping post-run exports and plots.
 
 For multi-run batches, the runner isolates each config under a unique
 `output_path/<batch_run_label>/...` base directory before the C++ timestamped run
 directory is created. This avoids timestamp collisions when many simulations
 start in the same second.
 
-Runs launched with `--postprocess none` still appear in the Results view when a
-`config.json` is present. If population snapshots exist but CSV/Müller outputs do
-not, Results marks the run as needing post-processing and can start
-`CellEvoX --analyze <run_dir>` for that run from the detail panel.
-
-The web Run Queue intentionally exposes `exports` and `full`, not raw `none`.
-`exports` skips heavy plots and animations while keeping durable Results artifacts.
+Use `exports` for headless batches and post-hoc analysis. It skips heavy plots
+and animations while keeping durable Results artifacts.
 The web API also rejects runs whose final tau is below the configured statistics
 or population snapshot resolution, because those runs would not have enough data
 for the Results charts. Both resolution fields are expressed in integer `T`

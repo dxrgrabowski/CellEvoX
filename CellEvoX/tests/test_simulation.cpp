@@ -481,7 +481,7 @@ TEST_CASE("SimulationEngine writes final snapshots near integer tau boundaries",
     config->verbosity = 0;
 
     SimulationEngine engine(config);
-    auto runData = engine.run(config->steps, false);
+    auto runData = engine.run(config->steps);
 
     REQUIRE(runData.generational_stat_report.size() == 1);
     REQUIRE(runData.generational_popul_report.size() == 1);
@@ -552,7 +552,7 @@ TEST_CASE("SimulationEngine stochastic population step is deterministic across w
         std::filesystem::remove_all(config->output_path);
         tbb::global_control control(tbb::global_control::max_allowed_parallelism, parallelism);
         SimulationEngine engine(config);
-        return engine.run(config->steps, false);
+        return engine.run(config->steps);
     };
 
     auto single_thread_run = run_with_threads(1, "test_sim_stochastic_parallel_det_1");
@@ -1220,7 +1220,7 @@ TEST_CASE("SimulationEngine3DCapacity mechanics are deterministic across worker 
         {
             tbb::global_control control(tbb::global_control::max_allowed_parallelism, parallelism);
             SimulationEngine3DCapacity engine(config);
-            auto runData = engine.run(config->steps, false);
+            auto runData = engine.run(config->steps);
             REQUIRE(runData.cells.size() == config->initial_population);
         }
 

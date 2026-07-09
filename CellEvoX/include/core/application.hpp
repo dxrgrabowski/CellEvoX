@@ -15,7 +15,6 @@ namespace CellEvoX::core {
 enum class PostprocessMode {
   Full,
   Exports,
-  None,
 };
 
 struct CliOptions {

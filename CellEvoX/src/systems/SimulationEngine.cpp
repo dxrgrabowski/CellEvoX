@@ -243,7 +243,7 @@ void SimulationEngine::runSteps(uint32_t steps) {
   std::cout << "] 100% \033[0m" << std::endl;
 }
 
-ecs::Run SimulationEngine::run(uint32_t steps, bool run_postprocessing) {
+ecs::Run SimulationEngine::run(uint32_t steps) {
   runSteps(steps);
 
   materializeCellsFromDense();
@@ -255,12 +255,7 @@ ecs::Run SimulationEngine::run(uint32_t steps, bool run_postprocessing) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau,
-                  run_postprocessing);
-}
-
-void SimulationEngine::runSimulationOnly(uint32_t steps) {
-  runSteps(steps);
+                  tau);
 }
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
