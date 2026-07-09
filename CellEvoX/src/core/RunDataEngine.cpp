@@ -473,11 +473,82 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
     std::cout << "Population data exported to: " << csv_filename << std::endl;
   }
 }
+std::vector<StatSnapshot> RunDataEngine::loadGenerationalStatsFromCsv() const {
+  std::vector<StatSnapshot> stats;
+  const std::string csv_path = output_dir + "statistics/generational_statistics.csv";
+  std::ifstream file(csv_path);
+  if (!file.is_open()) {
+    spdlog::warn("Could not open {} to reconstruct generational statistics.", csv_path);
+    return stats;
+  }
+
+  std::string line;
+  bool skipped_header = false;
+  size_t line_number = 0;
+  while (std::getline(file, line)) {
+    ++line_number;
+    if (!skipped_header) {
+      skipped_header = true;
+      continue;
+    }
+    if (line.empty()) {
+      continue;
+    }
+
+    std::vector<std::string> fields;
+    std::stringstream line_stream(line);
+    std::string field;
+    while (std::getline(line_stream, field, ',')) {
+      fields.push_back(field);
+    }
+
+    if (fields.size() < 10) {
+      spdlog::warn("Skipping malformed row {} in {}: expected 10 fields, found {}.", line_number,
+                   csv_path, fields.size());
+      continue;
+    }
+
+    try {
+      StatSnapshot snapshot{};
+      snapshot.tau = std::stod(fields[0]);
+      snapshot.total_living_cells = static_cast<size_t>(std::stoull(fields[1]));
+      snapshot.mean_fitness = std::stod(fields[2]);
+      snapshot.fitness_variance = std::stod(fields[3]);
+      snapshot.fitness_skewness = std::stod(fields[4]);
+      snapshot.fitness_kurtosis = std::stod(fields[5]);
+      snapshot.mean_mutations = std::stod(fields[6]);
+      snapshot.mutations_variance = std::stod(fields[7]);
+      snapshot.mutations_skewness = std::stod(fields[8]);
+      snapshot.mutations_kurtosis = std::stod(fields[9]);
+      stats.push_back(snapshot);
+    } catch (const std::exception& e) {
+      spdlog::warn("Skipping unparsable row {} in {}: {}", line_number, csv_path, e.what());
+    }
+  }
+
+  return stats;
+}
+
+std::vector<StatSnapshot> RunDataEngine::resolveGenerationalStats() const {
+  if (run && !run->generational_stat_report.empty()) {
+    return run->generational_stat_report;
+  }
+  return loadGenerationalStatsFromCsv();
+}
+
 void RunDataEngine::plotLivingCellsOverGenerations() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping living-cells plot.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<size_t> living_cells;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     living_cells.push_back(snapshot.total_living_cells);
   }
@@ -492,13 +563,21 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
   plt::close();
 }
 void RunDataEngine::plotFitnessStatistics() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping fitness statistics plots.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<double> mean_fitness;
   std::vector<double> fitness_variance;
   std::vector<double> fitness_skewness;
   std::vector<double> fitness_kurtosis;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     mean_fitness.push_back(snapshot.mean_fitness);
     fitness_variance.push_back(snapshot.fitness_variance);
@@ -548,13 +627,21 @@ void RunDataEngine::plotFitnessStatistics() {
 }
 
 void RunDataEngine::plotMutationsStatistics() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping mutation statistics plots.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<double> mean_mutations;
   std::vector<double> mutations_variance;
   std::vector<double> mutations_skewness;
   std::vector<double> mutations_kurtosis;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     mean_mutations.push_back(snapshot.mean_mutations);
     mutations_variance.push_back(snapshot.mutations_variance);

@@ -75,6 +75,37 @@ void runFullPostprocessing(RunDataEngine& data_engine) {
   data_engine.plotTumorReplay3D();
 }
 
+// Runs the same set of plot generators as runFullPostprocessing(), but for the `--analyze`
+// path where there is no live ecs::Run object in memory (RunDataEngine reads everything back
+// from files already on disk: CSV/binary population snapshots, statistics CSV, config.json).
+//
+// Previously this list only included the Muller/clone/animation plots, so `--analyze` runs
+// (used by the web "re-analyze" action and by batch postprocessing scripts) silently never
+// populated general_plots/, mutation_histograms/, or vaf_diagrams/, regardless of the
+// `--postprocess` flag. plotFitnessStatistics/plotMutationsStatistics/
+// plotLivingCellsOverGenerations now reconstruct their input from
+// statistics/generational_statistics.csv when no live run is set (see
+// RunDataEngine::resolveGenerationalStats), and plotMutationWave/plotMutationFrequency already
+// supported reading directly from population snapshot files.
+void runAnalyzePostprocessing(RunDataEngine& data_engine, PostprocessMode mode) {
+  data_engine.plotMullerDiagram();
+  data_engine.plotClonePhylogenyTree();
+  data_engine.plotCloneCounts();
+  data_engine.plotCloneLifespans();
+  data_engine.plotCloneGrowthAnimation();
+  data_engine.plotTumorReplay3D();
+
+  if (mode == PostprocessMode::Exports) {
+    return;
+  }
+
+  data_engine.plotFitnessStatistics();
+  data_engine.plotMutationsStatistics();
+  data_engine.plotLivingCellsOverGenerations();
+  data_engine.plotMutationWave();
+  data_engine.plotMutationFrequency();
+}
+
 }  // namespace
 
 Application::Application(CliOptions options) : options(std::move(options)) { initialize(); }
@@ -119,22 +150,16 @@ void Application::initialize() {
     }
 
     if (has_population_csv) {
-      data_engine.plotMullerDiagram();
-      data_engine.plotClonePhylogenyTree();
-      data_engine.plotCloneCounts();
-      data_engine.plotCloneLifespans();
-      data_engine.plotCloneGrowthAnimation();
-      data_engine.plotTumorReplay3D();
+      runAnalyzePostprocessing(data_engine, options.postprocess_mode);
     } else if (has_population_bin) {
       data_engine.exportPopulationSnapshotsToCSV();
       spdlog::info(
           "Detected binary population snapshots only; exported companion CSV files with driver mutation payloads when available.");
-      data_engine.plotMullerDiagram();
-      data_engine.plotClonePhylogenyTree();
-      data_engine.plotCloneCounts();
-      data_engine.plotCloneLifespans();
-      data_engine.plotCloneGrowthAnimation();
-      data_engine.plotTumorReplay3D();
+      runAnalyzePostprocessing(data_engine, options.postprocess_mode);
+    } else {
+      spdlog::warn(
+          "No population_data snapshots (.csv or .bin) found under {}; skipping plot generation.",
+          analyze_path);
     }
     
     spdlog::info("Analysis complete.");

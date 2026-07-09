@@ -4,8 +4,10 @@
 
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "ecs/Run.hpp"
+#include "systems/SimulationEngine.hpp"
 #include "utils/SimulationConfig.hpp"
 
 namespace CellEvoX::core {
@@ -48,6 +50,16 @@ class RunDataEngine {
   // Helper to classify cells into layers by generation
   // std::vector<std::vector<const Cell*>> classifyByGeneration(const tbb::concurrent_vector<Cell>&
   // cells);
+
+  // Reconstructs generational statistics from statistics/generational_statistics.csv on disk.
+  // Used as a fallback when no live ecs::Run object is available (e.g. `--analyze` mode on a
+  // previously-completed run directory), so general_plots/* can still be regenerated purely
+  // from exported artifacts.
+  std::vector<StatSnapshot> loadGenerationalStatsFromCsv() const;
+
+  // Returns run->generational_stat_report when a live run is available and non-empty, otherwise
+  // falls back to loadGenerationalStatsFromCsv().
+  std::vector<StatSnapshot> resolveGenerationalStats() const;
 };
 
 }  // namespace CellEvoX::core

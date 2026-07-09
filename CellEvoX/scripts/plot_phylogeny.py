@@ -219,6 +219,40 @@ def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 30
         print("Warning: No roots found.")
         return
     root = roots[0]
+
+    # A single-node tree (just the root/"ancestor" clone, no driver-defined descendants) is a
+    # legitimate result for runs with no driver mutations, but the normal polar-tree renderer
+    # below produces a near-blank image: with only one point at radius 0 and no reference grid,
+    # `bbox_inches='tight'` crops tightly around that single dot, which then appears as a stray
+    # mark unrelated to the legend box. Render an explicit, self-explanatory placeholder instead
+    # so this reads as "no driver-defined subclones" rather than "plot is broken".
+    if len(G.nodes) == 1:
+        population_size = G.nodes[root].get('size', 0)
+        label = G.nodes[root].get('label', root)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_axis_off()
+        ax.scatter([0.5], [0.62], s=1200, c='black', zorder=3)
+        ax.text(0.5, 0.62, label, ha='center', va='center', fontsize=13, color='white',
+                zorder=4, weight='bold')
+        ax.text(
+            0.5, 0.42,
+            f"Single clone: entire population is '{label}' (Max Population: {population_size})",
+            ha='center', va='center', fontsize=11, weight='bold')
+        ax.text(
+            0.5, 0.22,
+            "No driver mutations are defined for this run, so the driver-based clone\n"
+            "definition collapses the whole lineage into one node. This is expected for\n"
+            "no-driver / passenger-only configurations, not a rendering error. See\n"
+            "clones/clone_counts_over_time.png and muller_plots/ for the (flat) population\n"
+            "trajectory, and phylogeny/cell_tree_*_topological.png for real cell-level branching.",
+            ha='center', va='center', fontsize=10)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_title("Circular Clone Phylogeny: Single Clone", fontsize=14)
+        plt.savefig(output_file, dpi=dpi, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"Clone phylogeny tree saved to: {output_file} (single-clone placeholder)")
+        return
     
     # Calculate depth natively
     sys.setrecursionlimit(50000)

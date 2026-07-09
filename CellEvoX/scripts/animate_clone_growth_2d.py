@@ -256,6 +256,23 @@ def render_clone_growth_animation(run_dir: Path, output_path: Path, fps: int, dp
     counts_df, metadata_df, _, _ = build_clone_timecourse(run_dir, prefer_bin=False)
     counts_df, metadata_df = pick_top_clones(counts_df, metadata_df, max_clones=max_clones)
 
+    if ANCESTOR_SIGNATURE not in set(metadata_df["CloneSignature"].astype(str)):
+        counts_df[ANCESTOR_SIGNATURE] = 0.0
+        metadata_df.loc[len(metadata_df)] = {
+            "CloneSignature": ANCESTOR_SIGNATURE,
+            "ParentSignature": ANCESTOR_SIGNATURE,
+            "CloneDepth": 0,
+            "FirstGeneration": float(counts_df.index.min()),
+            "LastGeneration": float(counts_df.index.max()),
+            "PeakCells": 0.0,
+            "TotalCells": 0.0,
+            "BirthTime": 0.0,
+            "AddedDriverId": None,
+            "CloneLabel": "ancestor",
+            "CloneColorHex": "#9aa4b2",
+            "IsAncestor": True,
+        }
+
     ordered_signatures = (
         metadata_df.sort_values(
             by=["IsAncestor", "FirstGeneration", "PeakCells", "CloneSignature"],
