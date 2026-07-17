@@ -25,9 +25,97 @@
 
 #include "io/PopulationSnapshotIO.hpp"
 
+namespace plt = matplotlibcpp;
+
 namespace {
 
 namespace fs = std::filesystem;
+
+// Fixed-range histogram via pyplot.hist (matplotlibcpp::hist has no range/log).
+bool histFixedRange(const std::vector<double>& values,
+                    long bins,
+                    double range_min,
+                    double range_max,
+                    bool log_y) {
+  matplotlibcpp::detail::_interpreter::get();
+  PyObject* yarray = matplotlibcpp::detail::get_array(values);
+
+  PyObject* range_tuple = PyTuple_New(2);
+  PyTuple_SetItem(range_tuple, 0, PyFloat_FromDouble(range_min));
+  PyTuple_SetItem(range_tuple, 1, PyFloat_FromDouble(range_max));
+
+  PyObject* kwargs = PyDict_New();
+  PyDict_SetItemString(kwargs, "bins", PyLong_FromLong(bins));
+  PyDict_SetItemString(kwargs, "range", range_tuple);
+  Py_DECREF(range_tuple);
+  PyDict_SetItemString(kwargs, "log", log_y ? Py_True : Py_False);
+  PyDict_SetItemString(kwargs, "color", PyString_FromString("#4c78a8"));
+  PyDict_SetItemString(kwargs, "edgecolor", PyString_FromString("white"));
+  PyDict_SetItemString(kwargs, "linewidth", PyFloat_FromDouble(0.4));
+
+  PyObject* plot_args = PyTuple_New(1);
+  PyTuple_SetItem(plot_args, 0, yarray);
+
+  PyObject* res = PyObject_Call(
+      matplotlibcpp::detail::_interpreter::get().s_python_function_hist, plot_args, kwargs);
+
+  Py_DECREF(plot_args);
+  Py_DECREF(kwargs);
+  if (!res) {
+    PyErr_Print();
+    return false;
+  }
+  Py_DECREF(res);
+  return true;
+}
+
+void subplotInt(long nrows, long ncols, long index) {
+  matplotlibcpp::detail::_interpreter::get();
+  PyObject* args = PyTuple_New(3);
+  PyTuple_SetItem(args, 0, PyLong_FromLong(nrows));
+  PyTuple_SetItem(args, 1, PyLong_FromLong(ncols));
+  PyTuple_SetItem(args, 2, PyLong_FromLong(index));
+  PyObject* res = PyObject_CallObject(
+      matplotlibcpp::detail::_interpreter::get().s_python_function_subplot, args);
+  Py_DECREF(args);
+  if (!res) {
+    PyErr_Print();
+    throw std::runtime_error("Call to subplot() failed.");
+  }
+  Py_DECREF(res);
+}
+
+void saveVafTwoPanelHistogram(const std::vector<double>& vafs,
+                              bool full_vaf,
+                              int generation,
+                              const std::string& output_png) {
+  const char* kind = full_vaf ? "Full VAF" : "Driver VAF";
+  const char* xlabel = full_vaf ? "Variant Allele Frequency (VAF)"
+                                : "Driver Variant Allele Frequency (VAF)";
+
+  plt::figure_size(1100, 900);
+
+  subplotInt(2, 1, 1);
+  histFixedRange(vafs, /*bins=*/100, /*range_min=*/0.0, /*range_max=*/1.0, /*log_y=*/true);
+  plt::title(std::string(kind) + " — Generation " + std::to_string(generation) +
+             "\n[0, 1], 100 bins (Δ=0.01), log Y");
+  plt::xlabel(xlabel);
+  plt::ylabel("Frequency (log)");
+  plt::xlim(0.0, 1.0);
+  plt::grid(true);
+
+  subplotInt(2, 1, 2);
+  histFixedRange(vafs, /*bins=*/50, /*range_min=*/0.0, /*range_max=*/0.05, /*log_y=*/true);
+  plt::title("Zoom [0, 0.05], 50 bins (Δ=0.001), log Y");
+  plt::xlabel(xlabel);
+  plt::ylabel("Frequency (log)");
+  plt::xlim(0.0, 0.05);
+  plt::grid(true);
+
+  plt::tight_layout();
+  plt::save(output_png);
+  plt::close();
+}
 
 constexpr const char* kPopulationCsvHeader =
     "CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimensions\n";
@@ -271,8 +359,6 @@ std::string resolvePythonCommand() {
 }  // namespace
 
 namespace CellEvoX::core {
-
-namespace plt = matplotlibcpp;
 
 RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
                              std::shared_ptr<ecs::Run> run,
@@ -791,19 +877,12 @@ void RunDataEngine::plotMutationFrequency() {
         continue;
       }
 
-      int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
-
-      plt::figure();
-      plt::hist(vafs, num_bins);
-      plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
-                                      : "Driver VAF Histogram - Generation ") +
-                 std::to_string(generation));
-      plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
-                           : "Driver Variant Allele Frequency (VAF)");
-      plt::ylabel("Frequency");
-      plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
-                ".png");
-      plt::close();
+      saveVafTwoPanelHistogram(
+          vafs,
+          full_vaf,
+          static_cast<int>(generation),
+          output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+              ".png");
     }
     return;
   }
@@ -850,19 +929,12 @@ void RunDataEngine::plotMutationFrequency() {
     }
 
     const int generation = extractGenerationFromFilename(path);
-    int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
-
-    plt::figure();
-    plt::hist(vafs, num_bins);
-    plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
-                                    : "Driver VAF Histogram - Generation ") +
-               std::to_string(generation));
-    plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
-                         : "Driver Variant Allele Frequency (VAF)");
-    plt::ylabel("Frequency");
-    plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
-              ".png");
-    plt::close();
+    saveVafTwoPanelHistogram(
+        vafs,
+        full_vaf,
+        generation,
+        output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+            ".png");
   }
 }
 

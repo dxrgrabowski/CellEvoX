@@ -365,57 +365,98 @@ def build_cell_tree(output_dir: str, num_cells: int) -> Tuple[nx.DiGraph, Dict[i
     tree_file = os.path.join(output_dir, "phylogeny", "phylogenetic_tree.csv")
     if not os.path.isfile(tree_file):
         raise ValueError(f"Required file {tree_file} not found.")
-        
-    pop_dir = os.path.join(output_dir, "population_data")
-    pattern = os.path.join(pop_dir, "population_generation_*.csv")
-    files = glob.glob(pattern)
-    if not files:
-        raise ValueError(f"No population_generation_*.csv files found in {pop_dir}")
-        
-    def get_gen(filepath):
-        match = re.search(r'population_generation_(\d+)\.csv', os.path.basename(filepath))
-        return int(match.group(1)) if match else -1
-        
-    files.sort(key=get_gen)
-    final_file = files[-1]
-    final_gen = get_gen(final_file)
-    
-    df_final = pd.read_csv(final_file)
-    if len(df_final) <= num_cells:
-        print(f"Warning: requested {num_cells} cells, but final population only has {len(df_final)}. Using all.")
-        sampled_cells = df_final['CellID'].tolist()
-    else:
-        sampled_cells = df_final.sample(n=num_cells, random_state=42)['CellID'].tolist()
-        
+
     tree_df = pd.read_csv(tree_file)
     id_to_parent = dict(zip(tree_df['NodeID'], tree_df['ParentID']))
     id_to_death = dict(zip(tree_df['NodeID'], tree_df['DeathTime']))
-    
+
+    # Prefer final living leaves encoded in the phylogenetic tree (DeathTime==0).
+    # These match createPhylogeneticTree()'s living cells. Falling back to the last
+    # population CSV is only for legacy runs / trees without living markers.
+    living_in_tree = tree_df[(tree_df['DeathTime'] == 0) & (tree_df['NodeID'] != 0)]['NodeID'].tolist()
+
+    pop_dir = os.path.join(output_dir, "population_data")
+    pattern = os.path.join(pop_dir, "population_generation_*.csv")
+    files = glob.glob(pattern)
+
+    def get_gen(filepath):
+        match = re.search(r'population_generation_(\d+)\.csv', os.path.basename(filepath))
+        return int(match.group(1)) if match else -1
+
+    sampled_cells = []
+    final_gen = 0.0
+    if living_in_tree:
+        if len(living_in_tree) <= num_cells:
+            print(
+                f"Using all {len(living_in_tree)} final living leaves from phylogenetic_tree.csv "
+                f"(DeathTime==0)."
+            )
+            sampled_cells = living_in_tree
+        else:
+            sampled_cells = (
+                pd.Series(living_in_tree).sample(n=num_cells, random_state=42).tolist()
+            )
+            print(
+                f"Sampled {num_cells} final living leaves from phylogenetic_tree.csv "
+                f"(DeathTime==0; {len(living_in_tree)} available)."
+            )
+        final_gen = float(tree_df['DeathTime'].max())
+    else:
+        if not files:
+            raise ValueError(
+                f"No DeathTime==0 leaves in {tree_file} and no population_generation_*.csv "
+                f"in {pop_dir}"
+            )
+        files.sort(key=get_gen)
+        final_file = files[-1]
+        final_gen = float(get_gen(final_file))
+        df_final = pd.read_csv(final_file)
+        if len(df_final) <= num_cells:
+            print(
+                f"Warning: requested {num_cells} cells, but final population only has "
+                f"{len(df_final)}. Using all."
+            )
+            sampled_cells = df_final['CellID'].tolist()
+        else:
+            sampled_cells = df_final.sample(n=num_cells, random_state=42)['CellID'].tolist()
+        print(
+            "Warning: phylogenetic_tree.csv has no DeathTime==0 leaves; "
+            f"falling back to {os.path.basename(final_file)} (may not match tree IDs)."
+        )
+
     G = nx.DiGraph()
     depths = {}
-    
+
     visited = set()
+    missing_parents = 0
     for leaf_id in sampled_cells:
         curr = leaf_id
         depths[curr] = final_gen
-        
+
         while curr != 0:
             parent = id_to_parent.get(curr)
             if parent is None:
                 # If parent not in tree, attach to root 0
                 parent = 0
-            
+                missing_parents += 1
+
             G.add_edge(parent, curr)
-            
+
             if parent not in depths:
                 depths[parent] = id_to_death.get(parent, 0.0)
-                
+
             if parent in visited:
                 break
-            
+
             visited.add(parent)
             curr = parent
-            
+
+    if missing_parents:
+        print(
+            f"Warning: {missing_parents} parent lookups missed in phylogenetic_tree.csv; "
+            "those edges were attached to root 0."
+        )
+
     return G, depths
 
 def plot_cell_phylogeny(output_dir: str, num_cells: int, output_file: str = None, dpi: int = 300, use_topological: bool = True):
