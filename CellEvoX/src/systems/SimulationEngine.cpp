@@ -249,6 +249,16 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
   materializeCellsFromDense();
   materializeGraveyardFromDense();
 
+  // Always persist the true terminal living population. Periodic snapshots can lag
+  // behind the final cells used by createPhylogeneticTree(), which breaks cell-tree
+  // plotting that samples the last population_generation_*.csv.
+  if (config->popul_res > 0) {
+    spdlog::info("Writing final population snapshot at tau={:.6f} (generation index {})",
+                 tau,
+                 tauSnapshotIndex(tau));
+    takePopulationSnapshot();
+  }
+
   return ecs::Run(std::move(cells),
                   std::move(available_mutation_types),
                   std::move(cells_graveyard),
@@ -660,14 +670,21 @@ void SimulationEngine::takePopulationSnapshot() {
          {0, 0, 0}});
   }
 
+  const int generation = tauSnapshotIndex(tau);
   const auto snapshot_path =
-      CellEvoX::io::populationSnapshotPath(config->output_path, tauSnapshotIndex(tau));
+      CellEvoX::io::populationSnapshotPath(config->output_path, generation);
   if (!CellEvoX::io::writePopulationSnapshot(
           snapshot_path, tau, 0, snapshot_records, mutation_payload, payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", snapshot_path);
   }
 
-  generational_popul_report.push_back({tauSnapshotIndex(tau), std::move(cells_copy)});
+  // Upsert: a final snapshot may refresh the same generation index as the last periodic one.
+  if (!generational_popul_report.empty() && generational_popul_report.back().first == generation) {
+    generational_popul_report.back().second = std::move(cells_copy);
+  } else {
+    generational_popul_report.push_back({generation, std::move(cells_copy)});
+  }
+  last_population_snapshot_tau = generation;
 }
 
 void SimulationEngine::pruneGraveyard() {

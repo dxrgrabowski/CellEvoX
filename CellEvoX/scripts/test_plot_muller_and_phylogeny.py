@@ -173,5 +173,59 @@ class PlotClonePhylogenyTrivialClone(unittest.TestCase):
         self.assertTrue(os.path.exists(output_file))
 
 
+class BuildCellTreePrefersFinalLivingLeaves(unittest.TestCase):
+    """cell_tree must sample DeathTime==0 leaves from phylogenetic_tree.csv.
+
+    Sampling the last population_generation_*.csv can pick CellIDs that are absent from
+    the compressed final tree (snapshot lags the terminal population), which collapses
+    the plot into a star attached to root 0.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="cellevox_cell_tree_test_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        phylo = os.path.join(self.tmpdir, "phylogeny")
+        pop = os.path.join(self.tmpdir, "population_data")
+        os.makedirs(phylo)
+        os.makedirs(pop)
+
+        # Compressed final tree: living leaves 10,11 under internal node 5.
+        with open(os.path.join(phylo, "phylogenetic_tree.csv"), "w") as f:
+            f.write("NodeID,ParentID,ChildSum,DeathTime\n")
+            f.write("0,0,2,0\n")
+            f.write("5,0,2,1.5\n")
+            f.write("10,5,1,0\n")
+            f.write("11,5,1,0\n")
+
+        # Deliberately mismatched last snapshot: IDs that are NOT in the tree.
+        with open(os.path.join(pop, "population_generation_99.csv"), "w") as f:
+            f.write(
+                "CellID,ParentID,Fitness,MutationCount,Mutations,"
+                "X,Y,Z,PositionValid,SpatialDimensions\n"
+            )
+            f.write('9001,0,1.0,0,"",,,,0,0\n')
+            f.write('9002,0,1.0,0,"",,,,0,0\n')
+
+    def test_build_cell_tree_uses_death_time_zero_leaves(self):
+        graph, depths = plot_phylogeny.build_cell_tree(self.tmpdir, num_cells=2)
+        self.assertIn(0, graph.nodes)
+        self.assertIn(5, graph.nodes)
+        self.assertIn(10, graph.nodes)
+        self.assertIn(11, graph.nodes)
+        self.assertNotIn(9001, graph.nodes)
+        self.assertNotIn(9002, graph.nodes)
+        self.assertEqual(graph.number_of_edges(), 3)  # 0->5, 5->10, 5->11
+        leaves = [n for n in graph.nodes if graph.out_degree(n) == 0]
+        self.assertCountEqual(leaves, [10, 11])
+
+    def test_build_cell_tree_does_not_star_to_root_when_snapshot_mismatches(self):
+        graph, _depths = plot_phylogeny.build_cell_tree(self.tmpdir, num_cells=2)
+        # Star bug: every leaf parented directly by 0. Fixed tree has an internal node.
+        self.assertTrue(any(graph.out_degree(n) > 0 and n != 0 for n in graph.nodes))
+        for leaf in (10, 11):
+            preds = list(graph.predecessors(leaf))
+            self.assertEqual(preds, [5])
+
+
 if __name__ == "__main__":
     unittest.main()
