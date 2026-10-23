@@ -257,16 +257,6 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
   materializeCellsFromDense();
   materializeGraveyardFromDense();
 
-  // Always persist the true terminal living population. Periodic snapshots can lag
-  // behind the final cells used by createPhylogeneticTree(), which breaks cell-tree
-  // plotting that samples the last population_generation_*.csv.
-  if (config->popul_res > 0) {
-    spdlog::info("Writing final population snapshot at tau={:.6f} (generation index {})",
-                 tau,
-                 tauSnapshotIndex(tau));
-    takePopulationSnapshot();
-  }
-
   return ecs::Run(std::move(cells),
                   std::move(available_mutation_types),
                   std::move(cells_graveyard),
