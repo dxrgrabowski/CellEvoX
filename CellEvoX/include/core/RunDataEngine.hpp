@@ -60,6 +60,7 @@ class RunDataEngine {
   // Returns run->generational_stat_report when a live run is available and non-empty, otherwise
   // falls back to loadGenerationalStatsFromCsv().
   std::vector<StatSnapshot> resolveGenerationalStats() const;
+  void exportRunMetadata() const;
 };
 
 }  // namespace CellEvoX::core

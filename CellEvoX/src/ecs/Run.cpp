@@ -10,14 +10,16 @@ Run::Run(CellMap&& cells,
          std::vector<StatSnapshot>&& generational_stat_report,
          std::vector<std::pair<int, CellMap>> generational_popul_report,
          size_t deaths,
-         double tau)
+         double tau,
+         TerminationReason termination_reason)
     : cells(std::move(cells)),
       mutation_id_to_type(std::move(mutation_id_to_type)),
       cells_graveyard(std::move(cells_graveyard)),
       generational_stat_report(std::move(generational_stat_report)),
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
-      tau(tau) {
+      tau(tau),
+      termination_reason(termination_reason) {
   CELLEVOX_PROFILE_PHASE("run_result_processing");
   {
     CELLEVOX_PROFILE_PHASE("run_process_info");
@@ -39,6 +41,7 @@ Run::Run(CellMap&& cells,
 
 void Run::logResults() const {
   spdlog::info("Simulation ended at generation {}", tau);
+  spdlog::info("Termination reason: {}", terminationReasonName(termination_reason));
   spdlog::info("Total cells: {} with:", cells.size());
   spdlog::info("    average mutations per cell: {:.2f}", average_mutations);
   spdlog::info("Total deaths: {}", total_deaths);

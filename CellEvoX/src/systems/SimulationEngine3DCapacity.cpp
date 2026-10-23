@@ -156,12 +156,14 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   const auto start_time = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i < steps; ++i) {
     if (shutdown_requested.load()) {
+      termination_reason = ecs::TerminationReason::ShutdownRequested;
       spdlog::info("Shutdown requested at step {}/{}", i, steps);
       std::cout << std::endl;
       break;
     }
     if (config->max_population_cutoff > 0 &&
         actual_population >= config->max_population_cutoff) {
+      termination_reason = ecs::TerminationReason::PopulationCutoff;
       spdlog::warn("Population cutoff reached: {} >= {} at tau={:.2f}. Stopping.",
                    actual_population, config->max_population_cutoff, tau);
       std::cout << std::endl;
@@ -204,6 +206,11 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   }
   std::cout << "] 100% \033[0m" << std::endl;
 
+  if (termination_reason == ecs::TerminationReason::PlannedHorizon &&
+      config->max_population_cutoff > 0 && cells.size() >= config->max_population_cutoff) {
+    termination_reason = ecs::TerminationReason::PopulationCutoff;
+  }
+
   if (config->popul_res > 0) {
     spdlog::info("Writing final population snapshot at tau={:.6f} (generation index {})",
                  tau,
@@ -217,7 +224,8 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau);
+                  tau,
+                  termination_reason);
 }
 
 void SimulationEngine3DCapacity::step() {

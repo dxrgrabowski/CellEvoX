@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -72,6 +73,16 @@ TEST_CASE("RunDataEngine exports generational stats and phylogeny CSV files", "[
     const auto output_path = std::filesystem::path(config->output_path);
     REQUIRE(std::filesystem::exists(output_path / "statistics" / "generational_statistics.csv"));
     REQUIRE(std::filesystem::exists(output_path / "phylogeny" / "phylogenetic_tree.csv"));
+    REQUIRE(std::filesystem::exists(output_path / "run_metadata.json"));
+
+    std::ifstream metadata_file(output_path / "run_metadata.json");
+    REQUIRE(metadata_file.is_open());
+    nlohmann::json metadata;
+    metadata_file >> metadata;
+    REQUIRE(metadata.at("termination_reason") == "planned_horizon");
+    REQUIRE(metadata.at("termination_verified") == true);
+    REQUIRE(metadata.at("terminal_time") == Catch::Approx(1.0));
+    REQUIRE(metadata.at("terminal_population") == 1);
 
     const auto stat_lines = readLines(output_path / "statistics" / "generational_statistics.csv");
     REQUIRE(stat_lines.size() == 3);
@@ -86,6 +97,43 @@ TEST_CASE("RunDataEngine exports generational stats and phylogeny CSV files", "[
     REQUIRE(tree_lines[0] == "NodeID,ParentID,ChildSum,DeathTime");
     REQUIRE(std::find(tree_lines.begin(), tree_lines.end(), "0,0,1,0") != tree_lines.end());
     REQUIRE(std::find(tree_lines.begin(), tree_lines.end(), "1,0,1,0") != tree_lines.end());
+}
+
+TEST_CASE("RunDataEngine stores and verifies a population-cutoff reason", "[RunDataEngine]") {
+    const auto base_output_path = testTempPath("test_run_data_engine_cutoff_metadata");
+    std::filesystem::remove_all(base_output_path);
+
+    CellMap cells;
+    REQUIRE(cells.insert({1, Cell(1)}));
+
+    auto run = std::make_shared<ecs::Run>(
+        std::move(cells),
+        std::map<uint8_t, MutationType>{},
+        Graveyard{},
+        std::vector<StatSnapshot>{},
+        std::vector<std::pair<int, CellMap>>{},
+        0,
+        0.5,
+        ecs::TerminationReason::PopulationCutoff);
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->output_path = base_output_path.string();
+    config->verbosity = 0;
+    config->steps = 200;
+    config->tau_step = 0.005;
+    config->max_population_cutoff = 1;
+
+    CellEvoX::core::RunDataEngine data_engine(config, run, "");
+    data_engine.exportToCSV();
+
+    std::ifstream metadata_file(std::filesystem::path(config->output_path) / "run_metadata.json");
+    REQUIRE(metadata_file.is_open());
+    nlohmann::json metadata;
+    metadata_file >> metadata;
+    REQUIRE(metadata.at("termination_reason") == "population_cutoff");
+    REQUIRE(metadata.at("termination_verified") == true);
+    REQUIRE(metadata.at("terminal_time") == Catch::Approx(0.5));
+    REQUIRE(metadata.at("terminal_population") == 1);
 }
 
 // Regression tests for the `--analyze` postprocessing gap: RunDataEngine(analyze_directory)

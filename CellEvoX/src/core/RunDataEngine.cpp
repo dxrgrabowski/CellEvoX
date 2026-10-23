@@ -16,6 +16,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -437,6 +438,8 @@ void RunDataEngine::prepareOutputDir() {
   }
 }
 void RunDataEngine::exportToCSV() {
+  exportRunMetadata();
+
   // Export Generational Statistics
   {
     std::string statFilename = output_dir + "statistics/generational_statistics.csv";
@@ -484,6 +487,55 @@ void RunDataEngine::exportToCSV() {
 
     file.close();
   }
+}
+
+void RunDataEngine::exportRunMetadata() const {
+  if (!run || !config) {
+    return;
+  }
+
+  const double configured_horizon = static_cast<double>(config->steps) * config->tau_step;
+  const size_t terminal_population = run->cells.size();
+  const double tolerance = std::max(1e-9, std::abs(configured_horizon) * 1e-12);
+  bool termination_verified = false;
+
+  switch (run->termination_reason) {
+    case ecs::TerminationReason::PlannedHorizon:
+      termination_verified = run->tau + tolerance >= configured_horizon &&
+                             (config->max_population_cutoff == 0 ||
+                              terminal_population < config->max_population_cutoff);
+      break;
+    case ecs::TerminationReason::PopulationCutoff:
+      termination_verified = config->max_population_cutoff > 0 &&
+                             terminal_population >= config->max_population_cutoff &&
+                             run->tau <= configured_horizon + tolerance;
+      break;
+    case ecs::TerminationReason::ShutdownRequested:
+      termination_verified = run->tau <= configured_horizon + tolerance;
+      break;
+  }
+
+  if (!termination_verified) {
+    throw std::runtime_error("Run termination metadata is inconsistent with the terminal state");
+  }
+
+  const nlohmann::json metadata = {
+      {"schema_version", 1},
+      {"termination_reason", ecs::terminationReasonName(run->termination_reason)},
+      {"termination_verified", true},
+      {"terminal_time", run->tau},
+      {"terminal_population", terminal_population},
+      {"configured_horizon", configured_horizon},
+      {"population_cutoff", config->max_population_cutoff},
+  };
+
+  const std::filesystem::path metadata_path =
+      std::filesystem::path(output_dir) / "run_metadata.json";
+  std::ofstream file(metadata_path);
+  if (!file.is_open()) {
+    throw std::runtime_error("Cannot write run metadata: " + metadata_path.string());
+  }
+  file << metadata.dump(2) << '\n';
 }
 
 void RunDataEngine::exportPopulationSnapshotsToCSV() {
@@ -1279,7 +1331,7 @@ void RunDataEngine::plotTumorReplay3D() {
        "--max-frames",
        "250",
        "--pulse-frames",
-       "3"});
+       "2"});
   if (result == 0) {
     spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
   } else {
