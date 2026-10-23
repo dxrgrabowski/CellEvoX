@@ -357,6 +357,29 @@ std::string resolvePythonCommand() {
 #endif
 }
 
+// Replays the exact tau accumulation performed by the simulation engines so the
+// horizon used to validate run metadata matches the arithmetic that produced the
+// terminal tau.  The SPATIAL_3D_DENSITY engine steps tau with a float increment
+// (SimulationEngine3D.cpp), so its terminal tau is the sum of float-rounded steps
+// and drifts from `steps * tau_step` in double by several ulps; long-running
+// double-stepped engines drift through accumulated rounding as well.  Comparing
+// against a freshly multiplied double horizon rejects those runs even though they
+// completed successfully.
+double accumulateEngineTau(const SimulationConfig& config) {
+  double tau = 0.0;
+  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY) {
+    const float tau_step = static_cast<float>(config.tau_step);
+    for (size_t i = 0; i < config.steps; ++i) {
+      tau += tau_step;
+    }
+  } else {
+    for (size_t i = 0; i < config.steps; ++i) {
+      tau += config.tau_step;
+    }
+  }
+  return tau;
+}
+
 }  // namespace
 
 namespace CellEvoX::core {
@@ -495,23 +518,27 @@ void RunDataEngine::exportRunMetadata() const {
   }
 
   const double configured_horizon = static_cast<double>(config->steps) * config->tau_step;
+  // Validate against the horizon the engine actually accumulated: comparing a
+  // float-stepped terminal tau (or a long double-stepped one) against a freshly
+  // multiplied double horizon rejects runs that completed successfully.
+  const double engine_horizon = accumulateEngineTau(*config);
   const size_t terminal_population = run->cells.size();
-  const double tolerance = std::max(1e-9, std::abs(configured_horizon) * 1e-12);
+  const double tolerance = std::max(1e-9, std::abs(engine_horizon) * 1e-12);
   bool termination_verified = false;
 
   switch (run->termination_reason) {
     case ecs::TerminationReason::PlannedHorizon:
-      termination_verified = run->tau + tolerance >= configured_horizon &&
+      termination_verified = run->tau + tolerance >= engine_horizon &&
                              (config->max_population_cutoff == 0 ||
                               terminal_population < config->max_population_cutoff);
       break;
     case ecs::TerminationReason::PopulationCutoff:
       termination_verified = config->max_population_cutoff > 0 &&
                              terminal_population >= config->max_population_cutoff &&
-                             run->tau <= configured_horizon + tolerance;
+                             run->tau <= engine_horizon + tolerance;
       break;
     case ecs::TerminationReason::ShutdownRequested:
-      termination_verified = run->tau <= configured_horizon + tolerance;
+      termination_verified = run->tau <= engine_horizon + tolerance;
       break;
   }
 
@@ -1331,7 +1358,7 @@ void RunDataEngine::plotTumorReplay3D() {
        "--max-frames",
        "250",
        "--pulse-frames",
-       "2"});
+       "3"});
   if (result == 0) {
     spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
   } else {

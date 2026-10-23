@@ -36,8 +36,6 @@ build-*/
 .pipx/
 output*
 compare*
-analiz/
-analysis/
 .cellevox_launch_configs/
 # Keys
 *.gpg
@@ -51,16 +49,3 @@ CellEvoX/build_skip_gui/
 CellEvoX/build_*/
 .codex
 __pycache__
-*bundle*
-
-# Build profiles
-build_profile/
-
-# Thesis working files
-tmp/
-thesis_figures/
-plans/
-*.pdf
-THESIS.MD_deprecated
-THESIS_STRRUCTURE.md
-AGENTS.md

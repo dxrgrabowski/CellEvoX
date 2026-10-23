@@ -364,6 +364,32 @@ def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 30
     
     print(f"Clone phylogeny tree saved to: {output_file}")
 
+def terminal_time_from_metadata(output_dir: str, tree_df: pd.DataFrame) -> float:
+    """Terminal (end-of-run) time to assign to the sampled living leaves.
+
+    Living cells are encoded in phylogenetic_tree.csv with DeathTime==0 as a sentinel, so
+    tree_df['DeathTime'].max() is the death time of the last *ancestor*, not the simulation
+    end time. Using it for living leaves collapses every terminal branch. Prefer the
+    terminal time recorded in run_metadata.json and only fall back to the largest observed
+    DeathTime for legacy runs that predate that file.
+    """
+    metadata_path = os.path.join(output_dir, "run_metadata.json")
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path, "r") as f:
+                terminal_time = json.load(f).get("terminal_time")
+            if terminal_time is not None:
+                return float(terminal_time)
+        except (OSError, ValueError) as exc:
+            print(f"Warning: could not read terminal_time from {metadata_path}: {exc}")
+
+    print(
+        "Warning: no terminal_time in run_metadata.json; living leaves fall back to the "
+        "maximum ancestor DeathTime, which can collapse terminal branches."
+    )
+    return float(tree_df['DeathTime'].max())
+
+
 def build_cell_tree(output_dir: str, num_cells: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
     tree_file = os.path.join(output_dir, "phylogeny", "phylogenetic_tree.csv")
     if not os.path.isfile(tree_file):
@@ -403,7 +429,7 @@ def build_cell_tree(output_dir: str, num_cells: int) -> Tuple[nx.DiGraph, Dict[i
                 f"Sampled {num_cells} final living leaves from phylogenetic_tree.csv "
                 f"(DeathTime==0; {len(living_in_tree)} available)."
             )
-        final_gen = float(tree_df['DeathTime'].max())
+        final_gen = terminal_time_from_metadata(output_dir, tree_df)
     else:
         if not files:
             raise ValueError(

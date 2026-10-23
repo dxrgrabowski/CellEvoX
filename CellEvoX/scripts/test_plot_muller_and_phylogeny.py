@@ -209,6 +209,11 @@ class BuildCellTreePrefersFinalLivingLeaves(unittest.TestCase):
             f.write('9001,0,1.0,0,"",,,,0,0\n')
             f.write('9002,0,1.0,0,"",,,,0,0\n')
 
+        # Run ends at generation 99. The tree only records ancestor death times, so its
+        # maximum DeathTime (1.5) is not the terminal time for the living leaves.
+        with open(os.path.join(self.tmpdir, "run_metadata.json"), "w") as f:
+            f.write('{"schema_version": 1, "terminal_time": 99.0}')
+
     def test_build_cell_tree_uses_death_time_zero_leaves(self):
         graph, depths = plot_phylogeny.build_cell_tree(self.tmpdir, num_cells=2)
         self.assertIn(0, graph.nodes)
@@ -228,6 +233,22 @@ class BuildCellTreePrefersFinalLivingLeaves(unittest.TestCase):
         for leaf in (10, 11):
             preds = list(graph.predecessors(leaf))
             self.assertEqual(preds, [5])
+
+    def test_build_cell_tree_uses_terminal_time_for_living_leaves(self):
+        _graph, depths = plot_phylogeny.build_cell_tree(self.tmpdir, num_cells=2)
+        # Living leaves (DeathTime==0) must sit at the recorded terminal time, not at the
+        # maximum ancestor DeathTime (1.5), which would collapse their terminal branches.
+        self.assertEqual(depths[10], 99.0)
+        self.assertEqual(depths[11], 99.0)
+        self.assertEqual(depths[5], 1.5)
+        self.assertNotEqual(depths[10], 1.5)
+
+    def test_build_cell_tree_falls_back_to_ancestor_death_time_without_metadata(self):
+        os.remove(os.path.join(self.tmpdir, "run_metadata.json"))
+        _graph, depths = plot_phylogeny.build_cell_tree(self.tmpdir, num_cells=2)
+        # Legacy runs predate run_metadata.json; keep the previous best-effort behaviour.
+        self.assertEqual(depths[10], 1.5)
+        self.assertEqual(depths[11], 1.5)
 
 
 if __name__ == "__main__":
