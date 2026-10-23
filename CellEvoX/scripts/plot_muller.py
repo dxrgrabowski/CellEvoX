@@ -231,7 +231,12 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 'ChildId': signature_to_id[signature]
             })
     
-    parent_tree_df = pd.DataFrame(parent_rows)
+    # Always give the DataFrame its expected columns, even when parent_rows is empty (e.g. a
+    # single "ancestor" clone signature with no driver-defined children). Without explicit
+    # columns, pd.DataFrame([]) has shape (0, 0), and pyfish's _build_tree() then crashes with
+    # KeyError: 'ParentId' when it does parent_df["ParentId"]. With the columns declared,
+    # pyfish correctly treats the lone clone as an unparented root instead of raising.
+    parent_tree_df = pd.DataFrame(parent_rows, columns=['ParentId', 'ChildId'])
     
     # Save signature mapping for reference
     signature_map = pd.DataFrame([
@@ -241,6 +246,37 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     signature_map.to_csv(os.path.join(output_dir, 'clone_id_mapping.csv'), index=False)
     
     return populations_df, parent_tree_df
+
+
+def _write_trivial_muller_note(output_dir: str, populations_df: pd.DataFrame) -> str:
+    """
+    Writes an explanatory note into clones/ instead of a Müller plot when only one driver-defined
+    clone signature exists (e.g. no driver mutations are configured for this run). A "Müller
+    diagram" in that case is just a single flat, solid-colour band -- not an informative
+    visualization of clonal dynamics -- so we skip muller_plots/ entirely and record the reason
+    alongside the other single-clone artifacts (clone_counts_over_time.png,
+    clone_tree_explainability.txt) that already live in clones/.
+    """
+    clones_dir = os.path.join(output_dir, 'clones')
+    os.makedirs(clones_dir, exist_ok=True)
+    note_path = os.path.join(clones_dir, 'muller_plot_skipped.txt')
+
+    max_pop = int(populations_df['Pop'].max()) if not populations_df.empty else 0
+    with open(note_path, 'w') as f:
+        f.write(
+            "Müller plot skipped\n"
+            "====================\n\n"
+            "Only one driver-defined clone signature was found for this run (the entire "
+            "population is the ancestral 'WT' clone). A Müller diagram would just show a single "
+            "flat band with no clonal structure to visualize, so it was not generated under "
+            "muller_plots/.\n\n"
+            f"Max population observed: {max_pop}\n\n"
+            "See clone_counts_over_time.png and clone_tree_explainability.txt in this folder for "
+            "the (flat) population trajectory, and phylogeny/cell_tree_*_topological.png for real "
+            "cell-level lineage branching.\n"
+        )
+    print(f"Wrote single-clone note to: {note_path}")
+    return note_path
 
 
 def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool = False, 
@@ -259,6 +295,12 @@ def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool
     
     if populations_df.empty:
         print("Warning: No population data to plot")
+        return
+
+    if parent_tree_df.empty:
+        # Only the "ancestor" signature exists -- no driver-defined subclones to show.
+        _write_trivial_muller_note(output_dir, populations_df)
+        print("Skipping Müller plot: only one clone signature found (no driver-defined subclones).")
         return
     
     if output_file is None:
