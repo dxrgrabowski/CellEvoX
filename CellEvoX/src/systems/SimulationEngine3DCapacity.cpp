@@ -211,6 +211,13 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
     termination_reason = ecs::TerminationReason::PopulationCutoff;
   }
 
+  if (config->popul_res > 0) {
+    spdlog::info("Writing final population snapshot at tau={:.6f} (generation index {})",
+                 tau,
+                 tauSnapshotIndex(tau));
+    takePopulationSnapshot();
+  }
+
   return ecs::Run(std::move(cells),
                   std::move(available_mutation_types),
                   std::move(cells_graveyard),

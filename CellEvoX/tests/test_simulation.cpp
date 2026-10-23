@@ -490,7 +490,7 @@ TEST_CASE("SimulationEngine writes final snapshots near integer tau boundaries",
     std::filesystem::remove_all(output_path);
 }
 
-TEST_CASE("Last periodic population snapshot matches phylogenetic tree living leaves",
+TEST_CASE("Final population snapshot matches phylogenetic tree living leaves",
           "[SimulationEngine][PhylogeneticTree][Correctness]") {
     const auto output_path = testTempPath("test_sim_final_popul_matches_tree");
     std::filesystem::remove_all(output_path);
@@ -505,9 +505,8 @@ TEST_CASE("Last periodic population snapshot matches phylogenetic tree living le
     config->env_capacity = 100000;
     config->steps = 25;
     config->stat_res = 1;
-    // One population snapshot per integer generation, so the last periodic snapshot
-    // lands on the terminal generation and must describe the terminal living cells.
-    config->popul_res = 1;
+    // Large enough that no periodic population snapshot fires during the run.
+    config->popul_res = 1000;
     config->output_path = output_path.string();
     config->verbosity = 0;
     config->mutations.push_back({0.05f, 0.02f, 1, true});
@@ -515,7 +514,7 @@ TEST_CASE("Last periodic population snapshot matches phylogenetic tree living le
     SimulationEngine engine(config);
     auto runData = engine.run(config->steps);
 
-    REQUIRE(runData.generational_popul_report.size() == 25);
+    REQUIRE(runData.generational_popul_report.size() == 1);
     const auto& [final_gen, final_cells] = runData.generational_popul_report.back();
     REQUIRE(final_gen == 25);
     REQUIRE(final_cells.size() == runData.cells.size());

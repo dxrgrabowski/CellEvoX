@@ -378,4 +378,47 @@ TEST_CASE("Population snapshot serialization tradeoff", "[benchmark][snapshot-se
     BENCHMARK("3D snapshot serialize N=2000000 mut=4 [full-mutations]") {
         return buildExtendedSnapshot(spatial_input);
     };
+
+    // Matched pairs isolating the forced terminal population snapshot that runs whenever
+    // popul_res > 0 at the end of run(). Each pair keeps population, step count and
+    // sampling cadence identical and varies only popul_res, so the delta is the extra
+    // population copy + serialization + disk write. They are measured through the full
+    // run() lifecycle (end-to-end coverage preserved) and are defined adjacently so
+    // machine drift affects both measurements of a pair together.
+    std::filesystem::create_directories(
+        benchmarkTempPath("bench_snapshot_terminal_2d") / "population_data");
+    std::filesystem::create_directories(
+        benchmarkTempPath("bench_snapshot_terminal_3d") / "population_data");
+
+    BENCHMARK("2D run() N=100000 x2 [popul_res=0: no terminal snapshot]") {
+        auto cfg = makeConfig(100000, 10000000);
+        cfg->popul_res = 0;
+        cfg->output_path = benchmarkTempString("bench_snapshot_terminal_2d");
+        SimulationEngine eng(cfg);
+        return eng.run(2);
+    };
+
+    BENCHMARK("2D run() N=100000 x2 [popul_res>0: forced terminal snapshot]") {
+        auto cfg = makeConfig(100000, 10000000);
+        cfg->popul_res = 1000000;
+        cfg->output_path = benchmarkTempString("bench_snapshot_terminal_2d");
+        SimulationEngine eng(cfg);
+        return eng.run(2);
+    };
+
+    BENCHMARK("3D run() N=20000 x2 [popul_res=0: no terminal snapshot]") {
+        auto cfg = makeSpatial3DConfig(20000, 88.0f, 8.0f, 2);
+        cfg->popul_res = 0;
+        cfg->output_path = benchmarkTempString("bench_snapshot_terminal_3d");
+        SimulationEngine3D eng(cfg);
+        return eng.run(2);
+    };
+
+    BENCHMARK("3D run() N=20000 x2 [popul_res>0: forced terminal snapshot]") {
+        auto cfg = makeSpatial3DConfig(20000, 88.0f, 8.0f, 2);
+        cfg->popul_res = 1000000;
+        cfg->output_path = benchmarkTempString("bench_snapshot_terminal_3d");
+        SimulationEngine3D eng(cfg);
+        return eng.run(2);
+    };
 }
