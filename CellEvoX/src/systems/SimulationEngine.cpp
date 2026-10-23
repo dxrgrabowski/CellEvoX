@@ -193,12 +193,14 @@ void SimulationEngine::runSteps(uint32_t steps) {
 
   for (uint32_t i = 0; i < steps; ++i) {
     if (shutdown_requested.load()) {
+      termination_reason = ecs::TerminationReason::ShutdownRequested;
       spdlog::info("Shutdown requested at step {}/{}", i, steps);
       std::cout << std::endl;
       break;
     }
     if (config->max_population_cutoff > 0 &&
         actual_population >= config->max_population_cutoff) {
+      termination_reason = ecs::TerminationReason::PopulationCutoff;
       spdlog::warn("Population cutoff reached: {} >= {} at tau={:.2f}. Stopping.",
                    actual_population, config->max_population_cutoff, tau);
       std::cout << std::endl;
@@ -246,6 +248,12 @@ void SimulationEngine::runSteps(uint32_t steps) {
 ecs::Run SimulationEngine::run(uint32_t steps) {
   runSteps(steps);
 
+  if (termination_reason == ecs::TerminationReason::PlannedHorizon &&
+      config->max_population_cutoff > 0 &&
+      actual_population >= config->max_population_cutoff) {
+    termination_reason = ecs::TerminationReason::PopulationCutoff;
+  }
+
   materializeCellsFromDense();
   materializeGraveyardFromDense();
 
@@ -255,7 +263,8 @@ ecs::Run SimulationEngine::run(uint32_t steps) {
                   std::move(generational_stat_report),
                   std::move(generational_popul_report),
                   total_deaths,
-                  tau);
+                  tau,
+                  termination_reason);
 }
 
 void SimulationEngine::stop() { spdlog::info("Simulation stopped"); }
@@ -660,14 +669,21 @@ void SimulationEngine::takePopulationSnapshot() {
          {0, 0, 0}});
   }
 
+  const int generation = tauSnapshotIndex(tau);
   const auto snapshot_path =
-      CellEvoX::io::populationSnapshotPath(config->output_path, tauSnapshotIndex(tau));
+      CellEvoX::io::populationSnapshotPath(config->output_path, generation);
   if (!CellEvoX::io::writePopulationSnapshot(
           snapshot_path, tau, 0, snapshot_records, mutation_payload, payload_kind)) {
     spdlog::error("Failed to write population snapshot file: {}", snapshot_path);
   }
 
-  generational_popul_report.push_back({tauSnapshotIndex(tau), std::move(cells_copy)});
+  // Upsert: a final snapshot may refresh the same generation index as the last periodic one.
+  if (!generational_popul_report.empty() && generational_popul_report.back().first == generation) {
+    generational_popul_report.back().second = std::move(cells_copy);
+  } else {
+    generational_popul_report.push_back({generation, std::move(cells_copy)});
+  }
+  last_population_snapshot_tau = generation;
 }
 
 void SimulationEngine::pruneGraveyard() {

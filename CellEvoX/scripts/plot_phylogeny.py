@@ -110,16 +110,19 @@ def build_clone_tree(output_dir: str) -> nx.DiGraph:
     if not populations:
         raise ValueError(f"No population_generation_*.csv files found in {output_dir}")
     
-    # We just need to know which clone signatures exist and their max population
+    # Track the largest population observed for each clone in any one snapshot.
     all_signatures: Set[str] = set()
     node_sizes: Dict[str, int] = {}
     
     for generation in populations.values():
+        generation_sizes: Dict[str, int] = {}
         for _, row in generation.iterrows():
             mutations = parse_mutations(row.get('Mutations', ''))
             signature = get_driver_signature(mutations, driver_type_ids)
             all_signatures.add(signature)
-            node_sizes[signature] = node_sizes.get(signature, 0) + 1
+            generation_sizes[signature] = generation_sizes.get(signature, 0) + 1
+        for signature, population in generation_sizes.items():
+            node_sizes[signature] = max(node_sizes.get(signature, 0), population)
     
     G = nx.DiGraph()
     
@@ -219,6 +222,40 @@ def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 30
         print("Warning: No roots found.")
         return
     root = roots[0]
+
+    # A single-node tree (just the root/"ancestor" clone, no driver-defined descendants) is a
+    # legitimate result for runs with no driver mutations, but the normal polar-tree renderer
+    # below produces a near-blank image: with only one point at radius 0 and no reference grid,
+    # `bbox_inches='tight'` crops tightly around that single dot, which then appears as a stray
+    # mark unrelated to the legend box. Render an explicit, self-explanatory placeholder instead
+    # so this reads as "no driver-defined subclones" rather than "plot is broken".
+    if len(G.nodes) == 1:
+        population_size = G.nodes[root].get('size', 0)
+        label = G.nodes[root].get('label', root)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_axis_off()
+        ax.scatter([0.5], [0.62], s=1200, c='black', zorder=3)
+        ax.text(0.5, 0.62, label, ha='center', va='center', fontsize=13, color='white',
+                zorder=4, weight='bold')
+        ax.text(
+            0.5, 0.42,
+            f"Single clone: entire population is '{label}' (Max Population: {population_size})",
+            ha='center', va='center', fontsize=11, weight='bold')
+        ax.text(
+            0.5, 0.22,
+            "No driver mutations are defined for this run, so the driver-based clone\n"
+            "definition collapses the whole lineage into one node. This is expected for\n"
+            "no-driver / passenger-only configurations, not a rendering error. See\n"
+            "clones/clone_counts_over_time.png and muller_plots/ for the (flat) population\n"
+            "trajectory, and phylogeny/cell_tree_*_topological.png for real cell-level branching.",
+            ha='center', va='center', fontsize=10)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_title("Circular Clone Phylogeny: Single Clone", fontsize=14)
+        plt.savefig(output_file, dpi=dpi, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"Clone phylogeny tree saved to: {output_file} (single-clone placeholder)")
+        return
     
     # Calculate depth natively
     sys.setrecursionlimit(50000)
@@ -327,61 +364,128 @@ def plot_clone_phylogeny(output_dir: str, output_file: str = None, dpi: int = 30
     
     print(f"Clone phylogeny tree saved to: {output_file}")
 
+def terminal_time_from_metadata(output_dir: str, tree_df: pd.DataFrame) -> float:
+    """Terminal (end-of-run) time to assign to the sampled living leaves.
+
+    Living cells are encoded in phylogenetic_tree.csv with DeathTime==0 as a sentinel, so
+    tree_df['DeathTime'].max() is the death time of the last *ancestor*, not the simulation
+    end time. Using it for living leaves collapses every terminal branch. Prefer the
+    terminal time recorded in run_metadata.json and only fall back to the largest observed
+    DeathTime for legacy runs that predate that file.
+    """
+    metadata_path = os.path.join(output_dir, "run_metadata.json")
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path, "r") as f:
+                terminal_time = json.load(f).get("terminal_time")
+            if terminal_time is not None:
+                return float(terminal_time)
+        except (OSError, ValueError) as exc:
+            print(f"Warning: could not read terminal_time from {metadata_path}: {exc}")
+
+    print(
+        "Warning: no terminal_time in run_metadata.json; living leaves fall back to the "
+        "maximum ancestor DeathTime, which can collapse terminal branches."
+    )
+    return float(tree_df['DeathTime'].max())
+
+
 def build_cell_tree(output_dir: str, num_cells: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
     tree_file = os.path.join(output_dir, "phylogeny", "phylogenetic_tree.csv")
     if not os.path.isfile(tree_file):
         raise ValueError(f"Required file {tree_file} not found.")
-        
-    pop_dir = os.path.join(output_dir, "population_data")
-    pattern = os.path.join(pop_dir, "population_generation_*.csv")
-    files = glob.glob(pattern)
-    if not files:
-        raise ValueError(f"No population_generation_*.csv files found in {pop_dir}")
-        
-    def get_gen(filepath):
-        match = re.search(r'population_generation_(\d+)\.csv', os.path.basename(filepath))
-        return int(match.group(1)) if match else -1
-        
-    files.sort(key=get_gen)
-    final_file = files[-1]
-    final_gen = get_gen(final_file)
-    
-    df_final = pd.read_csv(final_file)
-    if len(df_final) <= num_cells:
-        print(f"Warning: requested {num_cells} cells, but final population only has {len(df_final)}. Using all.")
-        sampled_cells = df_final['CellID'].tolist()
-    else:
-        sampled_cells = df_final.sample(n=num_cells, random_state=42)['CellID'].tolist()
-        
+
     tree_df = pd.read_csv(tree_file)
     id_to_parent = dict(zip(tree_df['NodeID'], tree_df['ParentID']))
     id_to_death = dict(zip(tree_df['NodeID'], tree_df['DeathTime']))
-    
+
+    # Prefer final living leaves encoded in the phylogenetic tree (DeathTime==0).
+    # These match createPhylogeneticTree()'s living cells. Falling back to the last
+    # population CSV is only for legacy runs / trees without living markers.
+    living_in_tree = tree_df[(tree_df['DeathTime'] == 0) & (tree_df['NodeID'] != 0)]['NodeID'].tolist()
+
+    pop_dir = os.path.join(output_dir, "population_data")
+    pattern = os.path.join(pop_dir, "population_generation_*.csv")
+    files = glob.glob(pattern)
+
+    def get_gen(filepath):
+        match = re.search(r'population_generation_(\d+)\.csv', os.path.basename(filepath))
+        return int(match.group(1)) if match else -1
+
+    sampled_cells = []
+    final_gen = 0.0
+    if living_in_tree:
+        if len(living_in_tree) <= num_cells:
+            print(
+                f"Using all {len(living_in_tree)} final living leaves from phylogenetic_tree.csv "
+                f"(DeathTime==0)."
+            )
+            sampled_cells = living_in_tree
+        else:
+            sampled_cells = (
+                pd.Series(living_in_tree).sample(n=num_cells, random_state=42).tolist()
+            )
+            print(
+                f"Sampled {num_cells} final living leaves from phylogenetic_tree.csv "
+                f"(DeathTime==0; {len(living_in_tree)} available)."
+            )
+        final_gen = terminal_time_from_metadata(output_dir, tree_df)
+    else:
+        if not files:
+            raise ValueError(
+                f"No DeathTime==0 leaves in {tree_file} and no population_generation_*.csv "
+                f"in {pop_dir}"
+            )
+        files.sort(key=get_gen)
+        final_file = files[-1]
+        final_gen = float(get_gen(final_file))
+        df_final = pd.read_csv(final_file)
+        if len(df_final) <= num_cells:
+            print(
+                f"Warning: requested {num_cells} cells, but final population only has "
+                f"{len(df_final)}. Using all."
+            )
+            sampled_cells = df_final['CellID'].tolist()
+        else:
+            sampled_cells = df_final.sample(n=num_cells, random_state=42)['CellID'].tolist()
+        print(
+            "Warning: phylogenetic_tree.csv has no DeathTime==0 leaves; "
+            f"falling back to {os.path.basename(final_file)} (may not match tree IDs)."
+        )
+
     G = nx.DiGraph()
     depths = {}
-    
+
     visited = set()
+    missing_parents = 0
     for leaf_id in sampled_cells:
         curr = leaf_id
         depths[curr] = final_gen
-        
+
         while curr != 0:
             parent = id_to_parent.get(curr)
             if parent is None:
                 # If parent not in tree, attach to root 0
                 parent = 0
-            
+                missing_parents += 1
+
             G.add_edge(parent, curr)
-            
+
             if parent not in depths:
                 depths[parent] = id_to_death.get(parent, 0.0)
-                
+
             if parent in visited:
                 break
-            
+
             visited.add(parent)
             curr = parent
-            
+
+    if missing_parents:
+        print(
+            f"Warning: {missing_parents} parent lookups missed in phylogenetic_tree.csv; "
+            "those edges were attached to root 0."
+        )
+
     return G, depths
 
 def plot_cell_phylogeny(output_dir: str, num_cells: int, output_file: str = None, dpi: int = 300, use_topological: bool = True):

@@ -68,6 +68,7 @@ class SimulationEngine3DCapacity {
   int last_population_snapshot_tau = 0;
   int last_memory_log_tau = 0;
   int last_pruning_tau = -1;
+  ecs::TerminationReason termination_reason = ecs::TerminationReason::PlannedHorizon;
 
   std::shared_ptr<SimulationConfig> config;
   std::mt19937 event_rng_;

@@ -16,6 +16,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -25,9 +26,97 @@
 
 #include "io/PopulationSnapshotIO.hpp"
 
+namespace plt = matplotlibcpp;
+
 namespace {
 
 namespace fs = std::filesystem;
+
+// Fixed-range histogram via pyplot.hist (matplotlibcpp::hist has no range/log).
+bool histFixedRange(const std::vector<double>& values,
+                    long bins,
+                    double range_min,
+                    double range_max,
+                    bool log_y) {
+  matplotlibcpp::detail::_interpreter::get();
+  PyObject* yarray = matplotlibcpp::detail::get_array(values);
+
+  PyObject* range_tuple = PyTuple_New(2);
+  PyTuple_SetItem(range_tuple, 0, PyFloat_FromDouble(range_min));
+  PyTuple_SetItem(range_tuple, 1, PyFloat_FromDouble(range_max));
+
+  PyObject* kwargs = PyDict_New();
+  PyDict_SetItemString(kwargs, "bins", PyLong_FromLong(bins));
+  PyDict_SetItemString(kwargs, "range", range_tuple);
+  Py_DECREF(range_tuple);
+  PyDict_SetItemString(kwargs, "log", log_y ? Py_True : Py_False);
+  PyDict_SetItemString(kwargs, "color", PyString_FromString("#4c78a8"));
+  PyDict_SetItemString(kwargs, "edgecolor", PyString_FromString("white"));
+  PyDict_SetItemString(kwargs, "linewidth", PyFloat_FromDouble(0.4));
+
+  PyObject* plot_args = PyTuple_New(1);
+  PyTuple_SetItem(plot_args, 0, yarray);
+
+  PyObject* res = PyObject_Call(
+      matplotlibcpp::detail::_interpreter::get().s_python_function_hist, plot_args, kwargs);
+
+  Py_DECREF(plot_args);
+  Py_DECREF(kwargs);
+  if (!res) {
+    PyErr_Print();
+    return false;
+  }
+  Py_DECREF(res);
+  return true;
+}
+
+void subplotInt(long nrows, long ncols, long index) {
+  matplotlibcpp::detail::_interpreter::get();
+  PyObject* args = PyTuple_New(3);
+  PyTuple_SetItem(args, 0, PyLong_FromLong(nrows));
+  PyTuple_SetItem(args, 1, PyLong_FromLong(ncols));
+  PyTuple_SetItem(args, 2, PyLong_FromLong(index));
+  PyObject* res = PyObject_CallObject(
+      matplotlibcpp::detail::_interpreter::get().s_python_function_subplot, args);
+  Py_DECREF(args);
+  if (!res) {
+    PyErr_Print();
+    throw std::runtime_error("Call to subplot() failed.");
+  }
+  Py_DECREF(res);
+}
+
+void saveVafTwoPanelHistogram(const std::vector<double>& vafs,
+                              bool full_vaf,
+                              int generation,
+                              const std::string& output_png) {
+  const char* kind = full_vaf ? "Full VAF" : "Driver VAF";
+  const char* xlabel = full_vaf ? "Variant Allele Frequency (VAF)"
+                                : "Driver Variant Allele Frequency (VAF)";
+
+  plt::figure_size(1100, 900);
+
+  subplotInt(2, 1, 1);
+  histFixedRange(vafs, /*bins=*/100, /*range_min=*/0.0, /*range_max=*/1.0, /*log_y=*/true);
+  plt::title(std::string(kind) + " — Generation " + std::to_string(generation) +
+             "\n[0, 1], 100 bins (Δ=0.01), log Y");
+  plt::xlabel(xlabel);
+  plt::ylabel("Frequency (log)");
+  plt::xlim(0.0, 1.0);
+  plt::grid(true);
+
+  subplotInt(2, 1, 2);
+  histFixedRange(vafs, /*bins=*/50, /*range_min=*/0.0, /*range_max=*/0.05, /*log_y=*/true);
+  plt::title("Zoom [0, 0.05], 50 bins (Δ=0.001), log Y");
+  plt::xlabel(xlabel);
+  plt::ylabel("Frequency (log)");
+  plt::xlim(0.0, 0.05);
+  plt::grid(true);
+
+  plt::tight_layout();
+  plt::save(output_png);
+  plt::close();
+}
 
 constexpr const char* kPopulationCsvHeader =
     "CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimensions\n";
@@ -268,11 +357,32 @@ std::string resolvePythonCommand() {
 #endif
 }
 
+// Replays the exact tau accumulation performed by the simulation engines so the
+// horizon used to validate run metadata matches the arithmetic that produced the
+// terminal tau.  The SPATIAL_3D_DENSITY engine steps tau with a float increment
+// (SimulationEngine3D.cpp), so its terminal tau is the sum of float-rounded steps
+// and drifts from `steps * tau_step` in double by several ulps; long-running
+// double-stepped engines drift through accumulated rounding as well.  Comparing
+// against a freshly multiplied double horizon rejects those runs even though they
+// completed successfully.
+double accumulateEngineTau(const SimulationConfig& config) {
+  double tau = 0.0;
+  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY) {
+    const float tau_step = static_cast<float>(config.tau_step);
+    for (size_t i = 0; i < config.steps; ++i) {
+      tau += tau_step;
+    }
+  } else {
+    for (size_t i = 0; i < config.steps; ++i) {
+      tau += config.tau_step;
+    }
+  }
+  return tau;
+}
+
 }  // namespace
 
 namespace CellEvoX::core {
-
-namespace plt = matplotlibcpp;
 
 RunDataEngine::RunDataEngine(std::shared_ptr<SimulationConfig> config,
                              std::shared_ptr<ecs::Run> run,
@@ -351,6 +461,8 @@ void RunDataEngine::prepareOutputDir() {
   }
 }
 void RunDataEngine::exportToCSV() {
+  exportRunMetadata();
+
   // Export Generational Statistics
   {
     std::string statFilename = output_dir + "statistics/generational_statistics.csv";
@@ -398,6 +510,59 @@ void RunDataEngine::exportToCSV() {
 
     file.close();
   }
+}
+
+void RunDataEngine::exportRunMetadata() const {
+  if (!run || !config) {
+    return;
+  }
+
+  const double configured_horizon = static_cast<double>(config->steps) * config->tau_step;
+  // Validate against the horizon the engine actually accumulated: comparing a
+  // float-stepped terminal tau (or a long double-stepped one) against a freshly
+  // multiplied double horizon rejects runs that completed successfully.
+  const double engine_horizon = accumulateEngineTau(*config);
+  const size_t terminal_population = run->cells.size();
+  const double tolerance = std::max(1e-9, std::abs(engine_horizon) * 1e-12);
+  bool termination_verified = false;
+
+  switch (run->termination_reason) {
+    case ecs::TerminationReason::PlannedHorizon:
+      termination_verified = run->tau + tolerance >= engine_horizon &&
+                             (config->max_population_cutoff == 0 ||
+                              terminal_population < config->max_population_cutoff);
+      break;
+    case ecs::TerminationReason::PopulationCutoff:
+      termination_verified = config->max_population_cutoff > 0 &&
+                             terminal_population >= config->max_population_cutoff &&
+                             run->tau <= engine_horizon + tolerance;
+      break;
+    case ecs::TerminationReason::ShutdownRequested:
+      termination_verified = run->tau <= engine_horizon + tolerance;
+      break;
+  }
+
+  if (!termination_verified) {
+    throw std::runtime_error("Run termination metadata is inconsistent with the terminal state");
+  }
+
+  const nlohmann::json metadata = {
+      {"schema_version", 1},
+      {"termination_reason", ecs::terminationReasonName(run->termination_reason)},
+      {"termination_verified", true},
+      {"terminal_time", run->tau},
+      {"terminal_population", terminal_population},
+      {"configured_horizon", configured_horizon},
+      {"population_cutoff", config->max_population_cutoff},
+  };
+
+  const std::filesystem::path metadata_path =
+      std::filesystem::path(output_dir) / "run_metadata.json";
+  std::ofstream file(metadata_path);
+  if (!file.is_open()) {
+    throw std::runtime_error("Cannot write run metadata: " + metadata_path.string());
+  }
+  file << metadata.dump(2) << '\n';
 }
 
 void RunDataEngine::exportPopulationSnapshotsToCSV() {
@@ -473,11 +638,82 @@ void RunDataEngine::exportPopulationSnapshotsToCSV() {
     std::cout << "Population data exported to: " << csv_filename << std::endl;
   }
 }
+std::vector<StatSnapshot> RunDataEngine::loadGenerationalStatsFromCsv() const {
+  std::vector<StatSnapshot> stats;
+  const std::string csv_path = output_dir + "statistics/generational_statistics.csv";
+  std::ifstream file(csv_path);
+  if (!file.is_open()) {
+    spdlog::warn("Could not open {} to reconstruct generational statistics.", csv_path);
+    return stats;
+  }
+
+  std::string line;
+  bool skipped_header = false;
+  size_t line_number = 0;
+  while (std::getline(file, line)) {
+    ++line_number;
+    if (!skipped_header) {
+      skipped_header = true;
+      continue;
+    }
+    if (line.empty()) {
+      continue;
+    }
+
+    std::vector<std::string> fields;
+    std::stringstream line_stream(line);
+    std::string field;
+    while (std::getline(line_stream, field, ',')) {
+      fields.push_back(field);
+    }
+
+    if (fields.size() < 10) {
+      spdlog::warn("Skipping malformed row {} in {}: expected 10 fields, found {}.", line_number,
+                   csv_path, fields.size());
+      continue;
+    }
+
+    try {
+      StatSnapshot snapshot{};
+      snapshot.tau = std::stod(fields[0]);
+      snapshot.total_living_cells = static_cast<size_t>(std::stoull(fields[1]));
+      snapshot.mean_fitness = std::stod(fields[2]);
+      snapshot.fitness_variance = std::stod(fields[3]);
+      snapshot.fitness_skewness = std::stod(fields[4]);
+      snapshot.fitness_kurtosis = std::stod(fields[5]);
+      snapshot.mean_mutations = std::stod(fields[6]);
+      snapshot.mutations_variance = std::stod(fields[7]);
+      snapshot.mutations_skewness = std::stod(fields[8]);
+      snapshot.mutations_kurtosis = std::stod(fields[9]);
+      stats.push_back(snapshot);
+    } catch (const std::exception& e) {
+      spdlog::warn("Skipping unparsable row {} in {}: {}", line_number, csv_path, e.what());
+    }
+  }
+
+  return stats;
+}
+
+std::vector<StatSnapshot> RunDataEngine::resolveGenerationalStats() const {
+  if (run && !run->generational_stat_report.empty()) {
+    return run->generational_stat_report;
+  }
+  return loadGenerationalStatsFromCsv();
+}
+
 void RunDataEngine::plotLivingCellsOverGenerations() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping living-cells plot.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<size_t> living_cells;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     living_cells.push_back(snapshot.total_living_cells);
   }
@@ -492,13 +728,21 @@ void RunDataEngine::plotLivingCellsOverGenerations() {
   plt::close();
 }
 void RunDataEngine::plotFitnessStatistics() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping fitness statistics plots.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<double> mean_fitness;
   std::vector<double> fitness_variance;
   std::vector<double> fitness_skewness;
   std::vector<double> fitness_kurtosis;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     mean_fitness.push_back(snapshot.mean_fitness);
     fitness_variance.push_back(snapshot.fitness_variance);
@@ -548,13 +792,21 @@ void RunDataEngine::plotFitnessStatistics() {
 }
 
 void RunDataEngine::plotMutationsStatistics() {
+  const std::vector<StatSnapshot> stats = resolveGenerationalStats();
+  if (stats.empty()) {
+    spdlog::warn(
+        "No generational statistics available (live run empty and no readable "
+        "statistics/generational_statistics.csv); skipping mutation statistics plots.");
+    return;
+  }
+
   std::vector<double> generations;
   std::vector<double> mean_mutations;
   std::vector<double> mutations_variance;
   std::vector<double> mutations_skewness;
   std::vector<double> mutations_kurtosis;
 
-  for (const auto& snapshot : run->generational_stat_report) {
+  for (const auto& snapshot : stats) {
     generations.push_back(snapshot.tau);
     mean_mutations.push_back(snapshot.mean_mutations);
     mutations_variance.push_back(snapshot.mutations_variance);
@@ -704,19 +956,12 @@ void RunDataEngine::plotMutationFrequency() {
         continue;
       }
 
-      int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
-
-      plt::figure();
-      plt::hist(vafs, num_bins);
-      plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
-                                      : "Driver VAF Histogram - Generation ") +
-                 std::to_string(generation));
-      plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
-                           : "Driver Variant Allele Frequency (VAF)");
-      plt::ylabel("Frequency");
-      plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
-                ".png");
-      plt::close();
+      saveVafTwoPanelHistogram(
+          vafs,
+          full_vaf,
+          static_cast<int>(generation),
+          output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+              ".png");
     }
     return;
   }
@@ -763,19 +1008,12 @@ void RunDataEngine::plotMutationFrequency() {
     }
 
     const int generation = extractGenerationFromFilename(path);
-    int num_bins = std::max(1, static_cast<int>(std::ceil(1 + 3.322 * std::log10(vafs.size()))));
-
-    plt::figure();
-    plt::hist(vafs, num_bins);
-    plt::title(std::string(full_vaf ? "Full VAF Histogram - Generation "
-                                    : "Driver VAF Histogram - Generation ") +
-               std::to_string(generation));
-    plt::xlabel(full_vaf ? "Variant Allele Frequency (VAF)"
-                         : "Driver Variant Allele Frequency (VAF)");
-    plt::ylabel("Frequency");
-    plt::save(output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
-              ".png");
-    plt::close();
+    saveVafTwoPanelHistogram(
+        vafs,
+        full_vaf,
+        generation,
+        output_dir + "vaf_diagrams/vaf_histogram_generation_" + std::to_string(generation) +
+            ".png");
   }
 }
 
@@ -1120,7 +1358,7 @@ void RunDataEngine::plotTumorReplay3D() {
        "--max-frames",
        "250",
        "--pulse-frames",
-       "3"});
+       "2"});
   if (result == 0) {
     spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
   } else {

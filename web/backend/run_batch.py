@@ -82,9 +82,11 @@ async def run(args: argparse.Namespace) -> int:
         threads_per_run=args.threads_per_run,
         postprocess=args.postprocess,
     )
+    log_path = runner.get_status().get("log_path")
     print(
         f"[runner] Started {run_id} with {len(configs)} config(s), "
-        f"parallelism={min(args.parallel, len(configs))}, postprocess={args.postprocess}"
+        f"parallelism={min(args.parallel, len(configs))}, postprocess={args.postprocess}, "
+        f"log={log_path}"
     )
 
     async for line in runner.log_stream():

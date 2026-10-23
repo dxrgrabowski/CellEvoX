@@ -168,7 +168,7 @@ async def start_simulation(req: SimulationStartRequest):
     _validate_web_batch_outputs([req.config], "full")
     try:
         run_id = await runner.start(req.config)
-        return {"status": "started", "run_id": run_id}
+        return {"status": "started", "run_id": run_id, "log_path": runner.get_status().get("log_path")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -198,6 +198,7 @@ async def start_simulation_batch(req: SimulationBatchStartRequest):
             "batch_id": batch_id,
             "count": len(req.configs),
             "parallelism": min(req.max_parallel, len(req.configs)),
+            "log_path": runner.get_status().get("log_path"),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -248,7 +249,7 @@ async def analyze_run(run_id: str, req: RunAnalyzeRequest):
 
     try:
         analysis_id = await runner.analyze(run_dir, threads_per_run=req.threads_per_run)
-        return {"status": "started", "run_id": analysis_id, "analysis_id": analysis_id}
+        return {"status": "started", "run_id": analysis_id, "analysis_id": analysis_id, "log_path": runner.get_status().get("log_path")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
