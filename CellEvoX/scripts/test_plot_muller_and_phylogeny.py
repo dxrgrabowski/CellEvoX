@@ -152,6 +152,7 @@ class PlotClonePhylogenyTrivialClone(unittest.TestCase):
         _write_no_driver_fixture(self.tmpdir)
         graph = plot_phylogeny.build_clone_tree(self.tmpdir)
         self.assertEqual(len(graph.nodes), 1)
+        self.assertEqual(graph.nodes["ancestor"]["size"], 5)
 
     def test_plot_clone_phylogeny_renders_single_clone_placeholder(self):
         _write_no_driver_fixture(self.tmpdir)
@@ -168,6 +169,8 @@ class PlotClonePhylogenyTrivialClone(unittest.TestCase):
 
         graph = plot_phylogeny.build_clone_tree(self.tmpdir)
         self.assertEqual(len(graph.nodes), 2)
+        self.assertEqual(graph.nodes["ancestor"]["size"], 4)
+        self.assertEqual(graph.nodes["100"]["size"], 4)
 
         plot_phylogeny.plot_clone_phylogeny(self.tmpdir, output_file=output_file)
         self.assertTrue(os.path.exists(output_file))

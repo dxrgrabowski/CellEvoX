@@ -110,16 +110,19 @@ def build_clone_tree(output_dir: str) -> nx.DiGraph:
     if not populations:
         raise ValueError(f"No population_generation_*.csv files found in {output_dir}")
     
-    # We just need to know which clone signatures exist and their max population
+    # Track the largest population observed for each clone in any one snapshot.
     all_signatures: Set[str] = set()
     node_sizes: Dict[str, int] = {}
     
     for generation in populations.values():
+        generation_sizes: Dict[str, int] = {}
         for _, row in generation.iterrows():
             mutations = parse_mutations(row.get('Mutations', ''))
             signature = get_driver_signature(mutations, driver_type_ids)
             all_signatures.add(signature)
-            node_sizes[signature] = node_sizes.get(signature, 0) + 1
+            generation_sizes[signature] = generation_sizes.get(signature, 0) + 1
+        for signature, population in generation_sizes.items():
+            node_sizes[signature] = max(node_sizes.get(signature, 0), population)
     
     G = nx.DiGraph()
     
