@@ -490,6 +490,52 @@ TEST_CASE("SimulationEngine writes final snapshots near integer tau boundaries",
     std::filesystem::remove_all(output_path);
 }
 
+TEST_CASE("Final population snapshot matches phylogenetic tree living leaves",
+          "[SimulationEngine][PhylogeneticTree][Correctness]") {
+    const auto output_path = testTempPath("test_sim_final_popul_matches_tree");
+    std::filesystem::remove_all(output_path);
+    std::filesystem::create_directories(output_path / "statistics");
+    std::filesystem::create_directories(output_path / "population_data");
+    std::filesystem::create_directories(output_path / "phylogeny");
+
+    auto config = std::make_shared<SimulationConfig>();
+    config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
+    config->tau_step = 1.0;
+    config->initial_population = 40;
+    config->env_capacity = 100000;
+    config->steps = 25;
+    config->stat_res = 1;
+    // Large enough that no periodic population snapshot fires during the run.
+    config->popul_res = 1000;
+    config->output_path = output_path.string();
+    config->verbosity = 0;
+    config->mutations.push_back({0.05f, 0.02f, 1, true});
+
+    SimulationEngine engine(config);
+    auto runData = engine.run(config->steps);
+
+    REQUIRE(runData.generational_popul_report.size() == 1);
+    const auto& [final_gen, final_cells] = runData.generational_popul_report.back();
+    REQUIRE(final_gen == 25);
+    REQUIRE(final_cells.size() == runData.cells.size());
+    REQUIRE(final_cells.size() > 0);
+
+    const auto snapshot_path =
+        output_path / "population_data" / ("population_generation_" + std::to_string(final_gen) + ".bin");
+    REQUIRE(std::filesystem::exists(snapshot_path));
+
+    for (const auto& [cell_id, _cell] : final_cells) {
+        tbb::concurrent_hash_map<uint32_t, ecs::NodeData>::const_accessor tree_accessor;
+        REQUIRE(runData.phylogenetic_tree.find(tree_accessor, cell_id));
+        REQUIRE(tree_accessor->second.death_time == Catch::Approx(0.0));
+
+        CellMap::const_accessor cell_accessor;
+        REQUIRE(runData.cells.find(cell_accessor, cell_id));
+    }
+
+    std::filesystem::remove_all(output_path);
+}
+
 TEST_CASE("Simulation Determinism", "[Determinism]") {
     auto config1 = std::make_shared<SimulationConfig>();
     config1->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;

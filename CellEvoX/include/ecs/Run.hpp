@@ -12,6 +12,24 @@
 
 struct StatSnapshot;
 namespace ecs {
+enum class TerminationReason {
+  PlannedHorizon,
+  PopulationCutoff,
+  ShutdownRequested,
+};
+
+inline const char* terminationReasonName(TerminationReason reason) {
+  switch (reason) {
+    case TerminationReason::PlannedHorizon:
+      return "planned_horizon";
+    case TerminationReason::PopulationCutoff:
+      return "population_cutoff";
+    case TerminationReason::ShutdownRequested:
+      return "shutdown_requested";
+  }
+  return "unknown";
+}
+
 struct NodeData {
   uint32_t parent_id;
   uint32_t child_sum = 0;
@@ -38,6 +56,7 @@ class Run {
   size_t total_mutations_memory = 0;
   size_t total_graveyard_memory = 0;
   double tau = 0.0;
+  TerminationReason termination_reason = TerminationReason::PlannedHorizon;
 
   Run(CellMap &&cells,
       std::map<uint8_t, MutationType> mutation_id_to_type,
@@ -45,7 +64,8 @@ class Run {
       std::vector<StatSnapshot> &&generational_stat_report,
       std::vector<std::pair<int, CellMap>> generational_popul_report,
       size_t deaths,
-      double tau);
+      double tau,
+      TerminationReason termination_reason = TerminationReason::PlannedHorizon);
 
   Run(const Run &) = delete;
   Run &operator=(const Run &) = delete;
