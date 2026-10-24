@@ -3,8 +3,6 @@
 export type SimulationMode =
   | 'stochastic'
   | 'deterministic'
-  | 'spatial_3d'
-  | 'spatial_3d_density'
   | 'spatial_3d_capacity';
 
 export interface MutationType {
@@ -34,8 +32,6 @@ export interface SimulationConfig {
   phylogeny_num_cells_sampling: number;
   // Spatial 3D (only relevant for spatial modes)
   spatial_domain_size: number;
-  max_local_density: number;
-  sample_radius: number;
   spring_constant: number;
   mech_dt: number;
   mech_substeps: number;
@@ -60,8 +56,6 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   verbosity: 2,
   phylogeny_num_cells_sampling: 100,
   spatial_domain_size: 200.0,
-  max_local_density: 8.0,
-  sample_radius: 3.0,
   spring_constant: 0.5,
   mech_dt: 0.1,
   mech_substeps: 5,

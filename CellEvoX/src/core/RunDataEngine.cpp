@@ -359,23 +359,13 @@ std::string resolvePythonCommand() {
 
 // Replays the exact tau accumulation performed by the simulation engines so the
 // horizon used to validate run metadata matches the arithmetic that produced the
-// terminal tau.  The SPATIAL_3D_DENSITY engine steps tau with a float increment
-// (SimulationEngine3D.cpp), so its terminal tau is the sum of float-rounded steps
-// and drifts from `steps * tau_step` in double by several ulps; long-running
-// double-stepped engines drift through accumulated rounding as well.  Comparing
-// against a freshly multiplied double horizon rejects those runs even though they
-// completed successfully.
+// terminal tau.  Accumulating step by step in double drifts from `steps * tau_step`
+// through rounding, so comparing against a freshly multiplied horizon would reject
+// runs that completed successfully.
 double accumulateEngineTau(const SimulationConfig& config) {
   double tau = 0.0;
-  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY) {
-    const float tau_step = static_cast<float>(config.tau_step);
-    for (size_t i = 0; i < config.steps; ++i) {
-      tau += tau_step;
-    }
-  } else {
-    for (size_t i = 0; i < config.steps; ++i) {
-      tau += config.tau_step;
-    }
+  for (size_t i = 0; i < config.steps; ++i) {
+    tau += config.tau_step;
   }
   return tau;
 }

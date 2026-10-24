@@ -12,10 +12,8 @@ flowchart TD
   App --> Parser["SimulationConfig parser"]
   Parser --> Select["Engine selection"]
   Select --> E2D["SimulationEngine<br/>2D stochastic"]
-  Select --> E3D["SimulationEngine3D<br/>3D density"]
   Select --> E3DC["SimulationEngine3DCapacity<br/>3D capacity"]
   E2D --> Run["ecs::Run"]
-  E3D --> Run
   E3DC --> Run
   Run --> Data["RunDataEngine"]
   Data --> Stats["statistics/*.csv"]
@@ -59,9 +57,9 @@ and constructs `CellEvoX::core::Application`.
 | --- | --- | --- |
 | `stochastic` | `STOCHASTIC_TAU_LEAP` | `SimulationEngine` |
 | `deterministic` | `DETERMINISTIC_RK4` | Parsed, but not dispatched to an RK4 implementation in current mainline |
-| `spatial_3d_density` | `SPATIAL_3D_DENSITY` | `SimulationEngine3D` |
 | `spatial_3d_capacity` | `SPATIAL_3D_CAPACITY` | `SimulationEngine3DCapacity` |
-| `spatial_3d` | `SPATIAL_3D_DENSITY` | Legacy alias |
+
+Any other mode string is rejected by `SimulationConfig::fromJson()`.
 
 `SimulationEngine3DCapacity` intentionally reuses `CommonPopulationStep` so its
 birth/death/mutation events match the 2D stochastic engine before spatial

@@ -59,9 +59,11 @@ GUI files exist, but the normal tested path is not QML-driven.
 ## What is implemented
 
 - `stochastic`: classic 2D/non-spatial stochastic tau-leap engine.
-- `spatial_3d_density`: 3D local-density model with spatial hash and mechanics.
 - `spatial_3d_capacity`: 3D geometry around the same global population-event
   semantics as the 2D stochastic engine.
+
+The former `spatial_3d_density` mode (and the legacy `spatial_3d` alias) was
+removed; the C++ parser rejects those mode strings.
 
 Current caveat: `deterministic` is visible in config/frontend/backend and parsed
 as `DETERMINISTIC_RK4`, but the current mainline `SimulationEngine::step()` does
@@ -89,7 +91,6 @@ not dispatch a deterministic RK4 step.
 | Engine selection | `CellEvoX/src/core/application.cpp` |
 | 2D stochastic engine | `CellEvoX/include/systems/SimulationEngine.hpp`, `CellEvoX/src/systems/SimulationEngine.cpp` |
 | Shared population step | `CellEvoX/include/systems/CommonPopulationStep.hpp` |
-| 3D density engine | `CellEvoX/include/systems/SimulationEngine3D.hpp`, `CellEvoX/src/systems/SimulationEngine3D.cpp` |
 | 3D capacity engine | `CellEvoX/include/systems/SimulationEngine3DCapacity.hpp`, `CellEvoX/src/systems/SimulationEngine3DCapacity.cpp` |
 | Snapshot binary format | `CellEvoX/include/io/PopulationSnapshotIO.hpp`, `CellEvoX/scripts/snapshot_io.py` |
 | Output/export pipeline | `CellEvoX/include/core/RunDataEngine.hpp`, `CellEvoX/src/core/RunDataEngine.cpp` |

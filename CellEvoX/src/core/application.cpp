@@ -14,7 +14,6 @@
 #include "core/RunDataEngine.hpp"
 #include "ecs/Run.hpp"
 #include "systems/SimulationEngine.hpp"
-#include "systems/SimulationEngine3D.hpp"
 #include "systems/SimulationEngine3DCapacity.hpp"
 #include "utils/SimulationConfig.hpp"
 
@@ -180,12 +179,7 @@ void Application::initialize() {
     // Initialize DataEngine first to prepare output directory
     RunDataEngine data_engine(sim_config, nullptr, config_path, 0.005);
     
-    if (sim_config->sim_type == SimulationType::SPATIAL_3D_DENSITY) {
-      sim_engine_3d = std::make_unique<SimulationEngine3D>(sim_config);
-      std::signal(SIGINT, SimulationEngine3D::signalHandler);
-      std::signal(SIGTERM, SimulationEngine3D::signalHandler);
-      runs.push_back(std::make_shared<ecs::Run>(sim_engine_3d->run(config.at("steps"))));
-    } else if (sim_config->sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
+    if (sim_config->sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
       sim_engine_3d_capacity = std::make_unique<SimulationEngine3DCapacity>(sim_config);
       std::signal(SIGINT, SimulationEngine3DCapacity::signalHandler);
       std::signal(SIGTERM, SimulationEngine3DCapacity::signalHandler);

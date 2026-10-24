@@ -7,7 +7,6 @@ import SmoothSlider from './SmoothSlider';
 const MODES: { value: SimulationMode; label: string; desc: string; status?: 'wip' }[] = [
   { value: 'stochastic',          label: 'Stochastic τ-Leap',   desc: 'Gillespie-based, probabilistic' },
   { value: 'deterministic',       label: 'Deterministic RK4',   desc: 'Runge-Kutta 4th order', status: 'wip' },
-  { value: 'spatial_3d_density',  label: '3D Spatial Density',  desc: 'Density-regulated 3D' },
   { value: 'spatial_3d_capacity', label: '3D Spatial Capacity', desc: 'Capacity-regulated 3D' },
 ];
 

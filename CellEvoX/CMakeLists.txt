@@ -90,7 +90,6 @@ endfunction()
 set(HEADERS
     include/core/application.hpp
     include/systems/SimulationEngine.hpp
-    include/systems/SimulationEngine3D.hpp
     include/systems/SimulationEngine3DCapacity.hpp
     include/systems/CommonPopulationStep.hpp
     include/ecs/Cell.hpp
@@ -108,7 +107,6 @@ set(HEADERS
 set(CORE_SOURCES
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
-    src/systems/SimulationEngine3D.cpp
     src/systems/SimulationEngine3DCapacity.cpp
     src/core/RunDataEngine.cpp
     src/ecs/Run.cpp

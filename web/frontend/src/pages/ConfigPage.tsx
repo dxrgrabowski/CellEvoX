@@ -24,10 +24,7 @@ export default function ConfigPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
-  const isSpatial =
-    config.simulation_mode === 'spatial_3d' ||
-    config.simulation_mode === 'spatial_3d_density' ||
-    config.simulation_mode === 'spatial_3d_capacity';
+  const isSpatial = config.simulation_mode === 'spatial_3d_capacity';
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(buildConfigPayload(config), null, 2)], { type: 'application/json' });

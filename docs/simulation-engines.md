@@ -1,6 +1,6 @@
 # Simulation Engines
 
-CellEvoX currently has three implemented simulation paths and one parsed but
+CellEvoX currently has two implemented simulation paths and one parsed but
 unimplemented deterministic mode. This document records semantics, shared code,
 and correctness gates.
 
@@ -9,7 +9,6 @@ and correctness gates.
 | Mode | Engine | Population regulation | Spatial state | Main use |
 | --- | --- | --- | --- | --- |
 | `stochastic` | `SimulationEngine` | Global carrying capacity through `env_capacity` | None | Classic 2D/non-spatial stochastic population dynamics |
-| `spatial_3d_density` | `SimulationEngine3D` | Local density within `sample_radius` | Persistent positions plus spatial hash grid | Tumor-like 3D growth with local crowding |
 | `spatial_3d_capacity` | `SimulationEngine3DCapacity` | Same global event model as 2D stochastic | Persistent positions plus spatial hash grid | 3D geometry while preserving 2D event semantics |
 | `deterministic` | Parsed as `DETERMINISTIC_RK4` | Not active in current dispatch | None | Placeholder/status only on current mainline |
 
@@ -46,34 +45,6 @@ Runtime flow:
 This is the main hotspot for 2D performance analysis. The parallel loop is only
 one phase. RNG, sorting, merging, map mutation, snapshots, and memory logging can
 limit scaling under Amdahl's law.
-
-## 3D density engine
-
-Files:
-
-- `CellEvoX/include/systems/SimulationEngine3D.hpp`
-- `CellEvoX/src/systems/SimulationEngine3D.cpp`
-- `CellEvoX/include/spatial/SpatialHashGrid.hpp`
-- `CellEvoX/src/spatial/SpatialHashGrid.cpp`
-
-Runtime behavior:
-
-- Initializes cells on a jittered 3D lattice.
-- Maintains ID-indexed position arrays and a compact active `SpatialState`.
-- Rebuilds a spatial hash grid for radius queries.
-- Computes local density from neighbors within `sample_radius`.
-- Splits crowding pressure between death and birth rates.
-- Uses thread-local RNG seeded from the engine seed and TBB thread index.
-- Places daughters symmetrically around the parent.
-- Runs mechanical relaxation with overlap forces after event application.
-- Writes spatial binary snapshots with `spatial_dimensions == 3`.
-
-Correctness risks:
-
-- Parallel RNG and TBB scheduling can affect repeatability.
-- Spatial hash rebuild/query contracts must match position vectors.
-- Density and mechanics parameters are coupled; small rate changes can alter
-  stabilization tests.
 
 ## 3D capacity engine
 
@@ -116,8 +87,7 @@ Any future deterministic implementation should update:
 Use these tests as the first line of defense:
 
 - `Simulation Determinism`
-- `SimulationEngine3D deterministic smoke test`
-- `SimulationEngine3D is repeatable with the same seed`
+- `SimulationConfig rejects removed spatial 3D density mode`
 - `SimulationEngine3DCapacity matches 2D population events`
 - snapshot IO tests under `[PopulationSnapshotIO]`
 

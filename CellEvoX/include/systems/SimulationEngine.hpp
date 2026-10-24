@@ -17,7 +17,6 @@ using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>
 enum class SimulationType {
   STOCHASTIC_TAU_LEAP,
   DETERMINISTIC_RK4,
-  SPATIAL_3D_DENSITY,
   SPATIAL_3D_CAPACITY
 };
 
@@ -38,8 +37,6 @@ struct SimulationConfig {
   int verbosity = 2; // 0: off, 1: minimal, 2: full
   uint32_t phylogeny_num_cells_sampling = 100;
   float spatial_domain_size = 200.0f;
-  float max_local_density = 8.0f;
-  float sample_radius = 3.0f;
   float spring_constant = 0.5f;
   float mech_dt = 0.1f;
   int mech_substeps = 5;

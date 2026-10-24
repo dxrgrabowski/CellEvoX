@@ -46,7 +46,7 @@ async def get_config_schema():
             "seed": {"type": "integer", "default": 42, "min": 0, "max": 2**31},
             "simulation_mode": {
                 "type": "enum",
-                "values": ["stochastic", "deterministic", "spatial_3d_density", "spatial_3d_capacity"],
+                "values": ["stochastic", "deterministic", "spatial_3d_capacity"],
                 "default": "stochastic"
             },
             "tau_step": {"type": "float", "default": 0.005, "min": 0.0001, "max": 1.0, "step": 0.0001},
@@ -68,8 +68,6 @@ async def get_config_schema():
         },
         "spatial": {
             "spatial_domain_size": {"type": "float", "default": 200.0, "min": 10.0, "max": 2000.0},
-            "max_local_density": {"type": "float", "default": 8.0, "min": 1.0, "max": 100.0},
-            "sample_radius": {"type": "float", "default": 3.0, "min": 0.5, "max": 50.0},
             "spring_constant": {"type": "float", "default": 0.5, "min": 0.01, "max": 10.0},
             "mech_dt": {"type": "float", "default": 0.1, "min": 0.001, "max": 1.0},
             "mech_substeps": {"type": "integer", "default": 5, "min": 1, "max": 100},

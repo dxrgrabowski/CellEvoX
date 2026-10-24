@@ -14,7 +14,7 @@
 #include "io/PopulationSnapshotIO.hpp"
 #include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
-#include "systems/SimulationEngine3D.hpp"
+#include "systems/SimulationEngine3DCapacity.hpp"
 #include "utils/SimulationConfig.hpp"
 
 namespace {
@@ -49,14 +49,13 @@ static std::shared_ptr<SimulationConfig> makeConfig(
     return c;
 }
 
-static std::shared_ptr<SimulationConfig> makeSpatial3DConfig(
+static std::shared_ptr<SimulationConfig> makeSpatial3DCapacityConfig(
     size_t population,
     float domain_size,
-    float max_local_density,
     int mech_substeps = 2
 ) {
     auto c = std::make_shared<SimulationConfig>();
-    c->sim_type = SimulationType::SPATIAL_3D_DENSITY;
+    c->sim_type = SimulationType::SPATIAL_3D_CAPACITY;
     c->tau_step = 0.005;
     c->initial_population = population;
     c->env_capacity = population * 8;
@@ -66,8 +65,6 @@ static std::shared_ptr<SimulationConfig> makeSpatial3DConfig(
     c->output_path = benchmarkTempString("test_bench_sim_3d");
     c->verbosity = 0;
     c->spatial_domain_size = domain_size;
-    c->sample_radius = 3.0f;
-    c->max_local_density = max_local_density;
     c->spring_constant = 0.2f;
     c->mech_dt = 0.05f;
     c->mech_substeps = mech_substeps;
@@ -337,9 +334,9 @@ TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison
         return eng.run(3);
     };
 
-    BENCHMARK("3D run() N=20000 x3 steps [timing]") {
-        auto cfg = makeSpatial3DConfig(20000, 64.0f, 8.0f, 2);
-        SimulationEngine3D eng(cfg);
+    BENCHMARK("3D capacity run() N=20000 x3 steps [timing]") {
+        auto cfg = makeSpatial3DCapacityConfig(20000, 64.0f, 2);
+        SimulationEngine3DCapacity eng(cfg);
         return eng.run(3);
     };
 
@@ -349,9 +346,9 @@ TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison
         return eng.run(1);
     };
 
-    BENCHMARK("3D run() N=50000 x1 step [timing]") {
-        auto cfg = makeSpatial3DConfig(50000, 88.0f, 8.0f, 2);
-        SimulationEngine3D eng(cfg);
+    BENCHMARK("3D capacity run() N=50000 x1 step [timing]") {
+        auto cfg = makeSpatial3DCapacityConfig(50000, 88.0f, 2);
+        SimulationEngine3DCapacity eng(cfg);
         return eng.run(1);
     };
 }
