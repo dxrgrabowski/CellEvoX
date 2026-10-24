@@ -37,6 +37,12 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     ccache
 
+# Node.js 22 for the web frontend (Vite requires >= 20.19 or >= 22.12; the
+# Ubuntu 24.04 nodejs package is 18.x and cannot build the frontend).
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
 ENV PIPX_HOME=/workspaces/CellEvoX/.pipx \
     PIPX_BIN_DIR=/workspaces/CellEvoX/.pipx/bin \
     PIPX_LOG_DIR=/workspaces/CellEvoX/.pipx/logs \
