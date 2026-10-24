@@ -55,14 +55,15 @@ Public config mode strings:
 
 - `stochastic`
 - `deterministic`
-- `spatial_3d_density`
 - `spatial_3d_capacity`
 
 Implemented engine paths:
 
 - `stochastic` -> `SimulationEngine`
-- `spatial_3d_density` -> `SimulationEngine3D`
 - `spatial_3d_capacity` -> `SimulationEngine3DCapacity`
+
+Removed density modes (`spatial_3d_density`, legacy `spatial_3d`) are rejected
+by the C++ parser.
 
 Current caveat:
 
@@ -89,13 +90,6 @@ Important C++ types:
 - Calls `applyCommonPopulationStep`.
 - Writes non-spatial population snapshots.
 - Main hotspot for performance work.
-
-3D density:
-
-- Uses local density within `sample_radius`.
-- Maintains persistent 3D positions and a spatial hash grid.
-- Applies local crowding to death/birth rates.
-- Runs mechanical relaxation.
 
 3D capacity:
 

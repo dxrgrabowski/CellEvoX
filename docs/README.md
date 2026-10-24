@@ -46,7 +46,7 @@ commit `a26ea22` in this workspace. The branch for this documentation work is
 
 Important current status:
 
-- The implemented production simulation paths are stochastic 2D, spatial 3D density, and spatial 3D capacity.
+- The implemented production simulation paths are stochastic 2D and spatial 3D capacity.
 - The public config/web schema includes `deterministic`, and C++ parses it as `DETERMINISTIC_RK4`, but the current `SimulationEngine::step()` path does not execute an RK4 implementation.
 - `SKIP_GUI=ON` is the normal test build path and builds `CellEvoXTests`; the runnable `CellEvoX` binary requires the non-GUI skip path plus Qt dependencies.
 - Performance-sensitive changes must be benchmarked before and after. Treat Amdahl's law as a design gate, especially around `CommonPopulationStep`, snapshots, and memory logging.

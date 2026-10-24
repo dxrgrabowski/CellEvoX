@@ -22,8 +22,6 @@ inline const char* toString(SimulationType type) {
       return "STOCHASTIC_TAU_LEAP";
     case SimulationType::DETERMINISTIC_RK4:
       return "DETERMINISTIC_RK4";
-    case SimulationType::SPATIAL_3D_DENSITY:
-      return "SPATIAL_3D_DENSITY";
     case SimulationType::SPATIAL_3D_CAPACITY:
       return "SPATIAL_3D_CAPACITY";
     default:
@@ -79,11 +77,8 @@ inline void validateConfig(const SimulationConfig& config) {
     throw std::runtime_error("Invalid simulation config: output_path must not be empty");
   }
 
-  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY ||
-      config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
+  if (config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     requirePositive(config.spatial_domain_size, "spatial_domain_size");
-    requirePositive(config.max_local_density, "max_local_density");
-    requirePositive(config.sample_radius, "sample_radius");
     requireNonNegative(config.spring_constant, "spring_constant");
     requirePositive(config.mech_dt, "mech_dt");
     if (config.mech_substeps <= 0) {
@@ -126,12 +121,12 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
         config.sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
       } else if (simulation_mode == "deterministic") {
         config.sim_type = SimulationType::DETERMINISTIC_RK4;
-      } else if (simulation_mode == "spatial_3d_density" || simulation_mode == "spatial_3d") {
-        config.sim_type = SimulationType::SPATIAL_3D_DENSITY;
       } else if (simulation_mode == "spatial_3d_capacity") {
         config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
       } else {
-        spdlog::warn("Unknown simulation_mode '{}'; defaulting to stochastic tau-leap", simulation_mode);
+        throw std::runtime_error(
+            "Unknown simulation_mode '" + simulation_mode +
+            "'. Supported modes: stochastic, deterministic, spatial_3d_capacity");
       }
     } else if (j.contains("stochastic")) {
       config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
@@ -177,12 +172,6 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     }
     if (j.contains("spatial_domain_size")) {
       config.spatial_domain_size = j.at("spatial_domain_size");
-    }
-    if (j.contains("max_local_density")) {
-      config.max_local_density = j.at("max_local_density");
-    }
-    if (j.contains("sample_radius")) {
-      config.sample_radius = j.at("sample_radius");
     }
     if (j.contains("spring_constant")) {
       config.spring_constant = j.at("spring_constant");
@@ -240,11 +229,8 @@ inline void printConfig(const SimulationConfig& config) {
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
-  if (config.sim_type == SimulationType::SPATIAL_3D_DENSITY ||
-      config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
+  if (config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);
-    spdlog::info("Max local density: {:.2f}", config.max_local_density);
-    spdlog::info("Sample radius: {:.2f}", config.sample_radius);
     spdlog::info("Spring constant: {:.2f}", config.spring_constant);
     spdlog::info("Mechanical dt: {:.3f}", config.mech_dt);
     spdlog::info("Mechanical substeps: {}", config.mech_substeps);

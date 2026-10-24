@@ -24,8 +24,6 @@ interface BatchConfigDescription {
 const MODE_LABELS: Record<string, string> = {
   stochastic: 'Stochastic tau-leap',
   deterministic: 'Deterministic RK4',
-  spatial_3d: '3D spatial density',
-  spatial_3d_density: '3D spatial density',
   spatial_3d_capacity: '3D spatial capacity',
 };
 

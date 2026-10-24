@@ -45,9 +45,6 @@ interface Props { config: SimulationConfig }
 export default function SpatialParams({ config }: Props) {
   const setConfig = useConfigStore(s => s.setConfig);
   const isCapacityMode = config.simulation_mode === 'spatial_3d_capacity';
-  const isDensityMode =
-    config.simulation_mode === 'spatial_3d_density' ||
-    config.simulation_mode === 'spatial_3d';
 
   return (
     <div className="flex-col gap-24">
@@ -64,10 +61,6 @@ export default function SpatialParams({ config }: Props) {
             <strong>3D Spatial Capacity</strong> uses global carrying capacity from Population plus
             spatial mechanics below.
           </>
-        ) : isDensityMode ? (
-          <>
-            <strong>3D Spatial Density</strong> uses local density controls and spatial mechanics below.
-          </>
         ) : (
           <>These parameters are only used in <strong>3D Spatial</strong> simulation modes.</>
         )}
@@ -79,22 +72,6 @@ export default function SpatialParams({ config }: Props) {
           value={config.spatial_domain_size} min={10} max={2000} step={10}
           decimals={0}
           onChange={v => setConfig({ spatial_domain_size: v })} />
-
-        {isDensityMode && (
-          <>
-            <SliderField
-              id="input-max-density" label="Max Local Density" hint="Max cell density per unit volume"
-              value={config.max_local_density} min={1} max={100} step={0.5}
-              decimals={1}
-              onChange={v => setConfig({ max_local_density: v })} />
-
-            <SliderField
-              id="input-sample-radius" label="Sample Radius" hint="Neighbourhood radius for density sampling"
-              value={config.sample_radius} min={0.5} max={50} step={0.5}
-              decimals={1}
-              onChange={v => setConfig({ sample_radius: v })} />
-          </>
-        )}
 
         <SliderField
           id="input-spring-const" label="Spring Constant" hint="Mechanical repulsion spring stiffness"

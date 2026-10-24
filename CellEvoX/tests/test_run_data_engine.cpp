@@ -136,55 +136,6 @@ TEST_CASE("RunDataEngine stores and verifies a population-cutoff reason", "[RunD
     REQUIRE(metadata.at("terminal_population") == 1);
 }
 
-TEST_CASE("RunDataEngine accepts a float-stepped 3D run that reached its horizon",
-          "[RunDataEngine]") {
-    const auto base_output_path = testTempPath("test_run_data_engine_float_horizon");
-    std::filesystem::remove_all(base_output_path);
-
-    CellMap cells;
-    REQUIRE(cells.insert({1, Cell(1)}));
-
-    // 200 steps of tau_step=0.005 accumulated in float -- exactly how
-    // SimulationEngine3D steps tau -- land on 0.9999999776482582, not 1.0.
-    const float float_tau_step = static_cast<float>(0.005);
-    double terminal_tau = 0.0;
-    for (int i = 0; i < 200; ++i) {
-        terminal_tau += float_tau_step;
-    }
-
-    auto run = std::make_shared<ecs::Run>(
-        std::move(cells),
-        std::map<uint8_t, MutationType>{},
-        Graveyard{},
-        std::vector<StatSnapshot>{},
-        std::vector<std::pair<int, CellMap>>{},
-        0,
-        terminal_tau);
-
-    auto config = std::make_shared<SimulationConfig>();
-    config->output_path = base_output_path.string();
-    config->verbosity = 0;
-    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-    config->steps = 200;
-    config->tau_step = 0.005;
-
-    CellEvoX::core::RunDataEngine data_engine(config, run, "");
-
-    // The accumulated terminal tau must not be rejected as an incomplete horizon.
-    REQUIRE_NOTHROW(data_engine.exportToCSV());
-
-    std::ifstream metadata_file(std::filesystem::path(config->output_path) / "run_metadata.json");
-    REQUIRE(metadata_file.is_open());
-    nlohmann::json metadata;
-    metadata_file >> metadata;
-    REQUIRE(metadata.at("termination_reason") == "planned_horizon");
-    REQUIRE(metadata.at("termination_verified") == true);
-    REQUIRE(metadata.at("terminal_time") == Catch::Approx(terminal_tau));
-    // The reported horizon is the nominal configured value; the terminal time carries
-    // the float accumulation artifact.
-    REQUIRE(metadata.at("configured_horizon") == Catch::Approx(1.0));
-}
-
 // Regression tests for the `--analyze` postprocessing gap: RunDataEngine(analyze_directory)
 // attaches no live ecs::Run, so plotFitnessStatistics/plotMutationsStatistics/
 // plotLivingCellsOverGenerations must reconstruct their input from

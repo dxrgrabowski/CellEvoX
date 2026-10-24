@@ -20,7 +20,6 @@
 #include "spatial/SpatialHashGrid.hpp"
 #include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
-#include "systems/SimulationEngine3D.hpp"
 #include "systems/SimulationEngine3DCapacity.hpp"
 #include "ecs/Cell.hpp"
 
@@ -105,7 +104,8 @@ TEST_CASE("SimulationConfig rejects unsafe values", "[SimulationConfig][Correctn
     REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
 }
 
-TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial3D]") {
+TEST_CASE("SimulationConfig rejects removed spatial 3D density mode",
+          "[SimulationConfig][Spatial3D]") {
     nlohmann::json j = {
         {"stochastic", true},
         {"simulation_mode", "spatial_3d_density"},
@@ -116,26 +116,10 @@ TEST_CASE("SimulationConfig parses spatial 3D mode", "[SimulationConfig][Spatial
         {"statistics_resolution", 1},
         {"population_statistics_res", 2},
         {"output_path", "./output/"},
-        {"spatial_domain_size", 256.0},
-        {"max_local_density", 12.0},
-        {"sample_radius", 4.0},
-        {"spring_constant", 0.75},
-        {"mech_dt", 0.2},
-        {"mech_substeps", 7},
-        {"epsilon", 0.15},
         {"mutations", nlohmann::json::array()}
     };
 
-    auto config = utils::fromJson(j);
-
-    REQUIRE(config.sim_type == SimulationType::SPATIAL_3D_DENSITY);
-    REQUIRE(config.spatial_domain_size == Catch::Approx(256.0));
-    REQUIRE(config.max_local_density == Catch::Approx(12.0));
-    REQUIRE(config.sample_radius == Catch::Approx(4.0));
-    REQUIRE(config.spring_constant == Catch::Approx(0.75));
-    REQUIRE(config.mech_dt == Catch::Approx(0.2));
-    REQUIRE(config.mech_substeps == 7);
-    REQUIRE(config.epsilon == Catch::Approx(0.15));
+    REQUIRE_THROWS_AS(utils::fromJson(j), std::runtime_error);
 }
 
 TEST_CASE("SimulationConfig parses spatial 3D capacity mode", "[SimulationConfig][Spatial3DCapacity]") {
@@ -663,37 +647,6 @@ inline std::vector<CellEvoX::io::PopulationSnapshotRecord> read_population_snaps
     return snapshot;
 }
 
-inline double compute_mean_local_neighbors(
-    const std::vector<CellEvoX::io::PopulationSnapshotRecord>& snapshot,
-    float radius
-) {
-    if (snapshot.empty()) {
-        return 0.0;
-    }
-
-    const float radius_sq = radius * radius;
-    size_t total_neighbors = 0;
-    for (size_t i = 0; i < snapshot.size(); ++i) {
-        size_t local_neighbors = 0;
-        for (size_t j = 0; j < snapshot.size(); ++j) {
-            if (i == j) {
-                continue;
-            }
-
-            const float dx = snapshot[i].x - snapshot[j].x;
-            const float dy = snapshot[i].y - snapshot[j].y;
-            const float dz = snapshot[i].z - snapshot[j].z;
-            const float dist_sq = dx * dx + dy * dy + dz * dz;
-            if (dist_sq <= radius_sq) {
-                ++local_neighbors;
-            }
-        }
-        total_neighbors += local_neighbors;
-    }
-
-    return static_cast<double>(total_neighbors) / static_cast<double>(snapshot.size());
-}
-
 TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnapshotIO]") {
     const auto snapshot_path = testTempPath("test_population_snapshot_driver_payload.bin");
     std::filesystem::remove(snapshot_path);
@@ -1041,35 +994,6 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     }
 }
 
-TEST_CASE("SimulationEngine3D produces binary population snapshots", "[SimulationEngine3D]") {
-    auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-    config->tau_step = 1.0;
-    config->seed = 7;
-    config->initial_population = 16;
-    config->env_capacity = 256;
-    config->steps = 2;
-    config->stat_res = 1;
-    config->popul_res = 1;
-    config->output_path = testTempString("test_sim_3d");
-    config->sample_radius = 3.0f;
-    config->max_local_density = 8.0f;
-    config->spring_constant = 0.1f;
-    config->mech_dt = 0.05f;
-    config->mech_substeps = 2;
-    config->epsilon = 0.1f;
-
-    std::filesystem::remove_all(config->output_path);
-    std::filesystem::create_directories(config->output_path);
-
-    SimulationEngine3D engine(config);
-    auto runData = engine.run(2);
-
-    REQUIRE(runData.generational_stat_report.size() == 2);
-    REQUIRE(std::filesystem::exists(testTempPath("test_sim_3d") / "population_data" / "population_generation_1.bin"));
-    REQUIRE(std::filesystem::exists(testTempPath("test_sim_3d") / "population_data" / "population_generation_2.bin"));
-}
-
 TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[SimulationEngine3DCapacity][Determinism]") {
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
@@ -1281,196 +1205,4 @@ TEST_CASE("SimulationEngine3DCapacity mechanics are deterministic across worker 
     REQUIRE(single_thread_snapshot == five_thread_snapshot);
 }
 
-TEST_CASE("SimulationEngine3D grows from a sparse neutral state", "[SimulationEngine3D]") {
-    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
 
-    auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-    config->tau_step = 0.05;
-    config->seed = 42;
-    config->initial_population = 64;
-    config->env_capacity = 512;
-    config->steps = 80;
-    config->stat_res = 1;
-    config->popul_res = 10;
-    config->output_path = testTempString("test_sim_3d_sparse");
-    config->spatial_domain_size = 32.0f;
-    config->sample_radius = 3.0f;
-    config->max_local_density = 8.0f;
-    config->spring_constant = 0.2f;
-    config->mech_dt = 0.05f;
-    config->mech_substeps = 2;
-    config->epsilon = 0.1f;
-    config->verbosity = 0;
-
-    std::filesystem::remove_all(config->output_path);
-    std::filesystem::create_directories(config->output_path);
-
-    SimulationEngine3D engine(config);
-    auto runData = engine.run(80);
-
-    REQUIRE_FALSE(runData.generational_stat_report.empty());
-    REQUIRE(runData.generational_stat_report.back().total_living_cells > config->initial_population);
-}
-
-TEST_CASE("SimulationEngine3D deterministic smoke test", "[SimulationEngine3D][Determinism][CI]") {
-    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
-
-    auto make_config = [](const std::string& output_path) {
-        auto config = std::make_shared<SimulationConfig>();
-        config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-        config->tau_step = 1.0;
-        config->seed = 321;
-        config->initial_population = 16;
-        config->env_capacity = 128;
-        config->steps = 3;
-        config->stat_res = 1;
-        config->popul_res = 1;
-        config->output_path = output_path;
-        config->spatial_domain_size = 20.0f;
-        config->sample_radius = 3.0f;
-        config->max_local_density = 8.0f;
-        config->spring_constant = 0.2f;
-        config->mech_dt = 0.05f;
-        config->mech_substeps = 2;
-        config->epsilon = 0.1f;
-        config->verbosity = 0;
-        return config;
-    };
-
-    auto config1 = make_config(testTempString("test_sim_3d_smoke_1"));
-    auto config2 = make_config(testTempString("test_sim_3d_smoke_2"));
-
-    std::filesystem::remove_all(config1->output_path);
-    std::filesystem::remove_all(config2->output_path);
-    std::filesystem::create_directories(config1->output_path);
-    std::filesystem::create_directories(config2->output_path);
-
-    SimulationEngine3D engine1(config1);
-    auto runData1 = engine1.run(3);
-
-    SimulationEngine3D engine2(config2);
-    auto runData2 = engine2.run(3);
-
-    REQUIRE(runData1.generational_stat_report.size() == runData2.generational_stat_report.size());
-    REQUIRE(runData1.generational_stat_report.size() == 3);
-
-    for (size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
-        const auto& lhs = runData1.generational_stat_report[i];
-        const auto& rhs = runData2.generational_stat_report[i];
-        require_approx(lhs.tau, rhs.tau);
-        require_approx(lhs.mean_fitness, rhs.mean_fitness);
-        require_approx(lhs.mean_mutations, rhs.mean_mutations);
-        REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
-    }
-
-    const auto snapshot1 = read_binary_file(
-        std::filesystem::path(config1->output_path) / "population_data" / "population_generation_1.bin");
-    const auto snapshot2 = read_binary_file(
-        std::filesystem::path(config2->output_path) / "population_data" / "population_generation_1.bin");
-    REQUIRE(snapshot1 == snapshot2);
-}
-
-TEST_CASE("SimulationEngine3D is repeatable with the same seed", "[SimulationEngine3D][Determinism]") {
-    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
-
-    auto make_config = [](const std::string& output_path) {
-        auto config = std::make_shared<SimulationConfig>();
-        config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-        config->tau_step = 0.05;
-        config->seed = 123;
-        config->initial_population = 64;
-        config->env_capacity = 512;
-        config->steps = 100;
-        config->stat_res = 1;
-        config->popul_res = 5;
-        config->output_path = output_path;
-        config->spatial_domain_size = 32.0f;
-        config->sample_radius = 3.0f;
-        config->max_local_density = 8.0f;
-        config->spring_constant = 0.2f;
-        config->mech_dt = 0.05f;
-        config->mech_substeps = 2;
-        config->epsilon = 0.1f;
-        config->verbosity = 0;
-        return config;
-    };
-
-    auto config1 = make_config(testTempString("test_sim_3d_determinism_1"));
-    auto config2 = make_config(testTempString("test_sim_3d_determinism_2"));
-
-    std::filesystem::remove_all(config1->output_path);
-    std::filesystem::remove_all(config2->output_path);
-    std::filesystem::create_directories(config1->output_path);
-    std::filesystem::create_directories(config2->output_path);
-
-    SimulationEngine3D engine1(config1);
-    auto runData1 = engine1.run(100);
-
-    SimulationEngine3D engine2(config2);
-    auto runData2 = engine2.run(100);
-
-    REQUIRE(runData1.generational_stat_report.size() == runData2.generational_stat_report.size());
-    for (size_t i = 0; i < runData1.generational_stat_report.size(); ++i) {
-        const auto& lhs = runData1.generational_stat_report[i];
-        const auto& rhs = runData2.generational_stat_report[i];
-        require_approx(lhs.tau, rhs.tau);
-        require_approx(lhs.mean_fitness, rhs.mean_fitness);
-        require_approx(lhs.fitness_variance, rhs.fitness_variance);
-        require_approx(lhs.mean_mutations, rhs.mean_mutations);
-        require_approx(lhs.mutations_variance, rhs.mutations_variance);
-        REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
-    }
-
-    const auto snapshot1 = read_binary_file(
-        std::filesystem::path(config1->output_path) / "population_data" / "population_generation_5.bin");
-    const auto snapshot2 = read_binary_file(
-        std::filesystem::path(config2->output_path) / "population_data" / "population_generation_5.bin");
-    REQUIRE(snapshot1 == snapshot2);
-}
-
-TEST_CASE("SimulationEngine3D stabilizes near local carrying capacity", "[SimulationEngine3D][Correctness]") {
-    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
-
-    auto config = std::make_shared<SimulationConfig>();
-    config->sim_type = SimulationType::SPATIAL_3D_DENSITY;
-    config->tau_step = 0.05;
-    config->seed = 42;
-    config->initial_population = 125;
-    config->env_capacity = 1000;
-    config->steps = 200;
-    config->stat_res = 1;
-    config->popul_res = 5;
-    config->output_path = testTempString("test_sim_3d_stabilization");
-    config->spatial_domain_size = 24.0f;
-    config->sample_radius = 3.0f;
-    config->max_local_density = 8.0f;
-    config->spring_constant = 0.5f;
-    config->mech_dt = 0.1f;
-    config->mech_substeps = 5;
-    config->epsilon = 0.1f;
-    config->verbosity = 0;
-
-    std::filesystem::remove_all(config->output_path);
-    std::filesystem::create_directories(config->output_path);
-
-    SimulationEngine3D engine(config);
-    auto runData = engine.run(200);
-
-    REQUIRE(runData.generational_stat_report.size() == 10);
-    REQUIRE(runData.generational_stat_report.back().total_living_cells > config->initial_population);
-
-    const auto& stats = runData.generational_stat_report;
-    const size_t tail_min = std::min({stats[7].total_living_cells, stats[8].total_living_cells, stats[9].total_living_cells});
-    const size_t tail_max = std::max({stats[7].total_living_cells, stats[8].total_living_cells, stats[9].total_living_cells});
-    REQUIRE(static_cast<double>(tail_max - tail_min) < 0.2 * static_cast<double>(stats.back().total_living_cells));
-
-    const auto snapshot_path =
-        std::filesystem::path(config->output_path) / "population_data" / "population_generation_10.bin";
-    const auto snapshot = read_population_snapshot(snapshot_path);
-    REQUIRE_FALSE(snapshot.empty());
-    REQUIRE(snapshot_within_domain(snapshot, config->spatial_domain_size));
-
-    const double mean_local_neighbors = compute_mean_local_neighbors(snapshot, config->sample_radius);
-    REQUIRE(mean_local_neighbors == Catch::Approx(config->max_local_density).margin(1.5));
-}

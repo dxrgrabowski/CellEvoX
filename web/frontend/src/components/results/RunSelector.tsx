@@ -7,8 +7,6 @@ import { FolderOpen } from 'lucide-react';
 const MODE_LABELS: Record<string, string> = {
   stochastic: 'Stochastic',
   deterministic: 'Deterministic',
-  spatial_3d: 'Spatial 3D',
-  spatial_3d_density: '3D density',
   spatial_3d_capacity: '3D capacity',
 };
 

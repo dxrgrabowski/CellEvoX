@@ -60,8 +60,6 @@ export default function RunSummary({ runId }: Props) {
   const cfg = data.config;
   const mutations = cfg?.mutations ?? [];
   const hasSpatialConfig = cfg.spatial_domain_size != null ||
-    cfg.max_local_density != null ||
-    cfg.sample_radius != null ||
     cfg.spring_constant != null ||
     cfg.mech_dt != null ||
     cfg.mech_substeps != null ||
@@ -98,8 +96,6 @@ export default function RunSummary({ runId }: Props) {
       title: 'Spatial',
       rows: [
         ['Domain size', formatNumber(cfg.spatial_domain_size)],
-        ['Max local density', formatNumber(cfg.max_local_density)],
-        ['Sample radius', formatNumber(cfg.sample_radius)],
         ['Spring constant', formatNumber(cfg.spring_constant)],
         ['Mech dt', formatNumber(cfg.mech_dt)],
         ['Mech substeps', formatNumber(cfg.mech_substeps)],

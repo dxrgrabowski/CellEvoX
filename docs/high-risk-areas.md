@@ -9,7 +9,6 @@ before merging changes.
 | --- | --- | --- | --- |
 | Shared population events | `CellEvoX/include/systems/CommonPopulationStep.hpp` | Used by 2D stochastic and 3D capacity; affects ID assignment, deaths, mutations, determinism | Unit tests, 2D/3D capacity parity, benchmarks |
 | 2D engine snapshots/logging | `CellEvoX/src/systems/SimulationEngine.cpp` | Snapshot cadence, memory logging, pruning, and progress output can dominate runtime | Unit tests, phase timing/benchmarks for perf changes |
-| 3D density model | `CellEvoX/src/systems/SimulationEngine3D.cpp` | Local density, thread-local RNG, spatial hash, mechanics, and ordering interact | 3D determinism/repeatability/stabilization tests |
 | 3D capacity model | `CellEvoX/src/systems/SimulationEngine3DCapacity.cpp` | Must preserve 2D event semantics while adding positions and mechanics | 2D parity test and spatial snapshot tests |
 | Snapshot format | `CellEvoX/include/io/PopulationSnapshotIO.hpp`, `CellEvoX/scripts/snapshot_io.py` | Binary compatibility must match between C++ and Python | IO tests, Python read smoke, web parser check |
 | Output pipeline | `CellEvoX/src/core/RunDataEngine.cpp` | Mixes C++ exports, Python scripts, path lookup, shell commands | RunDataEngine tests, manual analyze smoke for path changes |
@@ -46,8 +45,6 @@ Preserve these contracts unless intentionally changing model behavior:
 - Seeded 2D stochastic runs should reproduce stats.
 - 3D capacity should match 2D population events when spatial mechanics are not
   part of the comparison.
-- 3D density deterministic tests currently use single-thread TBB control where
-  needed. Do not generalize those guarantees without evidence.
 - Sorting and ID assignment are part of deterministic behavior.
 
 ## Performance hazards

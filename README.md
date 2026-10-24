@@ -26,7 +26,7 @@ Both outputs are written under `visualizations/` inside the run directory.
 
 ## Features
 
-- **Stochastic and Spatial Simulation**: Supports tau-leap simulation based on Gillespie-style event sampling, plus spatial 3D density and capacity modes.
+- **Stochastic and Spatial Simulation**: Supports tau-leap simulation based on Gillespie-style event sampling, plus a spatial 3D capacity mode.
 - **Entity-Component-System (ECS) Architecture**: Decouples data and behavior for flexible simulation management.
 - **Mutation Modeling**: Implements various mutation types with configurable probabilities and effects.
 - **Statistical Reporting**: Generates detailed statistical snapshots, including mutation histograms and fitness distributions.
