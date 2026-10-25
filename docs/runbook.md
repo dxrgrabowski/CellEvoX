@@ -22,6 +22,18 @@ cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DCELLEVOX_NATIVE_OPTIMIZA
 Configure requires Python 3 development headers and NumPy. Fresh configure
 fetches Catch2 via `FetchContent`, so the first run needs network or a warm cache.
 
+Outside the DevContainer, use the bundled Python 3.12 toolchain in `.tools/env`:
+
+```bash
+.tools/env/bin/python -m venv --system-site-packages .venv
+.venv/bin/pip install -r CellEvoX/scripts/requirements-visualization.txt
+cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release \
+  -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+```
+
+The binary locates scripts relative to its source tree and uses the Python found
+at configure time; override it at runtime with `CELLEVOX_PYTHON`.
+
 ## Test and analyze
 
 ```bash
@@ -44,7 +56,8 @@ Optional phase timing: build with `-DCELLEVOX_PROFILE_PHASES=ON` and set
 ## Web
 
 ```bash
-cd web/backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd web/backend && ../../.tools/env/bin/python -m venv --system-site-packages .venv \
+  && .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn main:app --host 0.0.0.0 --port 7432 --reload
 cd web/frontend && npm install && npm run dev
 ```

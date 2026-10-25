@@ -78,9 +78,6 @@ as architecture.
 - **Arbitrary tuning constants** (sort threshold, small-batch threshold, rebuild
   chunk, cache slack, dense-voxel cap, web log throttles). They are rough
   engineering defaults, not invariants; adjust with benchmark evidence.
-- **Hardcoded DevContainer paths** (`/workspaces/CellEvoX/...`) in
-  `RunDataEngine.cpp` and `test_config.json`. There must be no hardcoded
-  devcontainer paths in C++; outputs/scripts should be relative or configured.
 - **Hardcoded `0.005` tau** in `Application`'s analysis path instead of
   `config.tau_step` (oversight from research defaults).
 - **Dead `log_level` config key** (never parsed).

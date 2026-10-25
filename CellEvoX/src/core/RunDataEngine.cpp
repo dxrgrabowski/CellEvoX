@@ -32,6 +32,18 @@ namespace {
 
 namespace fs = std::filesystem;
 
+// Embedded plotting must stay headless: matplotlib may otherwise select a GUI
+// backend (e.g. Qt via PySide6) that crashes during Py_Finalize at exit. The
+// variable must be set before the interpreter is created by any plt:: call.
+[[maybe_unused]] const bool kHeadlessPlottingBackend = [] {
+#ifdef _WIN32
+  _putenv_s("MPLBACKEND", "Agg");
+#else
+  setenv("MPLBACKEND", "Agg", 0);
+#endif
+  return true;
+}();
+
 // Fixed-range histogram via pyplot.hist (matplotlibcpp::hist has no range/log).
 bool histFixedRange(const std::vector<double>& values,
                     long bins,
@@ -332,12 +344,14 @@ fs::path resolvePythonScriptPath(const char* script_name) {
     return script_path;
   }
 
-  script_path = fs::path(__FILE__).parent_path().parent_path() / "scripts" / script_name;
+#ifdef CELLEVOX_SCRIPTS_DIR
+  script_path = fs::path(CELLEVOX_SCRIPTS_DIR) / script_name;
   if (fs::exists(script_path)) {
     return script_path;
   }
+#endif
 
-  script_path = fs::path("/workspaces/CellEvoX/CellEvoX/scripts") / script_name;
+  script_path = fs::path(__FILE__).parent_path().parent_path() / "scripts" / script_name;
   if (fs::exists(script_path)) {
     return script_path;
   }
@@ -346,10 +360,16 @@ fs::path resolvePythonScriptPath(const char* script_name) {
 }
 
 std::string resolvePythonCommand() {
-  fs::path venv_python = "/workspaces/CellEvoX/.venv/bin/python";
-  if (fs::exists(venv_python)) {
-    return venv_python.string();
+  if (const char* env_python = std::getenv("CELLEVOX_PYTHON"); env_python != nullptr && *env_python != '\0') {
+    return env_python;
   }
+
+#ifdef CELLEVOX_PYTHON_EXECUTABLE
+  if (fs::path compiled_python = CELLEVOX_PYTHON_EXECUTABLE; fs::exists(compiled_python)) {
+    return compiled_python.string();
+  }
+#endif
+
 #ifdef _WIN32
   return "python";
 #else

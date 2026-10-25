@@ -104,6 +104,13 @@ set(HEADERS
     include/external/matplotlibcpp.h
 )
 
+# Runtime paths resolved by the binary: no hardcoded workspace/container paths.
+set(CELLEVOX_RUNTIME_DEFINITIONS
+    "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\""
+    "CELLEVOX_SCRIPTS_DIR=\"${CMAKE_SOURCE_DIR}/scripts\""
+    "CELLEVOX_PYTHON_EXECUTABLE=\"${Python3_EXECUTABLE}\""
+)
+
 set(CORE_SOURCES
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
@@ -132,6 +139,7 @@ target_include_directories(CellEvoX SYSTEM
 
 cellevox_apply_release_optimizations(CellEvoX)
 cellevox_apply_project_warnings(CellEvoX)
+target_compile_definitions(CellEvoX PRIVATE ${CELLEVOX_RUNTIME_DEFINITIONS})
 if(CELLEVOX_PROFILE_PHASES)
     target_compile_definitions(CellEvoX PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
@@ -178,7 +186,7 @@ if(CELLEVOX_PROFILE_PHASES)
     target_compile_definitions(CellEvoXTests PRIVATE CELLEVOX_PROFILE_PHASES=1)
 endif()
 
-target_compile_definitions(CellEvoXTests PRIVATE "CELLEVOX_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+target_compile_definitions(CellEvoXTests PRIVATE ${CELLEVOX_RUNTIME_DEFINITIONS})
 
 target_link_libraries(CellEvoXTests
     PRIVATE
