@@ -9,6 +9,7 @@
 #include <memory>
 #include <random>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "io/PopulationSnapshotIO.hpp"
@@ -19,8 +20,23 @@
 
 namespace {
 
+// Snapshot and statistics writes are part of what the benchmarks measure, but they
+// must not compete with other jobs for the boot disk. Prefer a tmpfs root; on systems
+// without /dev/shm fall back to the regular temp directory.
+const std::filesystem::path& benchmarkTempRoot() {
+    static const std::filesystem::path root = [] {
+        const std::filesystem::path shared_memory{"/dev/shm"};
+        std::error_code error;
+        if (std::filesystem::is_directory(shared_memory, error) && !error) {
+            return shared_memory / "cellevox_benchmarks";
+        }
+        return std::filesystem::temp_directory_path() / "cellevox_benchmarks";
+    }();
+    return root;
+}
+
 std::filesystem::path benchmarkTempPath(std::string_view name) {
-    return std::filesystem::temp_directory_path() / "cellevox_benchmarks" / name;
+    return benchmarkTempRoot() / name;
 }
 
 std::string benchmarkTempString(std::string_view name) {

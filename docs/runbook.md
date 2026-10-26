@@ -246,8 +246,10 @@ fields are in integer `T` units, not loop steps.
 (5% time, 10% memory). Its `-DSKIP_GUI=ON` flag is a dead leftover from an
 older baseline; do not treat it as a requirement.
 
-The gate interleaves base and head (5 rounds x 6 samples, order flipped every
-round, retry at 12 samples per round) and judges a benchmark on the median of
+The gate interleaves base and head (7 rounds x 5 samples, order flipped every
+round, retry at 10 samples per round) and judges a benchmark on the median of
 the round means, so a single noisy round widens the interval instead of moving
-the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
-the older blocked schedule. Rationale: ADR-0009.
+the result. Benchmark output goes to `/dev/shm/cellevox_benchmarks`, so a gate
+writes its snapshots to RAM instead of dirtying a gigabyte of boot-disk cache.
+Reproduce a failure locally with the same flags; `--rounds 1` runs the older
+blocked schedule. Rationale: ADR-0009.

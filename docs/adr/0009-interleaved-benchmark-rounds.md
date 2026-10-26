@@ -22,9 +22,33 @@ means** as the point estimate, with a bootstrap interval over rounds as the
 uncertainty. The reported interval is never narrower than the average
 within-round Catch2 precision divided by `sqrt(rounds)`.
 
-Defaults move from "30 samples, then 60" to "5 rounds x 6 samples, retry at 12
-per round", which keeps the total measured work per binary unchanged. `--rounds 1`
-reproduces the blocked schedule and is only for local investigation.
+Defaults move from "30 samples, then 60" to "7 rounds x 5 samples, retry at 10
+per round", which keeps the total measured work per binary within ~20% of the
+old schedule. `--rounds 1` reproduces the blocked schedule and is only for local
+investigation.
+
+Benchmark output (`population_data/`, `statistics/`) is written to
+`/dev/shm/cellevox_benchmarks` when `/dev/shm` exists, falling back to the temp
+directory. One gate writes over a gigabyte of snapshots and statistics (the
+files are overwritten per generation, so the footprint stays in the tens of
+megabytes); on the boot disk that writeback can land in a later process of the
+same filter, which is how an I/O-heavy benchmark can widen the CI of an unrelated
+benchmark.
+
+## Alternatives considered
+- **CPU time instead of wall clock** (`CLOCK_PROCESS_CPUTIME_ID`, insensitive to
+  steal and descheduling). Rejected for now: what remains after interleaving is
+  TBB scheduling variance, and process CPU time sums over worker threads, so it
+  is equally sensitive to how the pool is scheduled; it would also change what
+  the gate measures (work invested, not time to result), making a loss of
+  parallelism look like an improvement. Catch2 3.4.0 hardcodes
+  `Detail::Clock = std::chrono::steady_clock`, so this needs patching the
+  dependency, not a flag.
+- **PMU cycles/instructions** via `perf`: hosted runners are VMs and do not
+  expose the PMU.
+- **Sample-level A/B alternation**: Catch2 times all samples of one benchmark in
+  a single process, so going finer than per-round alternation would cost one
+  process per sample, and engine setup would dominate the measurement.
 
 ## Consequences
 - Gate wall time stays roughly flat, but per-filter process count grows from 2
@@ -32,6 +56,9 @@ reproduces the blocked schedule and is only for local investigation.
 - A single stolen-CPU round no longer moves the point estimate; it widens the
   interval instead, which can still trigger the retry pass (by design) but not a
   failure.
+- Benchmark output lives in tmpfs, so the gate keeps tens of megabytes of
+  snapshots in RAM instead of dirtying a gigabyte of page cache on the boot disk.
+  A machine without `/dev/shm` keeps the old behaviour.
 - Absolute milliseconds from this gate are not comparable with the blocked
   measurements quoted in ADR-0008 or in older artifacts.
 - Thresholds (`--threshold`, `--max-relative-ci`, `--memory-threshold`) are
