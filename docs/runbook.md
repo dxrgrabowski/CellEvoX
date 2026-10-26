@@ -242,5 +242,5 @@ fields are in integer `T` units, not loop steps.
 ## CI notes
 
 `.github/workflows/ci.yml` runs tests plus a paired base/head benchmark gate
-(5% time, 10% memory). Its `-DSKIP_GUI=ON` and Boost installation are dead
-leftovers from an older baseline; do not treat them as requirements.
+(5% time, 10% memory). Its `-DSKIP_GUI=ON` flag is a dead leftover from an
+older baseline; do not treat it as a requirement.

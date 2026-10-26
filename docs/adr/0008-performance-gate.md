@@ -15,8 +15,9 @@ parallelizing a phase can matter.
 - Change one bottleneck at a time, then re-run correctness and the same benchmark.
 - Thresholds and tuning constants are engineering defaults, not domain
   invariants, and may be revised with evidence.
-- Qt/Boost and `-DSKIP_GUI=ON` in CI belong to an older baseline comparison and
-  are candidates for removal once that baseline is updated.
+- `-DSKIP_GUI=ON` in CI belongs to an older baseline comparison and is a
+  candidate for removal once that baseline is updated. The Boost install has
+  been removed.
 
 ## Evidence
 - Paired gate: `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` compares base and
