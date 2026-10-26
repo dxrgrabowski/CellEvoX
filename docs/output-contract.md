@@ -62,8 +62,11 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
   parent, so it does not appear in later snapshots. Every cell of the initial
   population is stored with the default `ParentID = 0`, and cell ID `0` is a real
   initial cell, so `ParentID == 0` means either "initial population" or "daughter
-  of cell 0". It **cannot** be used to classify roots; identify the initial
-  population from the first snapshot instead.
+  of cell 0". It **cannot** be used to classify roots. Founders are the IDs `0`
+  to `initial_population - 1` from the run configuration; periodic snapshots are
+  written after a completed step, so the initial population itself is never
+  present in a population CSV, and a founder that dies before the first snapshot
+  appears only in the phylogeny.
 - `MutationCount` is the full number of mutations carried by the cell, even when
   the `Mutations` column is filtered.
 - `Mutations` is a space-separated list of `(mutation_id,mutation_type)` pairs.
@@ -105,9 +108,14 @@ Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB
 NodeID,ParentID,ChildSum,DeathTime
 ```
 
-`DeathTime == 0` marks a node that is still alive at termination; a non-zero
-value is the `tau` at which it died. As with the population CSV, `ParentID == 0`
-does not distinguish roots from daughters of cell 0.
+`DeathTime == 0` marks a node that is still alive at termination, with one
+exception: node `0` is preinserted as a synthetic root with `DeathTime = 0`, and
+that value is not replaced when cell `0` dies. A non-zero value is the `tau` at
+which the node died. Do not treat every `DeathTime == 0` row as a living cell:
+use `terminal_population` together with node membership in the final snapshot, or
+the GEXF `status` attribute, to separate living leaves from the synthetic root.
+As with the population CSV, `ParentID == 0` does not distinguish roots from
+daughters of cell 0.
 
 `phylogeny/phylogenetic.gexf` is written by `exports` and `full` post-processing.
 It is GEXF 1.3 with directed edges from parent to child and node attributes

@@ -409,15 +409,20 @@ TEST_CASE("ADR-0003 dense vs shared step isolation", "[benchmark][adr3-experimen
                                                         size_t population,
                                                         size_t env_capacity,
                                                         bool use_cached_ids) {
-        // One repetition per sample keeps the timed workload identical: exactly
-        // `steps_per_sample` steps from the same warmed-up state. Catch2 derives
-        // the count from the clock; it is 1 for these millisecond-scale steps.
-        REQUIRE(meter.runs() == 1);
-        auto state = makeCommonStepState(population, env_capacity);
-        run_common_step(*state, use_cached_ids);
-        meter.measure([&] {
+        // Catch2 doubles the requested repetition count during calibration until the
+        // warm-up target is met, so `runs()` can exceed one. Build one independently
+        // warmed state per repetition so every timed sample still runs exactly
+        // `steps_per_sample` steps from the same starting point.
+        std::vector<std::unique_ptr<CommonStepState>> states;
+        states.reserve(static_cast<size_t>(meter.runs()));
+        for (int run = 0; run < meter.runs(); ++run) {
+            states.push_back(makeCommonStepState(population, env_capacity));
+            run_common_step(*states.back(), use_cached_ids);
+        }
+        meter.measure([&states, use_cached_ids, &run_common_step](int run) {
+            auto& state = *states[static_cast<size_t>(run)];
             for (int i = 0; i < steps_per_sample; ++i) {
-                run_common_step(*state, use_cached_ids);
+                run_common_step(state, use_cached_ids);
             }
         });
     };
@@ -425,13 +430,17 @@ TEST_CASE("ADR-0003 dense vs shared step isolation", "[benchmark][adr3-experimen
     const auto add_dense_benchmark = [](Catch::Benchmark::Chronometer meter,
                                         size_t population,
                                         size_t env_capacity) {
-        REQUIRE(meter.runs() == 1);
-        auto cfg = makeConfig(population, env_capacity);
-        SimulationEngine eng(cfg);
-        eng.step();
-        meter.measure([&] {
+        std::vector<std::unique_ptr<SimulationEngine>> engines;
+        engines.reserve(static_cast<size_t>(meter.runs()));
+        for (int run = 0; run < meter.runs(); ++run) {
+            engines.push_back(
+                std::make_unique<SimulationEngine>(makeConfig(population, env_capacity)));
+            engines.back()->step();
+        }
+        meter.measure([&engines](int run) {
+            auto& engine = *engines[static_cast<size_t>(run)];
             for (int i = 0; i < steps_per_sample; ++i) {
-                eng.step();
+                engine.step();
             }
         });
     };

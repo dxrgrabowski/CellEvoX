@@ -33,12 +33,15 @@ overlay; any unification must move the shared step onto dense storage.
   matches 2D population events".
 - Profitability check on AMD Ryzen 5 5500 (10 hardware threads), g++ 15.2.0,
   `-DCMAKE_BUILD_TYPE=Release -DCELLEVOX_NATIVE_OPTIMIZATIONS=ON`
-  (`-march=native`), `CellEvoXTests "[adr3-experiment]" --benchmark-samples 10
+  (`-march=native`), no per-process thread limit (TBB uses all 10 hardware
+  threads), `CellEvoXTests "[adr3-experiment]" --benchmark-samples 10
   --benchmark-warmup-time 50`. Dense and shared use the same seed and event
-  logic; one warm-up step is excluded and each sample times exactly five steps
-  once (`REQUIRE(meter.runs() == 1)` in `bench_simulation.cpp`). The shared step
-  was run with a prebuilt alive-id cache to match the engine's behaviour, and
-  separately without a cache:
+  logic. Every repetition gets its own state warmed by one untimed step, so a
+  timed sample is always five steps even when Catch2's calibration asks for more
+  than one repetition. Catch2 reports the mean of those five steps per
+  iteration; the table below is that mean divided by five, i.e. milliseconds per
+  step. The shared step was run with a prebuilt alive-id cache to match the
+  engine's behaviour, and separately without a cache:
   | N / pressure | dense 2D | shared + cached ids | shared, collect ids | cached speedup | collect speedup |
   | --- | --- | --- | --- | --- | --- |
   | 100k low | 0.92 ms | 1.65 ms | 5.38 ms | 1.79x | 5.85x |
