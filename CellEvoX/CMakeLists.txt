@@ -211,4 +211,12 @@ if(CELLEVOX_ENABLE_COVERAGE)
 endif()
 
 include(Catch)
-catch_discover_tests(CellEvoXTests)
+# Register every non-benchmark Catch2 case with CTest so each test gets its own
+# scheduling, reporting, and timeout. Benchmarks stay on the paired performance
+# gate path instead of the unit-test job.
+catch_discover_tests(CellEvoXTests
+    TEST_SPEC "~[benchmark]"
+    PROPERTIES
+        TIMEOUT 180
+        LABELS unit
+)
