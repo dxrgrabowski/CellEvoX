@@ -3,8 +3,8 @@ Status: Accepted · 2026-10-26
 
 ## Context
 The simulator is performance-sensitive and usually built and run on the same
-machine, but it also embeds Python, requiring development headers and NumPy at
-configure time. Qt has been removed and is not a dependency.
+machine, but it also embeds Python, so configuring needs Python 3 development
+headers and NumPy.
 ## Decision
 `CELLEVOX_NATIVE_OPTIMIZATIONS` defaults ON for local and benchmark builds.
 Portable artifacts (Docker images, binaries moved between hosts) must configure
@@ -22,5 +22,5 @@ Portable artifacts (Docker images, binaries moved between hosts) must configure
 - Portable configuration is documented in `docs/runbook.md`
   (`-DCELLEVOX_NATIVE_OPTIMIZATIONS=OFF`) and is the required setting for the
   Docker image build.
-- The Python-embed requirement (development headers + NumPy at configure time)
-  is documented in `README.md` and `docs/runbook.md`.
+- Build prerequisites, including the Python-embed requirement, are listed in
+  `docs/runbook.md`.

@@ -37,11 +37,9 @@ cmake --build build --target CellEvoX CellEvoXTests -j
 ```
 
 Docker image: `ghcr.io/dxrgrabowski/cellevox:main` (builds for the target host;
-see ADR-0007 for portability flags). The build needs a C++23 compiler, CMake
->= 3.16, spdlog, Eigen3, TBB, nlohmann_json >= 3, and Python 3 development
-headers with NumPy; see [docs/runbook.md](docs/runbook.md#build) for the full
-list. Python post-processing needs `matplotlib`, `numpy`, `pandas`, `networkx`,
-and `pyfish`; `ffmpeg` enables MP4 output (GIF otherwise).
+see [ADR-0007](docs/adr/0007-build-portability.md) for portability flags). Build
+prerequisites, runtime dependencies and environment settings are in
+[docs/runbook.md](docs/runbook.md#build).
 
 ## Contact
 

@@ -9,12 +9,12 @@ every historical layout readable would add code that is never used. A contract
 must still be *coherent* — every reader in the repository has to agree with the
 writer at any given commit.
 ## Decision
-Format is `CELXPOP1` v2: 48-byte header, 36-byte cell record, 5-byte mutation
-payload. Reader support is intentionally asymmetric: the C++ reader accepts v2,
-plus v1 and the legacy raw 3D record stream as **removable legacy fallbacks**;
-`snapshot_io.py` accepts v2 only and prefers CSV when both formats exist; the
-web backend consumes population CSV, not the binary ABI. 2D encodes NaN
-positions and dimension 0; 3D encodes positions and dimension 3.
+There is one coherent snapshot contract per commit: the layout (currently
+`CELXPOP1` v2), its record sizes and flags, the reader matrix, and the cadence
+are specified in [docs/output-contract.md](../output-contract.md) and must match
+every reader in the repository at that commit. Backward compatibility of run
+artifacts is **not** supported or guaranteed, so readers may reject unknown
+versions instead of guessing and legacy fallbacks may be deleted.
 
 The intended enforcement of this contract is a single cross-language fixture
 (`tests/fixtures/mini_run/`) read by both the C++ and the Python tests, so that
@@ -25,20 +25,18 @@ the contract is only as strong as the duplicated readers.
 - A writer change requires a version bump and synchronized updates across C++,
   `snapshot_io.py`, tests, and the CSV export that the web backend reads. Old
   runs do **not** have to stay readable.
-- The Python reader is allowed to reject unknown versions rather than guess; the
-  C++ v1/raw-3D fallbacks may be deleted without an ADR, since no compatibility
-  guarantee backs them.
-- Cadence uses integer generation indices (`floor(tau + epsilon)`) to avoid float
-  drift, deduplicated per index. Snapshots are periodic only: there is no forced
-  terminal write, so the last snapshot can predate the end of the run. Terminal
-  state is authoritative in `run_metadata.json` and the phylogeny.
+- The C++ v1/raw-3D fallbacks may be deleted without an ADR, since no
+  compatibility guarantee backs them.
+- Cadence and terminal-state rules are part of the same output contract; this
+  ADR does not restate them.
 
 ## Evidence
 - ABI sizes are pinned by `static_assert`s in
   `CellEvoX/include/io/PopulationSnapshotIO.hpp`.
-- Reader matrix exercised by `CellEvoX/tests/test_population_snapshot_io.cpp`
-  (v2 round-trip, v1, legacy raw 3D) and `CellEvoX/scripts/snapshot_io.py`
-  (v2 only).
+- Round-trip and reader coverage in
+  `CellEvoX/tests/test_population_snapshot_io.cpp` and
+  `CellEvoX/scripts/snapshot_io.py`; the reader matrix itself is listed in the
+  output contract.
 - Cross-language fixture: not present yet (no `tests/fixtures/` directory); the
   P1 item is the remaining blocker for this ADR moving to `Accepted`.
 - Owner decision: backward compatibility is explicitly neither supported nor

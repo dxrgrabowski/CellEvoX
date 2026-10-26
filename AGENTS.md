@@ -40,97 +40,54 @@ Never violate these, even if the code appears not to enforce them.
    new mutation's placeholder is rewritten to the daughter's own id). Ordering of
    daughters is fully deterministic (explicit tie-break chain).
 4. **2D and 3D must stay semantically identical** for the shared event model.
-   They currently carry two copies of the event loop; parity is an invariant
-   (see ADR-0003). A change to one loop requires the same change in the other,
-   plus a parity check.
+   They currently carry two copies of the event loop: apply every event/RNG
+   change to both and keep the parity test green, but do not unify or delete
+   either copy ad hoc — see [ADR-0003](docs/adr/0003-dual-storage-engines.md).
 5. **3D is strictly `stochastic + xyz`.** Spatial state may not change event
    probabilities, selection, or lineage semantics. Mechanical relaxation only
    resolves overlap; it must not create or destroy cells.
-6. **Population snapshots have one binary ABI per version** (`CELXPOP1`, v2,
-   48-byte header, 36-byte record, 5-byte mutation payload), and every reader in
-   the repository must agree with the writer at that commit. Compatibility with
-   older versions is **not guaranteed**: the C++ v1/raw-3D fallbacks are
-   removable legacy, `snapshot_io.py` requires v2, and the web backend consumes
-   population CSV, not the binary ABI. A writer change needs a version bump and
-   synchronized updates across C++, `snapshot_io.py`, tests, and the CSV export
-   that the web parser reads; old runs need not stay readable. This is an
-   explicit owner decision recorded in the PR #45 review discussion, not an
-   inference from the code. ADR-0004 remains `Proposed` because it covers only
-   the still-missing cross-language fixture and its enforcement.
+6. **Population snapshots have one binary ABI per version.** Layout, sizes,
+   flags and the reader matrix live in
+   [docs/output-contract.md](docs/output-contract.md#binary-snapshot-abi-celxpop1);
+   the rule here is that a writer change needs a version bump plus synchronized
+   updates to every in-repo reader, the tests, and the CSV export. Compatibility
+   with older versions is **not** supported or guaranteed, so old runs need not
+   stay readable and the remaining v1/raw-3D readers are removable legacy.
 7. **Run output names and CSV columns are a contract** for the Python scripts,
    `results_parser.py`, and the frontend at the current commit. Treat renames as
    breaking and update every in-repo consumer in the same change; old run
    directories do not have to stay readable.
 8. **Snapshot cadence uses integer generation indices**, taken as
    `floor(tau + epsilon)`; integer indexing exists to avoid float-modulo drift.
-   Snapshots are written only when that index is a multiple of the configured
-   resolution and there is no forced terminal write, so the last snapshot can
-   predate the end of the run. Terminal state comes from `run_metadata.json`
-   (`terminal_time`, `terminal_population`) and `phylogenetic_tree.csv`.
+   There is no forced terminal write, so the last snapshot can predate the end of
+   the run and terminal state comes from `run_metadata.json` and the phylogeny.
+   Details in
+   [docs/output-contract.md](docs/output-contract.md#snapshot-cadence-and-terminal-state).
 
 ## Negative Space — Do Not Change Without an ADR
 
-- The duplicated event loop in `SimulationEngine::stochasticDenseStep()` versus
-  `applyCommonPopulationStep()`. It is a known debt, not an invitation to delete
-  one side ad hoc; unification is the intended direction, but only with parity
-  evidence.
 - RNG stream ids (`0/1/2`), id assignment order, and daughter tie-break ordering.
 - Dense-array storage versus `CellMap`/`Graveyard` materialization boundary.
 - Snapshot struct layouts and their `static_assert`s.
 - The mechanical relaxation scheme in 3D (soft-sphere springs, per-substep grid
-  rebuild). The scheme is protected; its numeric parameters are tuning constants
-  covered under Known Tech Debt.
+  rebuild); its numeric parameters are tuning constants, not invariants.
 - The web runner's single-global-job model and atomic launch-config write.
 - `CELLEVOX_NATIVE_OPTIMIZATIONS` defaulting ON for local/benchmark builds.
+  Portable Docker images and binaries for other hosts must configure
+  `-DCELLEVOX_NATIVE_OPTIMIZATIONS=OFF`, otherwise `SIGILL` is possible on a
+  different CPU ([ADR-0007](docs/adr/0007-build-portability.md)).
 
-## Known Tech Debt / Cleanup Targets
+## Known Tech Debt
 
-Safe to fix when scoped, benchmarked, and covered by tests; no ADR is required
-for these. Do not preserve them as architecture.
+Safe to fix when scoped and covered by tests; no ADR is required. Do not preserve
+these as architecture. Smaller leftovers — dead config keys, CLI aliases, tuning
+constants, stale Qt/Boost references in CI — belong in issues.
 
-- **Duplicated 2D event loop** introduced by the dense-array optimization
-  (904f5dd); the separately removed 3D density mode (36013fa) is unrelated.
-  Long-term goal is one shared population step.
-- **Dead `rng` parameter** in `applyCommonPopulationStep` (vestige of the
-  pre-hash-RNG era).
-- **Arbitrary tuning constants** (sort threshold, small-batch threshold, rebuild
-  chunk, cache slack, dense-voxel cap, web log throttles). They are rough
-  engineering defaults, not invariants; adjust with benchmark evidence.
 - **Hardcoded DevContainer paths** (`/workspaces/CellEvoX/...`) in
   `RunDataEngine.cpp` and `test_config.json`. There must be no hardcoded
-  devcontainer paths in C++; outputs/scripts should be relative or configured.
+  DevContainer paths in C++; outputs and scripts should be relative or configured.
 - **Hardcoded `0.005` tau** in `Application`'s analysis path instead of
   `config.tau_step` (oversight from research defaults).
-- **Dead `log_level` config key** (never parsed).
-- **`--postprocess csv` alias** accepted by the CLI/console runner but rejected
-  by the web API and undocumented in `--help`.
-- **Dead deterministic mode** in the parser/web schema.
-- **Legacy snapshot readers** (v1 and the raw 3D record stream in
-  `PopulationSnapshotIO.hpp`). Backward compatibility is not promised, so these
-  fallbacks are removable; keep them only until the cross-language fixture lands.
-- **Qt, QML, Boost, and `-DSKIP_GUI=ON`** are fully removed from the project.
-  Remaining references in CI are leftovers from old baseline comparisons; remove
-  them once the benchmark baseline commit is updated.
-
-## External Traps & Boundaries
-
-- **Portability:** `-march=native` is ON by default. Portable Docker images and
-  binaries for other hosts MUST configure `-DCELLEVOX_NATIVE_OPTIMIZATIONS=OFF`,
-  otherwise `SIGILL` is possible on different CPUs.
-- **Build-time dependencies:** Python 3 *development headers* and NumPy are
-  required at CMake configure time (the simulator embeds Python for plotting).
-  There is no Qt dependency.
-- **Runtime dependencies:** Python `matplotlib`/`numpy`/`pandas`/`networkx` and
-  `pyfish` for post-processing (`CellEvoX/scripts/requirements-visualization.txt`);
-  `ffmpeg` for MP4 (GIF fallback otherwise); PyVista optional for 3D replay. Set
-  `MPLCONFIGDIR` in headless containers.
-- **Thread limits:** `CELLEVOX_TBB_THREADS` and `--threads` cap TBB inside a
-  process. For batch runs keep `parallel × threads-per-run` near the core count;
-  oversubscription dominates gains.
-- **Web layer:** backend `7432`, frontend dev server `5274`, CORS allowlist is
-  fixed; one simulation job at a time (HTTP 409 otherwise).
-- **Memory reporting** reads `/proc/self/statm` on Linux; treat `memory_log.csv`
-  as Linux-oriented and avoid frequent flushes in performance runs.
 
 ## Documentation Rules
 
@@ -138,6 +95,12 @@ for these. Do not preserve them as architecture.
   field tables, control flow); stale copies cause confident wrong turns. Public
   contracts that outside consumers depend on — run outputs and CSV columns — are
   the exception and live in [docs/output-contract.md](docs/output-contract.md).
+- Each topic has one home: this file for invariants and guardrails,
+  [docs/runbook.md](docs/runbook.md) for commands, dependencies, ports and
+  environment facts, `docs/output-contract.md` for output formats, and
+  `docs/adr/` for the rationale and consequences of a decision. An ADR may quote
+  a benchmark result or a key flag as evidence, but not full run procedures or
+  dependency inventories.
 - Add *why* to `docs/adr/` when you make a non-obvious decision.
 - Agents may propose an ADR. If a task forces a non-obvious trade-off (a new
   dependency, a format change, a concurrency model), create

@@ -30,6 +30,20 @@ cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DCELLEVOX_NATIVE_OPTIMIZA
 Configure requires Python 3 development headers and NumPy. Fresh configure
 fetches Catch2 via `FetchContent`, so the first run needs network or a warm cache.
 
+## Runtime environment
+
+Post-processing needs Python `matplotlib`/`numpy`/`pandas`/`networkx` and
+`pyfish` (`CellEvoX/scripts/requirements-visualization.txt`); `ffmpeg` enables
+MP4 output (GIF otherwise); PyVista is optional for 3D replay. Set
+`MPLCONFIGDIR` in headless containers.
+
+`CELLEVOX_TBB_THREADS` and `--threads` cap TBB inside a process. Keep the number
+of concurrent runs times threads per run near the core count; oversubscription
+dominates any gain.
+
+`statistics/memory_log.csv` is sampled from `/proc/self/statm`, so memory
+reporting is Linux-only and adds I/O; avoid frequent flushes in performance runs.
+
 ## Test and analyze
 
 ```bash
@@ -65,8 +79,10 @@ cd web/frontend && npm install && npm run dev
 
 `web/start.sh` starts both on Unix-like systems, but it only invokes `npm run dev`
 — install frontend dependencies once with `npm install` (or let the script's
-first run fail and then install them). Backend port `7432`, frontend `5274`.
-Point the backend at a specific binary with `CELLEVOX_BINARY`.
+first run fail and then install them). Backend port `7432`, frontend `5274`, and
+the CORS allowlist is fixed. Point the backend at a specific binary with
+`CELLEVOX_BINARY`. The backend runs one simulation job at a time and answers HTTP
+409 otherwise.
 
 ## Batch runs
 
@@ -105,10 +121,9 @@ and `config.json` run about a million steps, `example_config.json` has a
 placeholder output path, and `test_config.json` still hardcodes a DevContainer
 path.
 
-`--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`.
-Keep `parallel × threads-per-run` near the core count. Use `exports` for
-headless batches; `full` adds plots and animations. Resolution fields are in
-integer `T` units, not loop steps.
+`--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`. Use
+`exports` for headless batches; `full` adds plots and animations. Resolution
+fields are in integer `T` units, not loop steps.
 
 ## CI notes
 
