@@ -70,15 +70,18 @@ Point the backend at a specific binary with `CELLEVOX_BINARY`.
 
 ## Batch runs
 
-Save this as `batch_manifest.json` in the repository root. `path` entries are
-resolved against the manifest's directory (so a manifest in `configs/` would need
-`../quick_config.json`), while `output_path` resolves against the repository root:
+Save this as `batch_manifest.json` in the repository root. Each entry is either
+`{"config": {...}}` (an inline config used verbatim) or `{"path": "..."}`, which
+loads the whole referenced file. Sibling keys of `path` are ignored — including
+`output_path` — so any overrides must live inside the referenced config. `path`
+resolves against the manifest's directory (a manifest in `configs/` would need
+`../quick_config.json`).
 
 ```json
 {
   "runs": [
-    {"path": "quick_config.json", "output_path": "output/batch_a"},
-    {"path": "example_config.json", "output_path": "output/batch_b"}
+    {"path": "quick_config.json"},
+    {"path": "your_experiment.json"}
   ]
 }
 ```
@@ -88,8 +91,19 @@ python3 web/backend/run_batch.py --manifest batch_manifest.json \
   --parallel 4 --threads-per-run 5 --postprocess exports
 
 # equivalent positional form for a few configs
-python3 web/backend/run_batch.py quick_config.json example_config.json
+python3 web/backend/run_batch.py quick_config.json your_experiment.json
 ```
+
+Batches with more than one config are isolated automatically: the runner appends
+`/<run_label>` (`<batch_id>_<NNN>`) to each config's `output_path`, and the engine
+then creates its own timestamped directory below that. A config without
+`output_path` defaults to `./output` in a batch and `./output_<run_label>` for a
+single run. There is no per-entry `output_path` override.
+
+For smoke tests use `quick_config.json` (50,000 steps). `example_config.json`
+and `config.json` run about a million steps, `example_config.json` has a
+placeholder output path, and `test_config.json` still hardcodes a DevContainer
+path.
 
 `--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`.
 Keep `parallel × threads-per-run` near the core count. Use `exports` for

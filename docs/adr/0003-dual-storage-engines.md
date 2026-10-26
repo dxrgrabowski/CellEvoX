@@ -31,22 +31,26 @@ overlay; any unification must move the shared step onto dense storage.
   `stochasticDenseStep()`), implementation immediately below it.
 - Parity: `CellEvoX/tests/test_simulation.cpp`, "SimulationEngine3DCapacity
   matches 2D population events".
-- Profitability check (local, Release, `-march=native`, 10 samples, one warm-up
-  step excluded, five timed steps per sample, same seed and event logic). The
-  shared step was run with a prebuilt alive-id cache to match the engine's
-  behaviour, and separately without a cache:
-  | N / pressure | dense 2D | shared + cached ids | shared, collect ids |
-  | --- | --- | --- | --- |
-  | 100k low | 0.92 ms | 1.65 ms | 5.38 ms |
-  | 100k high | 0.55 ms | 1.62 ms | 7.19 ms |
-  | 1M low | 5.49 ms | 16.32 ms | 34.68 ms |
-  | 1M high | 8.49 ms | 23.70 ms | 45.93 ms |
+- Profitability check on AMD Ryzen 5 5500 (10 hardware threads), g++ 15.2.0,
+  `-DCMAKE_BUILD_TYPE=Release -DCELLEVOX_NATIVE_OPTIMIZATIONS=ON`
+  (`-march=native`), `CellEvoXTests "[adr3-experiment]" --benchmark-samples 10
+  --benchmark-warmup-time 50`. Dense and shared use the same seed and event
+  logic; one warm-up step is excluded and each sample times exactly five steps
+  once (`REQUIRE(meter.runs() == 1)` in `bench_simulation.cpp`). The shared step
+  was run with a prebuilt alive-id cache to match the engine's behaviour, and
+  separately without a cache:
+  | N / pressure | dense 2D | shared + cached ids | shared, collect ids | cached speedup | collect speedup |
+  | --- | --- | --- | --- | --- | --- |
+  | 100k low | 0.92 ms | 1.65 ms | 5.38 ms | 1.79x | 5.85x |
+  | 100k high | 0.55 ms | 1.62 ms | 7.19 ms | 2.95x | 13.07x |
+  | 1M low | 5.49 ms | 16.32 ms | 34.68 ms | 2.97x | 6.32x |
+  | 1M high | 8.49 ms | 23.70 ms | 45.93 ms | 2.79x | 5.41x |
 
-  Dense flat storage is 1.8–3x faster than the shared step on `CellMap` with a
-  cached alive-id list, and 5–8x faster than the variant that collects ids on
-  every step; the gap grows with population. A first timed step without warm-up
-  looks ~20x slower because of vector growth, which is why the comparison
-  excludes it.
+  Dense flat storage is 1.8–3.0x faster than the shared step on `CellMap` with a
+  cached alive-id list, and 5.4–13.1x faster than the variant that collects ids
+  on every step; the gap grows with population. A first timed step without
+  warm-up looks ~20x slower because of vector growth, which is why the
+  comparison excludes it.
   Conclusion: the duplicate is a real performance fork, not dead code. If it is
   unified, the shared step must move onto dense storage; deleting the dense
   path would regress large 2D runs. The ADR stays `Proposed` until the owner

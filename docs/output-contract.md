@@ -18,9 +18,11 @@ output/<YYYY-MM-DD_HH-MM-SS>/
 │   ├── population_generation_<N>.csv
 │   └── population_generation_<N>.bin      # optional binary ABI snapshot
 ├── statistics/
-│   └── generational_statistics.csv
+│   ├── generational_statistics.csv
+│   └── memory_log.csv
 ├── phylogeny/
-│   └── phylogenetic_tree.csv
+│   ├── phylogenetic_tree.csv
+│   └── phylogenetic.gexf
 ├── muller_plots/                          # post-processing
 ├── vaf_diagrams/
 ├── mutation_histograms/
@@ -57,20 +59,59 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
 ```
 
 - `ParentID` is the cell that divided to produce this cell. A birth removes the
-  parent, so it does not appear in later snapshots. `0` marks a root cell of the
-  initial population.
+  parent, so it does not appear in later snapshots. Every cell of the initial
+  population is stored with the default `ParentID = 0`, and cell ID `0` is a real
+  initial cell, so `ParentID == 0` means either "initial population" or "daughter
+  of cell 0". It **cannot** be used to classify roots; identify the initial
+  population from the first snapshot instead.
 - `MutationCount` is the full number of mutations carried by the cell, even when
   the `Mutations` column is filtered.
 - `Mutations` is a space-separated list of `(mutation_id,mutation_type)` pairs.
-  The `mutation_id` identifies the cell in which that mutation originated; it is
-  not the current cell ID and not the parent ID. With
+  `mutation_id` is the cell in which that mutation was created: a newly acquired
+  mutation is stamped with the daughter's `CellID`, so it **can** equal the
+  current cell ID, and an inherited mutation can equal the current `ParentID`.
+  Do not treat `mutation_id` as a unique ancestor discriminator. With
   `full_mutation_payload: false` the column contains driver mutations only;
   setting it to `true` exports the full payload and also widens the VAF
   histograms to all mutations.
-- 2D runs emit `X,Y,Z = 0` with `PositionValid = 0` and
-  `SpatialDimensions = 0`. 3D runs emit real coordinates with
+- 2D runs leave `X,Y,Z` **empty** (`,,` in the CSV, `NaN` in the binary snapshot)
+  with `PositionValid = 0` and `SpatialDimensions = 0`; a CSV reader such as
+  pandas loads them as `NaN`, not `0`. 3D runs emit real coordinates with
   `PositionValid = 1` and `SpatialDimensions = 3`. Consumers must key off
-  `PositionValid`/`SpatialDimensions`, not off zero coordinates.
+  `PositionValid`/`SpatialDimensions`.
+
+## Statistics files
+
+`statistics/generational_statistics.csv` has one row per recorded generation:
+
+```
+Generation,TotalLivingCells,MeanFitness,FitnessVariance,FitnessSkewness,FitnessKurtosis,MeanMutations,MutationsVariance,MutationsSkewness,MutationsKurtosis
+```
+
+`Generation` stores the simulation time (`tau`) of the sample, not an integer
+generation index.
+
+`statistics/memory_log.csv` is appended during the run:
+
+```
+Tau,RSS_KB,Cells_Count,Graveyard_Count,Estimated_Cells_KB,Estimated_Graveyard_KB
+```
+
+## Phylogeny files
+
+`phylogeny/phylogenetic_tree.csv` has one row per node:
+
+```
+NodeID,ParentID,ChildSum,DeathTime
+```
+
+`DeathTime == 0` marks a node that is still alive at termination; a non-zero
+value is the `tau` at which it died. As with the population CSV, `ParentID == 0`
+does not distinguish roots from daughters of cell 0.
+
+`phylogeny/phylogenetic.gexf` is written by `exports` and `full` post-processing.
+It is GEXF 1.3 with directed edges from parent to child and node attributes
+`status` (`ALIVE`/`DEAD`), `parent_id`, and `child_sum`.
 
 ## Binary snapshot ABI (`CELXPOP1`)
 

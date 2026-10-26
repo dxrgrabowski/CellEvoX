@@ -409,6 +409,10 @@ TEST_CASE("ADR-0003 dense vs shared step isolation", "[benchmark][adr3-experimen
                                                         size_t population,
                                                         size_t env_capacity,
                                                         bool use_cached_ids) {
+        // One repetition per sample keeps the timed workload identical: exactly
+        // `steps_per_sample` steps from the same warmed-up state. Catch2 derives
+        // the count from the clock; it is 1 for these millisecond-scale steps.
+        REQUIRE(meter.runs() == 1);
         auto state = makeCommonStepState(population, env_capacity);
         run_common_step(*state, use_cached_ids);
         meter.measure([&] {
@@ -421,6 +425,7 @@ TEST_CASE("ADR-0003 dense vs shared step isolation", "[benchmark][adr3-experimen
     const auto add_dense_benchmark = [](Catch::Benchmark::Chronometer meter,
                                         size_t population,
                                         size_t env_capacity) {
+        REQUIRE(meter.runs() == 1);
         auto cfg = makeConfig(population, env_capacity);
         SimulationEngine eng(cfg);
         eng.step();

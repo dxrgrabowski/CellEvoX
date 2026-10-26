@@ -41,3 +41,7 @@ the contract is only as strong as the duplicated readers.
   (v2 only).
 - Cross-language fixture: not present yet (no `tests/fixtures/` directory); the
   P1 item is the remaining blocker for this ADR moving to `Accepted`.
+- Owner decision: backward compatibility is explicitly neither supported nor
+  guaranteed (recorded in the PR #45 review discussion, 2026-10-26). The
+  `Proposed` status covers the missing fixture and enforcement, not the
+  compatibility policy itself.

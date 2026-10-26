@@ -53,7 +53,10 @@ Never violate these, even if the code appears not to enforce them.
    removable legacy, `snapshot_io.py` requires v2, and the web backend consumes
    population CSV, not the binary ABI. A writer change needs a version bump and
    synchronized updates across C++, `snapshot_io.py`, tests, and the CSV export
-   that the web parser reads; old runs need not stay readable.
+   that the web parser reads; old runs need not stay readable. This is an
+   explicit owner decision recorded in the PR #45 review discussion, not an
+   inference from the code. ADR-0004 remains `Proposed` because it covers only
+   the still-missing cross-language fixture and its enforcement.
 7. **Run output names and CSV columns are a contract** for the Python scripts,
    `results_parser.py`, and the frontend at the current commit. Treat renames as
    breaking and update every in-repo consumer in the same change; old run
