@@ -4,9 +4,8 @@ import InlineNumberValue from './InlineNumberValue';
 import NumberInput from './NumberInput';
 import SmoothSlider from './SmoothSlider';
 
-const MODES: { value: SimulationMode; label: string; desc: string; status?: 'wip' }[] = [
+const MODES: { value: SimulationMode; label: string; desc: string }[] = [
   { value: 'stochastic',          label: 'Stochastic τ-Leap',   desc: 'Gillespie-based, probabilistic' },
-  { value: 'deterministic',       label: 'Deterministic RK4',   desc: 'Runge-Kutta 4th order', status: 'wip' },
   { value: 'spatial_3d_capacity', label: '3D Spatial Capacity', desc: 'Capacity-regulated 3D' },
 ];
 
@@ -23,34 +22,25 @@ export default function CoreParams({ config }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
           {MODES.map(m => {
             const isSelected = config.simulation_mode === m.value;
-            const isWip = m.status === 'wip';
 
             return (
               <button
                 key={m.value}
                 type="button"
-                disabled={isWip}
-                onClick={() => {
-                  if (!isWip) setConfig({ simulation_mode: m.value });
-                }}
-                className={`mode-card ${isSelected ? 'is-selected' : ''} ${isWip ? 'mode-card--wip' : ''}`}
+                onClick={() => setConfig({ simulation_mode: m.value })}
+                className={`mode-card ${isSelected ? 'is-selected' : ''}`}
                 style={{
                   padding: '10px 14px',
                   borderRadius: 'var(--radius-md)',
-                  border: `1px solid ${isSelected && !isWip ? 'var(--accent)' : 'var(--border)'}`,
-                  background: isWip
-                    ? 'rgba(148,163,184,0.08)'
-                    : isSelected ? 'var(--accent-dim)' : 'var(--bg-input)',
-                  color: isWip
-                    ? 'var(--text-muted)'
-                    : isSelected ? 'var(--accent)' : 'var(--text-secondary)',
-                  cursor: isWip ? 'not-allowed' : 'pointer',
+                  border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
+                  background: isSelected ? 'var(--accent-dim)' : 'var(--bg-input)',
+                  color: isSelected ? 'var(--accent)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'all var(--transition)',
                   fontFamily: 'var(--font-sans)',
                 }}
               >
-                {isWip && <span className="mode-card__ribbon">Work in progress</span>}
                 <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.label}</div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
               </button>

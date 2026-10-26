@@ -40,7 +40,7 @@ export default function ConfigPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try { setFullConfig(JSON.parse(ev.target!.result as string)); }
-      catch { alert('Invalid JSON config file'); }
+      catch (err) { alert(err instanceof Error ? err.message : 'Invalid JSON config file'); }
     };
     reader.readAsText(file);
     e.target.value = '';

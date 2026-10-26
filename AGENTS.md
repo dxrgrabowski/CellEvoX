@@ -15,10 +15,11 @@ There are exactly two supported modes, and the long-term model is
 2. **3D capacity** — the same stochastic event model with a spatial layer
    (positions, spatial hash grid, soft-sphere mechanical relaxation).
 
-`DETERMINISTIC_RK4` is **dead, deprecated legacy surface**. It is not a
+`DETERMINISTIC_RK4` was a dead, deprecated legacy simulation mode. It is not a
 supported mode, must not be advertised as working, and must not be silently
-accepted as one. Its remaining parser/UI/code remnants are scheduled for removal
-(#48). Re-introducing RK4 would require an explicit, separate decision.
+accepted as one. Its parser/UI/code remnants were removed in #48; configs that
+request it now fail fast. Re-introducing RK4 would require an explicit, separate
+decision.
 
 ## Hard Domain Invariants
 

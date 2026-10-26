@@ -46,7 +46,7 @@ async def get_config_schema():
             "seed": {"type": "integer", "default": 42, "min": 0, "max": 2**31},
             "simulation_mode": {
                 "type": "enum",
-                "values": ["stochastic", "deterministic", "spatial_3d_capacity"],
+                "values": ["stochastic", "spatial_3d_capacity"],
                 "default": "stochastic"
             },
             "tau_step": {"type": "float", "default": 0.005, "min": 0.0001, "max": 1.0, "step": 0.0001},

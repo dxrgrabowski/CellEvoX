@@ -20,8 +20,6 @@ inline const char* toString(SimulationType type) {
   switch (type) {
     case SimulationType::STOCHASTIC_TAU_LEAP:
       return "STOCHASTIC_TAU_LEAP";
-    case SimulationType::DETERMINISTIC_RK4:
-      return "DETERMINISTIC_RK4";
     case SimulationType::SPATIAL_3D_CAPACITY:
       return "SPATIAL_3D_CAPACITY";
     default:
@@ -119,18 +117,20 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       const std::string simulation_mode = j["simulation_mode"];
       if (simulation_mode == "stochastic") {
         config.sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
-      } else if (simulation_mode == "deterministic") {
-        config.sim_type = SimulationType::DETERMINISTIC_RK4;
       } else if (simulation_mode == "spatial_3d_capacity") {
         config.sim_type = SimulationType::SPATIAL_3D_CAPACITY;
       } else {
         throw std::runtime_error(
-            "Unknown simulation_mode '" + simulation_mode +
-            "'. Supported modes: stochastic, deterministic, spatial_3d_capacity");
+            "Unsupported simulation_mode '" + simulation_mode +
+            "'. Supported modes: stochastic, spatial_3d_capacity");
       }
     } else if (j.contains("stochastic")) {
-      config.sim_type = j.at("stochastic") ? SimulationType::STOCHASTIC_TAU_LEAP
-                                           : SimulationType::DETERMINISTIC_RK4;
+      if (!j.at("stochastic").get<bool>()) {
+        throw std::runtime_error(
+            "Unsupported legacy 'stochastic: false'. "
+            "Supported modes: stochastic, spatial_3d_capacity");
+      }
+      config.sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
       spdlog::warn("Config uses legacy 'stochastic' field; prefer 'simulation_mode'");
     }
     config.tau_step = j.at("tau_step");

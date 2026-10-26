@@ -177,9 +177,6 @@ void SimulationEngine::step() {
       break;
     default:
       break;
-      // case SimulationType::DETERMINISTIC_RK4:
-      //     deterministicStep();
-      //     break;
   }
 }
 

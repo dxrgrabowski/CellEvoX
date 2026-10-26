@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -102,6 +103,48 @@ TEST_CASE("SimulationConfig rejects unsafe values", "[SimulationConfig][Correctn
     invalid = j;
     invalid["mutations"][0]["effect"] = -1.0;
     REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+}
+
+TEST_CASE("SimulationConfig rejects the removed deterministic RK4 mode",
+          "[SimulationConfig][Correctness]") {
+    nlohmann::json j = {
+        {"simulation_mode", "deterministic"},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array()}
+    };
+
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(j),
+        Catch::Matchers::ContainsSubstring("deterministic") &&
+            Catch::Matchers::ContainsSubstring(
+                "Supported modes: stochastic, spatial_3d_capacity"));
+}
+
+TEST_CASE("SimulationConfig rejects legacy stochastic: false",
+          "[SimulationConfig][Correctness]") {
+    nlohmann::json j = {
+        {"stochastic", false},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array()}
+    };
+
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(j),
+        Catch::Matchers::ContainsSubstring("stochastic: false") &&
+            Catch::Matchers::ContainsSubstring(
+                "Supported modes: stochastic, spatial_3d_capacity"));
 }
 
 TEST_CASE("SimulationConfig rejects removed spatial 3D density mode",

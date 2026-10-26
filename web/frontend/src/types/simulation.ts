@@ -2,7 +2,6 @@
 
 export type SimulationMode =
   | 'stochastic'
-  | 'deterministic'
   | 'spatial_3d_capacity';
 
 export interface MutationType {
@@ -102,7 +101,7 @@ export interface RunMeta {
 export interface RunSummaryData {
   run_id: string;
   path: string;
-  config: Partial<SimulationConfig> & { mutations?: MutationType[]; stochastic?: boolean };
+  config: Partial<SimulationConfig> & { mutations?: MutationType[] };
   final_tau?: number;
   final_population?: number;
   final_mean_fitness?: number;

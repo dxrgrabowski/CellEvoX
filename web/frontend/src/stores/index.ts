@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BatchQueueItem, SimulationConfig, SimulationMode, SimulationStatus } from '../types/simulation';
+import type { BatchQueueItem, SimulationConfig, SimulationStatus } from '../types/simulation';
 import { DEFAULT_CONFIG } from '../types/simulation';
 import { createBatchQueueItem } from '../utils/batchQueue';
 
@@ -15,20 +15,16 @@ interface ConfigStore {
   resetConfig: () => void;
 }
 
-function inferSimulationMode(config: ImportedSimulationConfig): SimulationMode {
-  if (config.simulation_mode) return config.simulation_mode;
-  if (config.stochastic === false) return 'deterministic';
-  return DEFAULT_CONFIG.simulation_mode;
-}
-
 function normalizeConfig(config: ImportedSimulationConfig): SimulationConfig {
+  if (config.stochastic === false) {
+    throw new Error(
+      "Unsupported 'stochastic: false': the deterministic RK4 mode has been removed. " +
+      "Use 'simulation_mode': 'stochastic' or 'spatial_3d_capacity'.",
+    );
+  }
   const { stochastic: _legacyStochastic, ...rest } = config;
   void _legacyStochastic;
-  return {
-    ...DEFAULT_CONFIG,
-    ...rest,
-    simulation_mode: inferSimulationMode(config),
-  };
+  return { ...DEFAULT_CONFIG, ...rest };
 }
 
 export const useConfigStore = create<ConfigStore>((set) => ({
