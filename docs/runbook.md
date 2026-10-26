@@ -249,7 +249,5 @@ older baseline; do not treat it as a requirement.
 The gate interleaves base and head (7 rounds x 5 samples, order flipped every
 round, retry at 10 samples per round) and judges a benchmark on the median of
 the round means, so a single noisy round widens the interval instead of moving
-the result. Benchmark output goes to `/dev/shm/cellevox_benchmarks`, so a gate
-writes its snapshots to RAM instead of dirtying a gigabyte of boot-disk cache.
-Reproduce a failure locally with the same flags; `--rounds 1` runs the older
-blocked schedule. Rationale: ADR-0009.
+the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
+the older blocked schedule. Rationale: ADR-0009.
