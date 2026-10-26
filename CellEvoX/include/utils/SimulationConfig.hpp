@@ -113,6 +113,13 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
   SimulationConfig config;
   spdlog::info("Parsing simulation configuration from JSON");
   try {
+    // The removed deterministic mode must be rejected even when a valid
+    // simulation_mode is present alongside the legacy flag.
+    if (j.contains("stochastic") && !j.at("stochastic").get<bool>()) {
+      throw std::runtime_error(
+          "Unsupported legacy 'stochastic: false'. "
+          "Supported modes: stochastic, spatial_3d_capacity");
+    }
     if (j.contains("simulation_mode")) {
       const std::string simulation_mode = j["simulation_mode"];
       if (simulation_mode == "stochastic") {
@@ -125,11 +132,6 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
             "'. Supported modes: stochastic, spatial_3d_capacity");
       }
     } else if (j.contains("stochastic")) {
-      if (!j.at("stochastic").get<bool>()) {
-        throw std::runtime_error(
-            "Unsupported legacy 'stochastic: false'. "
-            "Supported modes: stochastic, spatial_3d_capacity");
-      }
       config.sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
       spdlog::warn("Config uses legacy 'stochastic' field; prefer 'simulation_mode'");
     }

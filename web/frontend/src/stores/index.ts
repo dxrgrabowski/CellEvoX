@@ -15,11 +15,19 @@ interface ConfigStore {
   resetConfig: () => void;
 }
 
+const SUPPORTED_MODES: readonly string[] = ['stochastic', 'spatial_3d_capacity'];
+
 function normalizeConfig(config: ImportedSimulationConfig): SimulationConfig {
   if (config.stochastic === false) {
     throw new Error(
       "Unsupported 'stochastic: false': the deterministic RK4 mode has been removed. " +
       "Use 'simulation_mode': 'stochastic' or 'spatial_3d_capacity'.",
+    );
+  }
+  if (config.simulation_mode !== undefined && !SUPPORTED_MODES.includes(config.simulation_mode)) {
+    throw new Error(
+      `Unsupported 'simulation_mode': '${String(config.simulation_mode)}'. ` +
+      "Supported modes: stochastic, spatial_3d_capacity.",
     );
   }
   const { stochastic: _legacyStochastic, ...rest } = config;

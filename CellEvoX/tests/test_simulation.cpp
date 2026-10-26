@@ -147,6 +147,30 @@ TEST_CASE("SimulationConfig rejects legacy stochastic: false",
                 "Supported modes: stochastic, spatial_3d_capacity"));
 }
 
+TEST_CASE("SimulationConfig rejects legacy stochastic: false with a simulation_mode",
+          "[SimulationConfig][Correctness]") {
+    for (const char* mode : {"stochastic", "spatial_3d_capacity"}) {
+        nlohmann::json j = {
+            {"simulation_mode", mode},
+            {"stochastic", false},
+            {"tau_step", 0.005},
+            {"initial_population", 100},
+            {"env_capacity", 1000},
+            {"steps", 20},
+            {"statistics_resolution", 1},
+            {"population_statistics_res", 5},
+            {"output_path", "./output/"},
+            {"mutations", nlohmann::json::array()}
+        };
+
+        REQUIRE_THROWS_WITH(
+            utils::fromJson(j),
+            Catch::Matchers::ContainsSubstring("stochastic: false") &&
+                Catch::Matchers::ContainsSubstring(
+                    "Supported modes: stochastic, spatial_3d_capacity"));
+    }
+}
+
 TEST_CASE("SimulationConfig rejects removed spatial 3D density mode",
           "[SimulationConfig][Spatial3D]") {
     nlohmann::json j = {
