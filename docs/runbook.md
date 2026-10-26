@@ -30,6 +30,18 @@ cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DCELLEVOX_NATIVE_OPTIMIZA
 Configure requires Python 3 development headers and NumPy. Fresh configure
 fetches Catch2 via `FetchContent`, so the first run needs network or a warm cache.
 
+### Native build outside the DevContainer
+
+Outside the DevContainer, point CMake at the interpreter the binary should embed;
+a local `.tools/env` Python 3.12 toolchain works:
+
+```bash
+.tools/env/bin/python -m venv --system-site-packages .venv
+.venv/bin/pip install -r CellEvoX/scripts/requirements-visualization.txt
+cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release \
+  -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+```
+
 ## Runtime environment
 
 Post-processing needs Python `matplotlib`/`numpy`/`pandas`/`networkx` and
@@ -43,6 +55,10 @@ dominates any gain.
 
 `statistics/memory_log.csv` is sampled from `/proc/self/statm`, so memory
 reporting is Linux-only and adds I/O; avoid frequent flushes in performance runs.
+
+The binary locates plot scripts relative to the source tree and runs the Python
+interpreter found at configure time; override it at runtime with
+`CELLEVOX_PYTHON`.
 
 ## CLI
 
@@ -217,8 +233,7 @@ single run. There is no per-entry `output_path` override.
 
 For smoke tests use `quick_config.json` (10,000 steps). `example_config.json`
 and `config.json` run about a million steps; `example_config.json` has a
-placeholder output path and `test_config.json` still hardcodes a DevContainer
-path.
+placeholder output path.
 
 `--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`. Use
 `exports` for headless batches; `full` adds plots and animations. Resolution

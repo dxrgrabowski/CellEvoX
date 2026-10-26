@@ -156,6 +156,6 @@ if __name__ == '__main__':
     generate_test_data(output_dir, num_generations=1000)
     print(f"\n✅ Test data ready!")
     print(f"\nTo generate plot, run:")
-    print(f"  /workspaces/CellEvoX/.venv/bin/python /workspaces/CellEvoX/CellEvoX/scripts/plot_muller.py \\")
+    print(f"  python CellEvoX/scripts/plot_muller.py \\")
     print(f"    --input {output_dir} \\")
     print(f"    --output {output_dir}/muller_test_plot.png")

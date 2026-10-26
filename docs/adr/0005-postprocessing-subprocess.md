@@ -17,19 +17,21 @@ artifacts. `--postprocess exports` skips heavy plots and animations.
   input-format mismatches (a run directory that lacks the columns a script
   expects). Only the environmental class is "not a simulation failure"; the other
   two are real bugs.
-- Script resolution currently hardcodes DevContainer paths (`/workspaces/...`)
-  and a `.venv` interpreter — known tech debt that must become relative or
-  configurable.
-- Some older invocations do not quote paths; spaces remain risky.
+- Interpreter and script paths resolve at runtime: `CELLEVOX_PYTHON`, then the
+  interpreter captured at configure time, then `python3`; scripts come from the
+  working directory, the configured source tree, then the `__FILE__`-derived
+  path. A moved binary therefore degrades to `python3` plus cwd-relative scripts
+  instead of assuming a container layout.
+- Scripts are invoked through one quoting helper, so paths with spaces are
+  handled.
 
 ## Evidence
 - Code-boundary defects: `f675045` "Fix crash/blank output in Muller & phylogeny
   plots for no-driver runs" (`KeyError: 'ParentId'` from a column-name
   mismatch) — a real bug, not an environment problem.
-- Hardcoded paths in the current implementation:
-  `CellEvoX/src/core/RunDataEngine.cpp` (`/workspaces/CellEvoX/CellEvoX/scripts`
-  and `/workspaces/CellEvoX/.venv/bin/python`) and
-  `CellEvoX/scripts/generate_test_data.py`. The fix is tracked separately as
-  known tech debt, not as part of this decision.
+- Script/interpreter resolution used to hardcode DevContainer paths
+  (`/workspaces/...`); `6313efe` replaced them with configure-time definitions
+  and a `CELLEVOX_PYTHON` override, so runs no longer depend on the container
+  layout.
 - The three failure classes above are the accepted reading of post-processing
   failures; no further evidence is required for this ADR.

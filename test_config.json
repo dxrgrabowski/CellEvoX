@@ -8,7 +8,7 @@
     "statistics_resolution": 1,
     "population_statistics_res": 100,
     "graveyard_pruning_interval": 100,
-    "output_path": "/workspaces/CellEvoX/output_test",
+    "output_path": "./output_test",
     "log_level": "debug",
     "mutations": [
         {

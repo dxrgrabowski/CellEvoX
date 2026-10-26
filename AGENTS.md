@@ -83,9 +83,6 @@ Safe to fix when scoped and covered by tests; no ADR is required. Do not preserv
 these as architecture. Smaller leftovers — dead config keys, CLI aliases, tuning
 constants, stale Qt/Boost references in CI — belong in issues.
 
-- **Hardcoded DevContainer paths** (`/workspaces/CellEvoX/...`) in
-  `RunDataEngine.cpp` and `test_config.json`. There must be no hardcoded
-  DevContainer paths in C++; outputs and scripts should be relative or configured.
 - **Hardcoded `0.005` tau** in `Application`'s analysis path instead of
   `config.tau_step` (oversight from research defaults).
 
