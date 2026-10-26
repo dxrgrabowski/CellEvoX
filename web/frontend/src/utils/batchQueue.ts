@@ -74,7 +74,7 @@ function readMutations(config: Record<string, unknown>): MutationType[] {
 export function describeBatchConfig(config: Record<string, unknown>): BatchConfigDescription {
   const mode = typeof config.simulation_mode === 'string'
     ? config.simulation_mode
-    : 'unknown';
+    : config.stochastic === true ? 'stochastic' : 'unknown';
   const modeLabel = MODE_LABELS[mode] ?? mode.replace(/_/g, ' ');
   const steps = asNumber(config.steps);
   const tauStep = asNumber(config.tau_step);

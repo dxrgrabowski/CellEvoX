@@ -35,7 +35,8 @@ function formatBool(value: boolean | undefined): string | undefined {
 }
 
 function formatMode(cfg: RunSummaryData['config']): string | undefined {
-  return cfg.simulation_mode?.replace(/_/g, ' ');
+  const mode = cfg.simulation_mode ?? (cfg.stochastic === true ? 'stochastic' : undefined);
+  return mode?.replace(/_/g, ' ');
 }
 
 function formatCutoff(value: number | undefined): string | undefined {

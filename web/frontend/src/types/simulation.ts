@@ -101,7 +101,7 @@ export interface RunMeta {
 export interface RunSummaryData {
   run_id: string;
   path: string;
-  config: Partial<SimulationConfig> & { mutations?: MutationType[] };
+  config: Partial<SimulationConfig> & { mutations?: MutationType[]; stochastic?: boolean };
   final_tau?: number;
   final_population?: number;
   final_mean_fitness?: number;

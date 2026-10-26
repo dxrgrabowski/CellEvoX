@@ -54,7 +54,9 @@ class ResultsParser:
                 "id": run_id,
                 "path": str(run_dir.relative_to(self.repo_root)),
                 "label": run_dir.name,
-                "sim_mode": config.get("simulation_mode", "unknown"),
+                "sim_mode": config.get("simulation_mode") or (
+                    "stochastic" if config.get("stochastic") else "unknown"
+                ),
                 "steps": config.get("steps"),
                 "has_stats": has_stats,
                 "has_population": has_population,
