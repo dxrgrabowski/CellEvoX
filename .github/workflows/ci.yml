@@ -43,6 +43,9 @@ jobs:
         mkdir -p "$APT_ARCHIVES/partial"
         sudo apt-get install -y --download-only -o Dir::Cache::archives="$APT_ARCHIVES" $PACKAGES
         sudo apt-get install -y -o Dir::Cache::archives="$APT_ARCHIVES" $PACKAGES
+        # apt creates the lock file and partial/ as root; the cache post-step
+        # runs unprivileged and cannot archive them otherwise.
+        sudo chown -R "$(id -u):$(id -g)" "$APT_ARCHIVES"
 
     - name: Setup Ccache
       uses: hendrikmuhs/ccache-action@v1.2
