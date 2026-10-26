@@ -27,6 +27,14 @@ std::string benchmarkTempString(std::string_view name) {
     return benchmarkTempPath(name).string();
 }
 
+// TEMPORARY: deliberate regression probe for the CI gate. Never merge this.
+void artificialRegressionWork() {
+    volatile std::uint32_t sink = 1;
+    for (std::uint32_t i = 0; i < 2000000; ++i) {
+        sink = sink * 1664525u + 1013904223u;
+    }
+}
+
 }  // namespace
 
 // Helper: minimal overhead config.
@@ -305,6 +313,7 @@ TEST_CASE("Simulation: High-Performance Regression", "[benchmark][perf-core]") {
     // 4. MULTI-STEP STABILITY (Cumulative)
     // Measures: Snapshot scheduling and generational overhead.
     BENCHMARK("run() N=50000 x5 steps [stability]") {
+        artificialRegressionWork();
         auto cfg = makeConfig(50000, 1000000);
         SimulationEngine eng(cfg);
         return eng.run(5);
