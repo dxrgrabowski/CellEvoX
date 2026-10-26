@@ -26,5 +26,7 @@ parallelizing a phase can matter.
 - Interactive comparison: `CellEvoX/tests/benchmarks/compare_benchmarks.py`
   exposes the same knobs; its standalone default threshold is looser (0.30) and
   is meant for exploratory runs, not for the CI gate.
+- The measurement schedule (blocked vs interleaved rounds) is revised by
+  ADR-0009; the thresholds above are unchanged.
 - Benchmarks live in `CellEvoX/tests/bench_simulation.cpp`;
   `CELLEVOX_PROFILE_PHASES` drives the opt-in phase timing.
