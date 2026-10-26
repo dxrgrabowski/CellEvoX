@@ -1,6 +1,6 @@
 # CellEvoX — QA / DevOps / Quality-Gate Audit
 
-**Scope:** repository at `/home/dxr/rep/CellEvoX`, audited 2026-10-26.
+**Scope:** repository at `/home/dxr/rep/CellEvoX` as of `1aa36a0`, audited 2026-10-26. Gaps are described in their pre-fix state; the companion PR fixes some of them rather than editing this snapshot.
 **Goal:** prevent regressions and raise confidence before merge/deploy.
 **Method:** static inspection of source, tests, CMake, GitHub Actions, Dockerfile, web backend/frontend, and the documented invariants in `AGENTS.md` / `docs/`.
 
@@ -148,7 +148,7 @@ Two structural inconsistencies stand out:
 
 ### 2.5 Steps where failures can be silently ignored
 
-1. `quality-gates.yml` — `git fetch ... || true`. If the base commit is not fetchable, the validator runs against a missing/mismatched base and may mis-evaluate scope instead of failing.
+1. `quality-gates.yml` — `git fetch ... || true`. If the base commit is not fetchable, the validator runs against a missing/mismatched base and may mis-evaluate scope instead of failing. The committed workflow fails loudly instead, and is pull-request only, because a dispatched run has no PR body to validate.
 2. `quality-gates.yml` — contract **warnings are non-fatal by design**; only errors block. This is documented, but means "low risk touching core paths" can merge with no recorded mitigation.
 3. `ci_benchmark_gate.py` — **new benchmarks do not fail** the gate (only regressed/missing do). A PR that renames a benchmark and adds an unmeasured replacement can pass.
 4. `ci.yml` — base build still installs Boost and passes `-DSKIP_GUI=ON`; `docs/runbook.md` explicitly calls these dead leftovers from an older baseline. The base build is therefore not exactly "the current build minus the diff"; it silently inherits obsolete options.
