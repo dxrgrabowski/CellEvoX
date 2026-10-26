@@ -1368,7 +1368,7 @@ void RunDataEngine::plotTumorReplay3D() {
        "--max-frames",
        "250",
        "--pulse-frames",
-       "3"});
+       "2"});
   if (result == 0) {
     spdlog::info("3D tumor replay saved to: {}visualizations/tumor_growth_3d.mp4", output_dir);
   } else {
