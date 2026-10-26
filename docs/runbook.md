@@ -233,8 +233,7 @@ single run. There is no per-entry `output_path` override.
 
 For smoke tests use `quick_config.json` (10,000 steps). `example_config.json`
 and `config.json` run about a million steps; `example_config.json` has a
-placeholder output path and `test_config.json` still hardcodes a DevContainer
-path.
+placeholder output path.
 
 `--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`. Use
 `exports` for headless batches; `full` adds plots and animations. Resolution
