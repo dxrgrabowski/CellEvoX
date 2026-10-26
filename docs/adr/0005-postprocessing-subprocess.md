@@ -1,5 +1,5 @@
 # ADR-0005: Post-processing via Python subprocesses
-Status: Proposed · 2026-10-24
+Status: Accepted · 2026-10-26
 
 ## Context
 Plots, phylogenies, Muller diagrams, and animations iterate faster in Python
@@ -21,6 +21,15 @@ artifacts. `--postprocess exports` skips heavy plots and animations.
   and a `.venv` interpreter — known tech debt that must become relative or
   configurable.
 - Some older invocations do not quote paths; spaces remain risky.
+
 ## Evidence
-To be recorded before this ADR moves to `Accepted` (failure log excerpts for each
-class, including `f675045`).
+- Code-boundary defects: `f675045` "Fix crash/blank output in Muller & phylogeny
+  plots for no-driver runs" (`KeyError: 'ParentId'` from a column-name
+  mismatch) — a real bug, not an environment problem.
+- Hardcoded paths in the current implementation:
+  `CellEvoX/src/core/RunDataEngine.cpp` (`/workspaces/CellEvoX/CellEvoX/scripts`
+  and `/workspaces/CellEvoX/.venv/bin/python`) and
+  `CellEvoX/scripts/generate_test_data.py`. The fix is tracked separately as
+  known tech debt, not as part of this decision.
+- The three failure classes above are the accepted reading of post-processing
+  failures; no further evidence is required for this ADR.

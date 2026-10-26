@@ -1,5 +1,5 @@
 # ADR-0006: Single global runner with isolated batch outputs
-Status: Proposed · 2026-10-24
+Status: Accepted · 2026-10-26
 
 ## Context
 The simulator is a CPU-saturating native subprocess, not a request-scoped
@@ -19,6 +19,11 @@ explicit and paired with `--threads-per-run`.
 - Relative `output_path` values resolve against the repository root.
 - Do not rely on concurrency changing simulation results; only resource
   contention and output collisions are the reasons for these limits.
+
 ## Evidence
-To be recorded before this ADR moves to `Accepted` (409 behaviour, batch output
-isolation, and the per-process thread-limit code pointer).
+- Single-job behaviour: `web/backend/main.py` returns HTTP 409 for a second
+  simulation or analysis request while one is active.
+- Per-process thread cap: `web/backend/runner.py` sets `CELLEVOX_TBB_THREADS`
+  (and passes `--threads` where supported) for both simulation and analysis.
+- Batch output isolation: `web/backend/runner.py` derives a per-item
+  `output_path/<batch_label>/...` base from the manifest.

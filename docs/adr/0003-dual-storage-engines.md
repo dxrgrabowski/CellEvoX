@@ -18,6 +18,18 @@ unification is the long-term direction.
   escapes the engine.
 - Do not delete either loop ad hoc or add a third variant.
 - Tuning constants in either loop are heuristics, not invariants.
+- `SimulationEngine::stochasticDenseStep()` is the **live** 2D path, not dead
+  code. Removing it means porting its performance behaviour to the shared step,
+  not deleting an unused branch.
+
 ## Evidence
-To be recorded before this ADR moves to `Accepted` (the `904f5dd` and `36013fa`
-commit summaries, plus a parity test).
+- `904f5dd` "Optimize stochastic simulation scaling" introduced the dense
+  storage and the second loop; `36013fa` "remove redundant 3D density simulation
+  mode" removed a different model and is not the cause of the duplication.
+- Live call site: `CellEvoX/src/systems/SimulationEngine.cpp` (`step()` calls
+  `stochasticDenseStep()`), implementation immediately below it.
+- Parity: `CellEvoX/tests/test_simulation.cpp`, "SimulationEngine3DCapacity
+  matches 2D population events".
+- Origin of the duplication could not be recalled by the owner during review;
+  it was verified against history instead. The ADR stays `Proposed` until the
+  unification/parity decision is signed off.

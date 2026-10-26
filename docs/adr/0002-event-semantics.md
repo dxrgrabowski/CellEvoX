@@ -1,5 +1,5 @@
 # ADR-0002: Birth replaces the parent with two daughters
-Status: Proposed · 2026-10-24
+Status: Accepted · 2026-10-26
 
 ## Context
 Lineage tracking requires the parent's identity and mutation history to survive
@@ -17,6 +17,11 @@ daughter's own id after id assignment.
 - Changing ordering, parent linkage, or mutation-origin rewriting changes
   results and snapshot contents.
 - Mutation probability is bounded to `[0, 1]` with a small tolerance.
+
 ## Evidence
-To be recorded before this ADR moves to `Accepted` (code pointer, test, and a
-sample snapshot/CSV pair).
+- `CellEvoX/tests/test_simulation.cpp` asserts `child.parent_id == 1` after a
+  division (parent linkage).
+- `CellEvoX/tests/test_common_population_step.cpp` checks death payloads carry
+  the dead cell's parent id and that births produce two daughters.
+- `CellEvoX/tests/test_population_snapshot_io.cpp` round-trips `parent_id`
+  through the snapshot ABI.

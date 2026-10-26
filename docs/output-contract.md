@@ -90,14 +90,16 @@ analysis and for the web backend.
 
 | Reader | Accepts |
 | --- | --- |
-| C++ (`PopulationSnapshotIO.hpp`) | v2, v1, legacy raw 3D record streams |
+| C++ (`PopulationSnapshotIO.hpp`) | v2, plus v1 and legacy raw 3D as removable fallbacks |
 | Python (`CellEvoX/scripts/snapshot_io.py`) | v2 only; prefers CSV when both exist |
 | Web backend (`web/backend/results_parser.py`) | population CSV only |
 
-So a writer change must stay additive and be mirrored in C++, the Python reader,
-the tests, and the CSV export. A layout change needs a version bump plus a
-reader fallback in C++; the Python reader deliberately fails loudly on unknown
-versions instead of guessing.
+Backward compatibility of run artifacts is **not guaranteed**: the project is
+early-stage, so keeping every historical layout readable would add code that is
+never used. What is required is coherence at a given commit — a writer change
+needs a version bump and matching updates in C++, `snapshot_io.py`, the tests,
+and the CSV export. Old runs do not have to stay readable; the Python reader
+deliberately fails loudly on unknown versions instead of guessing.
 
 ## Snapshot cadence and terminal state
 

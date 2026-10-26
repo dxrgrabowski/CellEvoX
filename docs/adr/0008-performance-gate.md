@@ -1,5 +1,5 @@
 # ADR-0008: Paired benchmark gate and phase profiling
-Status: Proposed · 2026-10-24
+Status: Accepted · 2026-10-26
 
 ## Context
 Performance is dominated by memory layout and parallel phases. Absolute numbers
@@ -17,6 +17,13 @@ parallelizing a phase can matter.
   invariants, and may be revised with evidence.
 - Qt/Boost and `-DSKIP_GUI=ON` in CI belong to an older baseline comparison and
   are candidates for removal once that baseline is updated.
+
 ## Evidence
-To be recorded before this ADR moves to `Accepted` (a paired benchmark report and
-the configured thresholds).
+- Paired gate: `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` compares base and
+  head benchmark JSON on the same host, with defaults `--threshold 0.05` (time)
+  and `--memory-threshold 0.10` (memory), plus `--max-relative-ci 0.05`.
+- Interactive comparison: `CellEvoX/tests/benchmarks/compare_benchmarks.py`
+  exposes the same knobs; its standalone default threshold is looser (0.30) and
+  is meant for exploratory runs, not for the CI gate.
+- Benchmarks live in `CellEvoX/tests/bench_simulation.cpp`;
+  `CELLEVOX_PROFILE_PHASES` drives the opt-in phase timing.

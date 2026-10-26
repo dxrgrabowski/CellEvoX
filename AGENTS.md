@@ -46,14 +46,18 @@ Never violate these, even if the code appears not to enforce them.
 5. **3D is strictly `stochastic + xyz`.** Spatial state may not change event
    probabilities, selection, or lineage semantics. Mechanical relaxation only
    resolves overlap; it must not create or destroy cells.
-6. **Population snapshots are a public binary ABI** (`CELXPOP1`, v2, 48-byte
-   header, 36-byte record, 5-byte mutation payload). The C++ reader also accepts
-   v1 and the legacy raw 3D fallback; `snapshot_io.py` requires v2; the web
-   backend consumes population CSV, not the binary ABI. Changes must be additive
-   and synchronized across C++, `snapshot_io.py`, tests, and the CSV export that
-   the web parser reads.
-7. **Run output names and CSV columns are a public contract** for the Python
-   scripts, `results_parser.py`, and the frontend. Treat renames as breaking.
+6. **Population snapshots have one binary ABI per version** (`CELXPOP1`, v2,
+   48-byte header, 36-byte record, 5-byte mutation payload), and every reader in
+   the repository must agree with the writer at that commit. Compatibility with
+   older versions is **not guaranteed**: the C++ v1/raw-3D fallbacks are
+   removable legacy, `snapshot_io.py` requires v2, and the web backend consumes
+   population CSV, not the binary ABI. A writer change needs a version bump and
+   synchronized updates across C++, `snapshot_io.py`, tests, and the CSV export
+   that the web parser reads; old runs need not stay readable.
+7. **Run output names and CSV columns are a contract** for the Python scripts,
+   `results_parser.py`, and the frontend at the current commit. Treat renames as
+   breaking and update every in-repo consumer in the same change; old run
+   directories do not have to stay readable.
 8. **Snapshot cadence uses integer generation indices**, taken as
    `floor(tau + epsilon)`; integer indexing exists to avoid float-modulo drift.
    Snapshots are written only when that index is a multiple of the configured
@@ -98,6 +102,9 @@ for these. Do not preserve them as architecture.
 - **`--postprocess csv` alias** accepted by the CLI/console runner but rejected
   by the web API and undocumented in `--help`.
 - **Dead deterministic mode** in the parser/web schema.
+- **Legacy snapshot readers** (v1 and the raw 3D record stream in
+  `PopulationSnapshotIO.hpp`). Backward compatibility is not promised, so these
+  fallbacks are removable; keep them only until the cross-language fixture lands.
 - **Qt, QML, Boost, and `-DSKIP_GUI=ON`** are fully removed from the project.
   Remaining references in CI are leftovers from old baseline comparisons; remove
   them once the benchmark baseline commit is updated.
@@ -129,6 +136,12 @@ for these. Do not preserve them as architecture.
   contracts that outside consumers depend on — run outputs and CSV columns — are
   the exception and live in [docs/output-contract.md](docs/output-contract.md).
 - Add *why* to `docs/adr/` when you make a non-obvious decision.
+- Agents may propose an ADR. If a task forces a non-obvious trade-off (a new
+  dependency, a format change, a concurrency model), create
+  `docs/adr/NNNN-slug.md` from the template in `docs/adr/README.md` with
+  `Status: Proposed`, link it from the change description, and let the domain
+  owner accept or reject it. Do not silently pick a design that deserves a
+  record.
 - For descriptive documentation, code wins: fix the doc in the same change. For
   approved domain invariants (above), the invariant wins: do not weaken it to
   match the code — report the discrepancy, then fix the code or request a domain
