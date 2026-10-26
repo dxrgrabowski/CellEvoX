@@ -1,0 +1,86 @@
+name: PR Quality Gates
+
+# Deterministic gates only: no model, no secrets, no network beyond package installs.
+# The PR body is treated as untrusted input and is never interpolated into a shell.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: PR change contract
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validator dependency
+        run: python3 -m pip install --quiet pyyaml
+
+      # The base tip is not necessarily an ancestor of the head commit, so a
+      # "main moved" state would otherwise fail the diff for the wrong reason.
+      # A missing base must be loud: validating against the wrong commit is worse
+      # than not validating at all.
+      - name: Ensure base commit is present
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          if git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "Base commit $BASE is already available locally."
+            exit 0
+          fi
+          if ! git fetch --no-tags --quiet origin "$BASE"; then
+            echo "::error::Could not fetch base commit $BASE; refusing to validate against a missing base."
+            exit 1
+          fi
+
+      - name: Write PR body to file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "${PR_BODY:-}" > pr_body.md
+
+      - name: Validate contract against the real diff
+        run: |
+          python3 .github/scripts/validate_pr_contract.py \
+            --body-file pr_body.md \
+            --base "${{ github.event.pull_request.base.sha || 'HEAD~1' }}" \
+            --head "${{ github.event.pull_request.head.sha || 'HEAD' }}"
+
+  python-viz-regressions:
+    name: Python visualization regressions
+    runs-on: ubuntu-24.04
+    env:
+      MPLBACKEND: Agg
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install visualization dependencies
+        run: python3 -m pip install --quiet -r CellEvoX/scripts/requirements-visualization.txt matplotlib
+
+      - name: Run muller/phylogeny regression test
+        run: python3 CellEvoX/scripts/test_plot_muller_and_phylogeny.py
