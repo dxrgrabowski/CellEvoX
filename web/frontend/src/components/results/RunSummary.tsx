@@ -35,9 +35,7 @@ function formatBool(value: boolean | undefined): string | undefined {
 }
 
 function formatMode(cfg: RunSummaryData['config']): string | undefined {
-  const mode = cfg.simulation_mode ?? (
-    cfg.stochastic == null ? undefined : cfg.stochastic ? 'stochastic' : 'deterministic'
-  );
+  const mode = cfg.simulation_mode ?? (cfg.stochastic === true ? 'stochastic' : undefined);
   return mode?.replace(/_/g, ' ');
 }
 

@@ -2,7 +2,6 @@
 
 export type SimulationMode =
   | 'stochastic'
-  | 'deterministic'
   | 'spatial_3d_capacity';
 
 export interface MutationType {

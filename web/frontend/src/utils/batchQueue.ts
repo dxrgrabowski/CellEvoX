@@ -23,7 +23,6 @@ interface BatchConfigDescription {
 
 const MODE_LABELS: Record<string, string> = {
   stochastic: 'Stochastic tau-leap',
-  deterministic: 'Deterministic RK4',
   spatial_3d_capacity: '3D spatial capacity',
 };
 
@@ -75,7 +74,7 @@ function readMutations(config: Record<string, unknown>): MutationType[] {
 export function describeBatchConfig(config: Record<string, unknown>): BatchConfigDescription {
   const mode = typeof config.simulation_mode === 'string'
     ? config.simulation_mode
-    : config.stochastic === false ? 'deterministic' : 'stochastic';
+    : config.stochastic === true ? 'stochastic' : 'unknown';
   const modeLabel = MODE_LABELS[mode] ?? mode.replace(/_/g, ' ');
   const steps = asNumber(config.steps);
   const tauStep = asNumber(config.tau_step);
