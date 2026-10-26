@@ -1,17 +1,22 @@
 [![Docker](https://github.com/dxrgrabowski/CellEvoX/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/dxrgrabowski/CellEvoX/actions/workflows/docker-publish.yml)
 # CellEvoX
 
-CellEvoX is a simulation system for modeling population dynamics, incorporating mutation types and probabilistic distributions. The project is designed with a modular and scalable architecture, leveraging modern C++ standards and libraries such as TBB and Eigen3 for high performance and ease of extensibility.
+CellEvoX is a stochastic clonal-population simulator for studying mutation,
+selection, and lineage dynamics under a soft carrying capacity. It produces
+reproducible population statistics, phylogenies, Muller plots, and 2D/3D
+visualizations, and ships with a local React/FastAPI control surface.
+
+Two simulation modes are supported: **2D stochastic tau-leap** and **3D spatial
+capacity** (the stochastic model plus an xyz mechanical overlay).
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md) for the project knowledge map. The docs
-section includes onboarding for agents, architecture, simulation engine behavior,
-config fields by mode, output formats, development workflows, and high-risk areas.
+- [AGENTS.md](AGENTS.md) — domain invariants, guardrails, and known tech debt.
+- [docs/runbook.md](docs/runbook.md) — build, test, benchmark, and run commands.
+- [docs/output-contract.md](docs/output-contract.md) — run outputs and snapshot ABI.
+- [docs/adr/](docs/adr/README.md) — why the system is built this way.
 
 ## Visualization
-
-CellEvoX is able to generate visualizations from existing runs:
 
 ### 3D Tumor Growth
 ![Tumor Growth 3D](assets/tumor_growth_3d.gif)
@@ -19,126 +24,23 @@ CellEvoX is able to generate visualizations from existing runs:
 ### 2D Clone Growth
 ![Clone Growth 2D](assets/clone_growth_2d.gif)
 
-- `clone_growth_2d.mp4` - an animated clone-growth view built from clone counts over time.
-- `tumor_growth_3d.mp4` - a spatial replay of the 3D tumor with clone colors.
+Both are written under `visualizations/` inside the run directory.
 
-Both outputs are written under `visualizations/` inside the run directory.
-
-## Features
-
-- **Stochastic and Spatial Simulation**: Supports tau-leap simulation based on Gillespie-style event sampling, plus a spatial 3D capacity mode.
-- **Entity-Component-System (ECS) Architecture**: Decouples data and behavior for flexible simulation management.
-- **Mutation Modeling**: Implements various mutation types with configurable probabilities and effects.
-- **Statistical Reporting**: Generates detailed statistical snapshots, including mutation histograms and fitness distributions.
-- **Web Interface**: Provides a React/FastAPI control and results surface for local runs.
-- **Containerized Deployment**: Ensures reproducibility and ease of deployment using Docker.
-
-## Requirements
-
-- C++23 compatible compiler
-- CMake 3.16 or higher
-- Intel TBB
-- Eigen3
-- spdlog
-- nlohmann\_json
-- Python3 development headers with NumPy
-
-## Installation
-
-### Using Docker
-
-1. Log in to GitHub Container Registry:
-   ```bash
-   docker login ghcr.io
-   ```
-2. Pull the Docker image:
-   ```bash
-   docker pull ghcr.io/dxrgrabowski/cellevox:main
-   ```
-3. Run the container:
-   ```bash
-   docker run -it ghcr.io/dxrgrabowski/cellevox:main
-   ```
-4. Follow the source build instructions below.
-
-### Building Docker Image Locally
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/dxrgrabowski/cellevox.git
-   cd cellevox
-   ```
-2. Build the Docker image:
-   ```bash
-   docker build -t cellevox:local .
-   ```
-3. Run the locally built container:
-   ```bash
-   docker run -it cellevox:local
-   ```
-4. Follow the source build instructions below.
-
-### Building from Source
-
-1. Configure and build:
-   ```bash
-   cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --target CellEvoX CellEvoXTests -j
-   ```
-2. Run tests:
-   ```bash
-   ./build/bin/CellEvoXTests "~[benchmark]"
-   ```
-3. Run the program:
-   ```bash
-   ./build/bin/CellEvoX --config quick_config.json
-   ```
-
-## Usage
-
-1. Configure the simulation by editing the provided configuration file.
-2. Run the simulation executable with --config pointing to config file localization.
-3. View the generated data and statistical reports created in output directory specified in config. (Docker needs a write permission to output dir)
-
-
-### Recommended Python extras
-
-The existing analysis scripts use `matplotlib`, `numpy`, `pandas`, and `networkx`. For the new 3D replay, `pyvista` is recommended but optional because the script falls back to a Matplotlib renderer when PyVista is unavailable.
-
-Example:
+## Quick start
 
 ```bash
-pip install pandas networkx pyvista
+cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target CellEvoX CellEvoXTests -j
+./build/bin/CellEvoXTests "~[benchmark]"
+./build/bin/CellEvoX --config quick_config.json
+./build/bin/CellEvoX --analyze output/<run_dir>
 ```
 
-For MP4 export, make sure `ffmpeg` is available in the environment. If it is missing, the scripts fall back to GIF output.
-
-### Run on an existing output directory
-
-```bash
-./build/bin/CellEvoX --analyze /path/to/run_dir
-```
-
-### Run the visualization scripts manually
-
-```bash
-python CellEvoX/scripts/animate_clone_growth_2d.py --input /path/to/run_dir
-python CellEvoX/scripts/visualize_tumor_3d.py --input /path/to/run_dir
-```
-
-## File Structure
-
-- **include/**: Header files defining core components.
-- **src/**: Source files implementing the program logic.
-- **scripts/**: Python analysis and visualization scripts.
-- **web/**: React/FastAPI local interface.
-- **build/**: Directory for compiled binaries.
-- **docs/**: Agent and contributor knowledge base.
-
-## Contributing
-
-Contributions are welcome! Please fork the repository and submit a pull request with your changes.
+Docker image: `ghcr.io/dxrgrabowski/cellevox:main` (builds for the target host;
+see [ADR-0007](docs/adr/0007-build-portability.md) for portability flags). Build
+prerequisites, runtime dependencies and environment settings are in
+[docs/runbook.md](docs/runbook.md#build).
 
 ## Contact
 
-For questions or support, contact Dawid Grabowski at dxrsoftware@gmail.com.
+Dawid Grabowski — dxrsoftware@gmail.com

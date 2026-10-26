@@ -34,8 +34,8 @@ build-*/
 .vs/
 .venv/
 .pipx/
-output*
-compare*
+/output*/
+/compare*
 analiz/
 analysis/
 .cellevox_launch_configs/
