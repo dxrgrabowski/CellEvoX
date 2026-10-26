@@ -2,10 +2,11 @@ name: PR Quality Gates
 
 # Deterministic gates only: no model, no secrets, no network beyond package installs.
 # The PR body is treated as untrusted input and is never interpolated into a shell.
+# Pull-request only: the contract is validated against the PR body, which does
+# not exist for `workflow_dispatch`, so a dispatched run could only fail.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   contract:
     name: PR change contract
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout head commit
@@ -41,7 +42,7 @@ jobs:
       - name: Ensure base commit is present
         run: |
           set -euo pipefail
-          BASE="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          BASE="${{ github.event.pull_request.base.sha }}"
           if git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
             echo "Base commit $BASE is already available locally."
             exit 0
@@ -60,8 +61,8 @@ jobs:
         run: |
           python3 .github/scripts/validate_pr_contract.py \
             --body-file pr_body.md \
-            --base "${{ github.event.pull_request.base.sha || 'HEAD~1' }}" \
-            --head "${{ github.event.pull_request.head.sha || 'HEAD' }}"
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
 
   python-viz-regressions:
     name: Python visualization regressions
