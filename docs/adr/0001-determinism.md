@@ -1,5 +1,5 @@
 # ADR-0001: Counter-based RNG for thread-count independence
-Status: Accepted · 2026-10-24
+Status: Proposed · 2026-10-24
 
 ## Context
 A shared sequential RNG makes draws depend on TBB scheduling and chunking, so
@@ -12,3 +12,6 @@ seeded stream).
 - Never add a shared mutable RNG to the event step.
 - Stream ids, step derivation, and id assignment order are contract.
 - A determinism regression is a correctness bug, not a performance trade-off.
+## Evidence
+To be recorded before this ADR moves to `Accepted` (the hash implementation and a
+same-seed run at two thread counts).

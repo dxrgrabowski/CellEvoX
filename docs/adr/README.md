@@ -4,6 +4,10 @@ ADRs capture *why* a non-obvious choice exists. They are not tutorials and must
 not restate code, schemas, or control flow. If a decision is later reversed,
 mark the ADR `Superseded by ADR-XXXX` instead of deleting it.
 
+All ADRs below are currently `Proposed`: they describe the intended contract but
+have not yet been signed off by the domain owner. Each one needs its `Evidence`
+section filled in before it moves to `Accepted`.
+
 | ADR | Decision |
 | --- | --- |
 | [0001](0001-determinism.md) | Counter-based RNG for thread-count-independent results |
@@ -19,7 +23,7 @@ mark the ADR `Superseded by ADR-XXXX` instead of deleting it.
 
 ```markdown
 # ADR-NNNN: <decision>
-Status: Accepted | Superseded by ADR-XXXX | Open
+Status: Proposed | Accepted | Superseded by ADR-XXXX
 Date: YYYY-MM-DD
 Context: the external force, constraint, or failure that forced a choice
 Decision: what we do

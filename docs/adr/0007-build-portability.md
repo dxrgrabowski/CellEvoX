@@ -1,5 +1,5 @@
 # ADR-0007: `-march=native` default and Python-embed build
-Status: Accepted · 2026-10-24
+Status: Proposed · 2026-10-24
 
 ## Context
 The simulator is performance-sensitive and usually built and run on the same
@@ -14,3 +14,6 @@ Portable artifacts (Docker images, binaries moved between hosts) must configure
 - Changing build CPU/compiler invalidates performance comparisons.
 - CI's `-DSKIP_GUI=ON` and Boost install are dead leftovers, not requirements;
   remove them once the benchmark baseline commit is refreshed.
+## Evidence
+To be recorded before this ADR moves to `Accepted` (CMake option defaults and a
+portable image build).

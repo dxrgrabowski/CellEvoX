@@ -1,12 +1,20 @@
 # Runbook
 
 Canonical commands and environment facts. Rationale for the rules lives in
-[AGENTS.md](../AGENTS.md) and [docs/adr/](README.md).
+[AGENTS.md](../AGENTS.md) and [ADRs](adr/README.md).
+
+All examples below are Bash on Linux/macOS. On native Windows, use WSL/Docker
+or a Visual Studio build (executables land under `bin/Release`); the benchmark
+helpers import the Unix-only `resource` module.
 
 ## Build
 
 CMake source directory is `CellEvoX`. Both `CellEvoX` and `CellEvoXTests` are
 always defined — there is no GUI option and no Qt dependency.
+
+Prerequisites: a C++23 compiler, CMake >= 3.16, spdlog, Eigen3, TBB,
+nlohmann_json >= 3, and Python 3 development headers with NumPy. Catch2 is
+fetched by `FetchContent` at configure time.
 
 ```bash
 cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release
@@ -43,20 +51,44 @@ Optional phase timing: build with `-DCELLEVOX_PROFILE_PHASES=ON` and set
 
 ## Web
 
+Backend and frontend are separate long-running processes. Start each in its own
+terminal from the repository root:
+
 ```bash
+# terminal 1 — backend, starting in the repository root
 cd web/backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn main:app --host 0.0.0.0 --port 7432 --reload
+
+# terminal 2 — frontend, starting in the repository root
 cd web/frontend && npm install && npm run dev
 ```
 
-`web/start.sh` starts both on Unix-like systems. Backend port `7432`, frontend
-`5274`. Point the backend at a specific binary with `CELLEVOX_BINARY`.
+`web/start.sh` starts both on Unix-like systems, but it only invokes `npm run dev`
+— install frontend dependencies once with `npm install` (or let the script's
+first run fail and then install them). Backend port `7432`, frontend `5274`.
+Point the backend at a specific binary with `CELLEVOX_BINARY`.
 
 ## Batch runs
+
+Save this as `batch_manifest.json` in the repository root. `path` entries are
+resolved against the manifest's directory (so a manifest in `configs/` would need
+`../quick_config.json`), while `output_path` resolves against the repository root:
+
+```json
+{
+  "runs": [
+    {"path": "quick_config.json", "output_path": "output/batch_a"},
+    {"path": "example_config.json", "output_path": "output/batch_b"}
+  ]
+}
+```
 
 ```bash
 python3 web/backend/run_batch.py --manifest batch_manifest.json \
   --parallel 4 --threads-per-run 5 --postprocess exports
+
+# equivalent positional form for a few configs
+python3 web/backend/run_batch.py quick_config.json example_config.json
 ```
 
 `--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`.

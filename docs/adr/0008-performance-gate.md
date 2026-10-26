@@ -1,5 +1,5 @@
 # ADR-0008: Paired benchmark gate and phase profiling
-Status: Accepted · 2026-10-24
+Status: Proposed · 2026-10-24
 
 ## Context
 Performance is dominated by memory layout and parallel phases. Absolute numbers
@@ -17,3 +17,6 @@ parallelizing a phase can matter.
   invariants, and may be revised with evidence.
 - Qt/Boost and `-DSKIP_GUI=ON` in CI belong to an older baseline comparison and
   are candidates for removal once that baseline is updated.
+## Evidence
+To be recorded before this ADR moves to `Accepted` (a paired benchmark report and
+the configured thresholds).
