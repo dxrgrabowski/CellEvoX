@@ -152,12 +152,28 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    # Same mirror-throttling exposure as the benchmark job: a cold install took
+    # 22 of this job's 24 minutes. Reuse the .deb cache instead.
+    - name: Restore APT package cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.apt-cache
+        key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+        restore-keys: |
+          apt-${{ runner.os }}-
+
     - name: Install Dependencies
+      env:
+        APT_ARCHIVES: ${{ github.workspace }}/.apt-cache
       run: |
         set -euo pipefail
+        PACKAGES="build-essential cmake libspdlog-dev libtbb-dev libeigen3-dev \
+          nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib"
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake libspdlog-dev libtbb-dev \
-          libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib
+        mkdir -p "$APT_ARCHIVES/partial"
+        sudo apt-get install -y --download-only -o Dir::Cache::archives="$APT_ARCHIVES" $PACKAGES
+        sudo apt-get install -y -o Dir::Cache::archives="$APT_ARCHIVES" $PACKAGES
+        sudo chown -R "$(id -u):$(id -g)" "$APT_ARCHIVES"
 
     - name: Configure Coverage Build
       run: >
@@ -173,7 +189,7 @@ jobs:
       working-directory: coverage_build
       run: ctest --output-on-failure
 
-    # Baseline recorded on 2026-10-26: 2002/2901 lines (69.0%) over
+    # Baseline recorded on 2026-10-26: 2000/2886 lines (69.3%) over
     # CellEvoX/src + CellEvoX/include. Ratchet this once the number is stable.
     - name: Generate Coverage Report
       run: |
