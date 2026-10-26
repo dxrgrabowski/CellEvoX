@@ -107,8 +107,9 @@ jobs:
           --base-binary base_build/bin/CellEvoXTests \
           --head-binary head_build/bin/CellEvoXTests \
           --groups "$BENCHMARK_GROUPS" \
-          --initial-samples 30 \
-          --retry-samples 60 \
+          --rounds 7 \
+          --initial-samples 5 \
+          --retry-samples 10 \
           --threshold 0.05 \
           --memory-threshold 0.10 \
           --max-relative-ci 0.05 \

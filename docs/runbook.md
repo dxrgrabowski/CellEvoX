@@ -245,3 +245,9 @@ fields are in integer `T` units, not loop steps.
 `.github/workflows/ci.yml` runs tests plus a paired base/head benchmark gate
 (5% time, 10% memory). Its `-DSKIP_GUI=ON` flag is a dead leftover from an
 older baseline; do not treat it as a requirement.
+
+The gate interleaves base and head (7 rounds x 5 samples, order flipped every
+round, retry at 10 samples per round) and judges a benchmark on the median of
+the round means, so a single noisy round widens the interval instead of moving
+the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
+the older blocked schedule. Rationale: ADR-0009.

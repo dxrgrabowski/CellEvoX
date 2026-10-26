@@ -19,6 +19,7 @@ fixture. The rest were accepted on 2026-10-26.
 | [0006](0006-web-runner-model.md) | Accepted | Single global runner with isolated batch outputs |
 | [0007](0007-build-portability.md) | Accepted | `-march=native` default and Python-embed build |
 | [0008](0008-performance-gate.md) | Accepted | Paired benchmark gate and phase profiling |
+| [0009](0009-interleaved-benchmark-rounds.md) | Proposed | Interleaved base/head rounds, median of round means |
 
 ## Template
 
