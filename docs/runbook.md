@@ -44,12 +44,94 @@ dominates any gain.
 `statistics/memory_log.csv` is sampled from `/proc/self/statm`, so memory
 reporting is Linux-only and adds I/O; avoid frequent flushes in performance runs.
 
-## Test and analyze
+## CLI
+
+`CellEvoX` needs exactly one of `--config` or `--analyze`; the rest is optional.
+
+| Flag | Effect |
+| --- | --- |
+| `--config <path>` | Run the simulation described by a JSON config. |
+| `--analyze <path>` | Re-run post-processing on an existing run directory. |
+| `--threads <n>` | Cap TBB parallelism; overrides `CELLEVOX_TBB_THREADS`. |
+| `--postprocess <full\|exports>` | Post-processing set; defaults to `full`. |
+| `--help`, `-h` | Print usage. |
+
+`exports` writes the CSV/GEXF result files without plots. `csv` is accepted as
+an alias for `exports` but is not listed in `--help`. Unknown options print
+usage and exit with status 1. `full` needs the Python plotting dependencies from
+[Runtime environment](#runtime-environment); use `exports` for a headless first
+result.
+
+## First experiment
+
+`quick_config.json` is the short reference run: 10,000 steps at `tau_step 0.005`
+(50 generations), with one statistics row and one population snapshot per
+generation.
+
+```json
+{
+  "simulation_mode": "stochastic",
+  "seed": 42,
+  "tau_step": 0.005,
+  "initial_population": 1000,
+  "env_capacity": 1000,
+  "steps": 10000,
+  "statistics_resolution": 1,
+  "population_statistics_res": 1,
+  "output_path": "./output",
+  "mutations": [
+    {"is_driver": true, "effect": 0.01, "probability": 0.0001, "id": 1},
+    {"is_driver": false, "effect": -0.01, "probability": 0.01, "id": 3}
+  ]
+}
+```
+
+Required keys are `tau_step`, `initial_population`, `env_capacity`, `steps`,
+`statistics_resolution`, `population_statistics_res`, `output_path` and
+`mutations`; `seed` defaults to `42`. `simulation_mode` also accepts
+`spatial_3d_capacity`; `deterministic` maps to the unsupported legacy RK4 path.
+Use `verbosity` (`0`/`1`/`2`) to control engine logging. The legacy boolean
+`stochastic` is still accepted with a warning, while `log_level` is ignored.
+
+Run it with exports only:
+
+```bash
+./build/bin/CellEvoX --config quick_config.json --postprocess exports
+```
+
+Every run writes a timestamped directory below `output_path`; find the newest:
+
+```bash
+run_dir=$(ls -dt output/*/ | head -n 1)
+```
+
+Files worth opening, in order:
+
+- `run_metadata.json` — `termination_reason`, `terminal_time` and
+  `terminal_population`; this is the authoritative terminal state.
+- `population_data/population_generation_<N>.bin` — snapshots written during the
+  run; `exports` adds `<N>.csv` companions next to them. Columns and pitfalls
+  are in [output-contract.md](output-contract.md#population-csv).
+- `statistics/generational_statistics.csv` — fitness and mutation moments per
+  sampled generation (`Generation` stores tau).
+- `phylogeny/phylogenetic.gexf` and `phylogenetic_tree.csv` — the tree with
+  `ALIVE`/`DEAD` `status`, written by `exports`.
+- `config.json` — the effective configuration copied into the run directory.
+
+Regenerate every plot and animation from that directory:
+
+```bash
+./build/bin/CellEvoX --analyze "$run_dir"
+```
+
+This writes `muller_plots/`, `general_plots/`, `mutation_histograms/`,
+`vaf_diagrams/` and `visualizations/` inside the run directory. `--analyze` reads
+CSV snapshots, and exports CSV companions from `.bin` files when no CSV exists.
+
+## Tests
 
 ```bash
 ./build/bin/CellEvoXTests "~[benchmark]"
-./build/bin/CellEvoX --config quick_config.json
-./build/bin/CellEvoX --analyze output/<run_dir>
 ```
 
 ## Benchmarks
@@ -82,7 +164,9 @@ cd web/frontend && npm install && npm run dev
 first run fail and then install them). Backend port `7432`, frontend `5274`, and
 the CORS allowlist is fixed. Point the backend at a specific binary with
 `CELLEVOX_BINARY`. The backend runs one simulation job at a time and answers HTTP
-409 otherwise.
+409 otherwise. Its HTTP surface is `/api/config/schema`, `/api/simulation/*`,
+`/api/results/*`, and the `/ws/logs` WebSocket; `web/backend/main.py` defines the
+payloads.
 
 ## Batch runs
 
@@ -97,17 +181,31 @@ resolves against the manifest's directory (a manifest in `configs/` would need
 {
   "runs": [
     {"path": "quick_config.json"},
-    {"path": "your_experiment.json"}
+    {
+      "config": {
+        "simulation_mode": "stochastic",
+        "tau_step": 0.005,
+        "initial_population": 200,
+        "env_capacity": 200,
+        "steps": 1000,
+        "statistics_resolution": 1,
+        "population_statistics_res": 1,
+        "output_path": "./output",
+        "mutations": [
+          {"is_driver": true, "effect": 0.01, "probability": 0.0001, "id": 1}
+        ]
+      }
+    }
   ]
 }
 ```
 
 ```bash
 python3 web/backend/run_batch.py --manifest batch_manifest.json \
-  --parallel 4 --threads-per-run 5 --postprocess exports
+  --parallel 2 --threads-per-run 5 --postprocess exports
 
-# equivalent positional form for a few configs
-python3 web/backend/run_batch.py quick_config.json your_experiment.json
+# positional form: each argument is a config path
+python3 web/backend/run_batch.py quick_config.json
 ```
 
 Batches with more than one config are isolated automatically: the runner appends
@@ -116,9 +214,9 @@ then creates its own timestamped directory below that. A config without
 `output_path` defaults to `./output` in a batch and `./output_<run_label>` for a
 single run. There is no per-entry `output_path` override.
 
-For smoke tests use `quick_config.json` (50,000 steps). `example_config.json`
-and `config.json` run about a million steps, `example_config.json` has a
-placeholder output path, and `test_config.json` still hardcodes a DevContainer
+For smoke tests use `quick_config.json` (10,000 steps). `example_config.json`
+and `config.json` run about a million steps; `example_config.json` has a
+placeholder output path and `test_config.json` still hardcodes a DevContainer
 path.
 
 `--threads-per-run` is forwarded as `--threads` and `CELLEVOX_TBB_THREADS`. Use

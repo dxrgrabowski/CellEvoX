@@ -91,16 +91,19 @@ constants, stale Qt/Boost references in CI — belong in issues.
 
 ## Documentation Rules
 
-- Do not duplicate what code already shows (directory trees, signatures, config
-  field tables, control flow); stale copies cause confident wrong turns. Public
-  contracts that outside consumers depend on — run outputs and CSV columns — are
-  the exception and live in [docs/output-contract.md](docs/output-contract.md).
+- Do not duplicate what code already shows line by line (directory trees,
+  signatures, control flow); stale copies cause confident wrong turns. Public
+  surfaces that outside consumers depend on are the exception and need durable
+  docs: run outputs and file formats in
+  [docs/output-contract.md](docs/output-contract.md), and the CLI, configuration
+  keys with a short runnable example, and the HTTP API in
+  [docs/runbook.md](docs/runbook.md). Inputs are as much a contract as outputs.
 - Each topic has one home: this file for invariants and guardrails,
-  [docs/runbook.md](docs/runbook.md) for commands, dependencies, ports and
-  environment facts, `docs/output-contract.md` for output formats, and
-  `docs/adr/` for the rationale and consequences of a decision. An ADR may quote
-  a benchmark result or a key flag as evidence, but not full run procedures or
-  dependency inventories.
+  [docs/runbook.md](docs/runbook.md) for commands, dependencies, ports,
+  environment facts and public input surfaces, `docs/output-contract.md` for
+  output formats, and `docs/adr/` for the rationale and consequences of a
+  decision. An ADR may quote a benchmark result or a key flag as evidence, but
+  not full run procedures or dependency inventories.
 - Add *why* to `docs/adr/` when you make a non-obvious decision.
 - Agents may propose an ADR. If a task forces a non-obvious trade-off (a new
   dependency, a format change, a concurrency model), create
