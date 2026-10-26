@@ -12,8 +12,9 @@ Portable artifacts (Docker images, binaries moved between hosts) must configure
 ## Consequences
 - CI and image builds must choose native versus portable explicitly.
 - Changing build CPU/compiler invalidates performance comparisons.
-- CI's `-DSKIP_GUI=ON` and Boost install are dead leftovers, not requirements;
-  remove them once the benchmark baseline commit is refreshed.
+- CI's `-DSKIP_GUI=ON` flag is a dead leftover, not a requirement; remove it
+  once the benchmark baseline commit is refreshed. The Boost install has been
+  removed.
 
 ## Evidence
 - `CellEvoX/CMakeLists.txt` defines
