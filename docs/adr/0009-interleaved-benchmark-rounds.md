@@ -72,5 +72,13 @@ investigation.
   - `stochasticStep [mutations: 8 types]` reported +3.3%, +4.8%, +5.6% across
     attempts — a consistent signal that the blocked schedule kept burying under
     whatever else the host was doing.
+- Unchanged code, four runs of the interleaved gate (`40374219812` on the old
+  `5 x 6` schedule, `40377117974` on `7 x 5`): every benchmark stayed within
+  +/-1.9% and the gate passed, including one run where the whole host was ~20%
+  slower.
+- Deliberate regression probe: a throwaway branch added ~2.6 ms of busy work to
+  `run() N=50000 x5 steps [stability]` only, 12.4% of its 21.1 ms baseline. The
+  gate reported `+12.4% REGRESSED` with +/-1.0% intervals while the other five
+  benchmarks stayed within +/-0.3%, and the job failed (`40378236720`).
 - Order flipping and median aggregation: `CellEvoX/tests/benchmarks/ci_benchmark_gate.py`
   (`aggregate_rounds`, `run_group`); invocation in `.github/workflows/ci.yml`.

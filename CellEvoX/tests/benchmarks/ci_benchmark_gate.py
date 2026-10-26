@@ -281,7 +281,8 @@ def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
     for memory in memory_summaries:
         if memory.get("status") == "REGRESSED":
             memory_status = "REGRESSED"
-        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) > abs(memory_delta):
+        # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
+        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
             memory_delta = memory["delta"]
             base_rss = memory["baseline_max_rss_kb"]
             head_rss = memory["current_max_rss_kb"]
