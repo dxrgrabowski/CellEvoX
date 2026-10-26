@@ -89,9 +89,10 @@ generation.
 Required keys are `tau_step`, `initial_population`, `env_capacity`, `steps`,
 `statistics_resolution`, `population_statistics_res`, `output_path` and
 `mutations`; `seed` defaults to `42`. `simulation_mode` also accepts
-`spatial_3d_capacity`; `deterministic` maps to the unsupported legacy RK4 path.
-Use `verbosity` (`0`/`1`/`2`) to control engine logging. The legacy boolean
-`stochastic` is still accepted with a warning, while `log_level` is ignored.
+`spatial_3d_capacity`; `deterministic` selects `DETERMINISTIC_RK4`, whose step is
+disabled, so such a run never advances. `verbosity` sets the log level: `0` is
+off, `1` warnings only, `2` (default) info. The legacy boolean `stochastic` is
+still accepted with a warning, while `log_level` is ignored.
 
 Run it with exports only:
 
