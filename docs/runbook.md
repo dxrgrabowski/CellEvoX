@@ -251,3 +251,48 @@ round, retry at 10 samples per round) and judges a benchmark on the median of
 the round means, so a single noisy round widens the interval instead of moving
 the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
 the older blocked schedule. Rationale: ADR-0009.
+
+`.github/workflows/ai-review.yml` runs the advisory AI review
+(`tools/ai_review.py`, DeepSeek via OpenRouter, prompt `v4`) on non-draft pull
+requests from this repository and rewrites one sticky PR comment on every push.
+It needs the repository secret `OPENROUTER_API_KEY`; fork PRs are skipped
+because secrets are not exposed to them. The job fails only when the review
+cannot run (missing key, API error, unparseable response) — findings never block
+the merge. Run it locally against the same diff:
+
+```bash
+OPENROUTER_API_KEY=... python3 tools/ai_review.py \
+  --range origin/main...HEAD --prompt v4 --reasoning off
+```
+
+`.github/workflows/review-benchmark.yml` puts that review next to
+[Robin](https://github.com/antongulin/robin) and
+[PR-Agent](https://github.com/The-PR-Agent/pr-agent) on the same pull request,
+and `tools/review_bench.py` scores what each one posted against the labels of a
+case in `bench/cases/`. The benchmark is skipped unless the PR has a case:
+unlabelled findings cannot be scored, and every bot run costs money.
+
+A case is a JSON file with `id`, `repo` (`owner/name`), `pr`, `source` and
+`labels`. Each label is a `path` plus either a `lines` region (derived from the
+fix commit, no tolerance) or a `line` (default tolerance 3), and a `kind` of
+`real`, `fp` or `unverified`. Scoring is the same `score()` the local eval uses,
+so a label means the same thing in both places.
+
+Cost is what a tool publishes about its own run, never an assumption. PR-Agent
+reports tokens and an estimated cost when its workflow enables
+`config.output_run_details` and `config.output_run_cost`; Robin reports neither
+and is always `unpriced`; ours publishes a token marker, which
+`--price-in/--price-out` (USD per million tokens) turns into dollars, normally
+supplied as `vars.REVIEW_PRICE_IN` / `vars.REVIEW_PRICE_OUT`. A tool with no
+published usage shows no price instead of `$0`.
+
+```bash
+python3 tools/review_bench.py case --pr 50
+python3 tools/review_bench.py collect --pr 50 --price-in 0.14 --price-out 0.28
+python3 tools/review_bench.py report
+```
+
+Robin needs the secrets `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL`; our
+reviewer and PR-Agent both use `OPENROUTER_API_KEY`. The parsers are covered by
+`python3 tools/test_review_bench.py`, which the `review-tooling` job of
+`.github/workflows/quality-gates.yml` runs.

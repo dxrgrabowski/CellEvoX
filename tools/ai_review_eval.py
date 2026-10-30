@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Ewaluacja tools/ai_review.py na oznaczonych diffach.
+"""Evaluation of tools/ai_review.py on labelled diffs.
 
-Jeden plik case = jeden diff + etykiety + przebiegi (surowe odpowiedzi modelu
-albo gotowe pliki wynikowe). Wynik: TP / FP(znany) / FP(bez etykiety) / FN
-per przebieg, plus mikrosuma dla calego zbioru.
+One case file = one diff + labels + runs (raw model responses or saved result
+files). Output: TP / FP(known) / FP(unlabelled) / FN per run, plus a
+micro-average over the whole set.
 
-Etykiety sa zewnetrznym zrodlem prawdy. Bez nich harness mierzy powtarzalnosc
-filtra, nie jakosc modelu - dlatego kazdy case musi miec `labels` i `source`
-(miejsce, z ktorego etykiety pochodza).
+Labels are the external source of truth. Without them the harness measures the
+repeatability of the filter, not the quality of the model - hence every case
+must carry `labels` and `source` (where the labels came from).
 
-Case negatywny (`"expect_silent": true`, puste `labels`) to diff, w ktorym nie
-ma znanego defektu. Kazdy finding w takim case jest liczony jako `fp_negative`:
-to jedyny sposob zmierzenia precyzji, bo zbiór z commitow naprawczych daje
-tylko etykiety `real`.
+A negative case (`"expect_silent": true`, empty `labels`) is a diff with no known
+defect. Every finding in such a case counts as `fp_negative`: it is the only way
+to measure precision, because a set built from fix commits only yields `real`
+labels.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_cases(path: Path) -> list[dict]:
-    # Puste wejscie nie moze konczyc sie raportem "TP=0 FP=0": to wyglada jak
-    # dobry wynik, a znaczy tylko, ze nic nie zmierzono.
+    # An empty input must not end in a "TP=0 FP=0" report: it looks like a good
+    # result and only means nothing was measured.
     if not path.exists():
         raise SystemExit(f"no cases: {path} does not exist")
     files = sorted(path.glob("*.json")) if path.is_dir() else [path]
@@ -44,7 +44,7 @@ def load_cases(path: Path) -> list[dict]:
             raise SystemExit(f"{case.get('id', '?')}: missing {', '.join(missing)}")
         if not case["labels"] and not case.get("expect_silent"):
             raise SystemExit(f"{case['id']}: empty labels would count every "
-                             f"finding as FP; uzyj expect_silent, jesli to celowe")
+                             f"finding as FP; use expect_silent if that is intentional")
         bad = [l for l in case["labels"]
                if l.get("kind", "real") not in ("real", "fp", "unverified")]
         if bad:
@@ -61,7 +61,7 @@ def _context(repo: Path, case: dict, prompt: str):
 
 
 def run_findings(case: dict, run: dict) -> tuple[list[dict], int, dict | None]:
-    """Findings jednego przebiegu: z surowej odpowiedzi albo z pliku wyniku."""
+    """Findings of one run: from a raw response or from a result file."""
     if "result_file" in run:
         data = json.loads((ROOT / run["result_file"]).read_text())
         return data.get("kept", []), len(data.get("dropped", [])), None
@@ -98,18 +98,18 @@ def score(findings: list[dict], labels: list[dict], tol: int,
                     continue
                 if ar._norm_path(label["path"]) != path:
                     continue
-                # `lines`: obszar defektu wyliczony z commita naprawczego -
-                # linie usuniete przez fix, zmapowane przez `git blame fix^`
-                # na review'owany commit. Trafienie gdziekolwiek w obszarze
-                # = ten sam defekt, wiec `tol` nie jest uzywany - rozszerzalby
-                # obszar poza to, co fix faktycznie zmienil.
+                # `lines`: the defect region derived from the fix commit -
+                # lines removed by the fix, mapped through `git blame fix^` onto
+                # the reviewed commit. A hit anywhere in the region means the
+                # same defect, so `tol` is not used here - it would widen the
+                # region beyond what the fix actually changed.
                 region = label.get("lines")
                 if region is not None:
                     if line is not None and line not in region:
                         continue
-                # `tol` per etykieta: jeden defekt moze obejmowac kilka linii
-                # (np. ten sam warunek w 4 galeziach switcha), a etykieta ma
-                # wskazac obszar, nie pojedynczy wers.
+                # `tol` per label: one defect can span several lines (e.g. the
+                # same condition in 4 switch branches), and the label should mark
+                # the region, not a single line.
                 elif line is not None and label.get("line") is not None \
                         and abs(line - label["line"]) > label.get("tol", tol):
                     continue
@@ -118,8 +118,8 @@ def score(findings: list[dict], labels: list[dict], tol: int,
             if match:
                 break
         if match is None:
-            # W case negatywnym nie ma etykiety, ktora moglaby przejac finding,
-            # wiec kazde trafienie jest kandydatem na FP.
+            # A negative case has no label that could claim the finding, so every
+            # hit is a candidate FP.
             out["fp_negative" if expect_silent else "fp_unlabeled"].append(item)
             continue
         used.add(match)
@@ -135,7 +135,7 @@ def _loc(items: list[dict]) -> str:
 
 
 def run_prompt(case: dict, run: dict) -> str | None:
-    """Prompt, ktorym powstal przebieg: z run, z pliku wyniku albo z case'a."""
+    """The prompt that produced the run: from the run, the result file, or the case."""
     if "prompt" in run:
         return run["prompt"]
     if "result_file" in run:
@@ -164,12 +164,12 @@ def eval_case(case: dict, tol: int, prompt_filter: str | None = None) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cases", default="tmp/ai-review-feedback/eval/cases",
-                    help="katalog z plikami *.json albo pojedynczy plik")
+                    help="directory of *.json case files or a single file")
     ap.add_argument("--out", default="tmp/ai-review-feedback/eval/results")
     ap.add_argument("--line-tolerance", type=int, default=3,
-                    help="dopuszczalna roznica linii przy dopasowaniu etykiety")
+                    help="allowed line difference when matching a label")
     ap.add_argument("--prompt-filter", default=None,
-                    help="licz tylko przebiegi zrobione tym promptem (v1/v2/v3/v4)")
+                    help="count only runs produced by this prompt (v1/v2/v3/v4)")
     args = ap.parse_args()
 
     cases = load_cases(ROOT / args.cases)
@@ -201,17 +201,17 @@ def main() -> None:
 
     tp, fp_known, fp_unl = grand["tp"], grand["fp_known"], grand["fp_unlabeled"]
     fp_neg = grand["fp_negative"]
-    print(f"\nmicro (wszystkie przebiegi): TP={tp} FP(etykietowane)={fp_known} "
-          f"FP(negatywne)={fp_neg} FN={grand['fn']} findings bez etykiety={fp_unl}")
+    print(f"\nmicro (all runs): TP={tp} FP(labelled)={fp_known} "
+          f"FP(negative)={fp_neg} FN={grand['fn']} findings without a label={fp_unl}")
     if tp + fp_known + fp_neg:
-        print(f"  precision na etykietach {tp / (tp + fp_known + fp_neg):.2f}", end="")
+        print(f"  precision on labels {tp / (tp + fp_known + fp_neg):.2f}", end="")
     if tp + grand["fn"]:
         print(f", recall {tp / (tp + grand['fn']):.2f}")
     else:
         print()
     if fp_unl:
-        print("  findings bez etykiety nie sa liczone jako FP: brak dowodu, "
-              "ze sa falszywe - to koszt zbioru etykiet z commitow naprawczych")
+        print("  findings without a label are not counted as FP: there is no proof "
+              "they are false - that is the cost of a label set built from fix commits")
     if grand["fn"]:
         print("  FN per case: " + ", ".join(
             f"{c['id']}={c['totals']['fn']}" for c in report if c["totals"]["fn"]))

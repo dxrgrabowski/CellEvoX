@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Lokalny review diffu przez OpenRouter.
+"""Local diff review through OpenRouter.
 
-Jeden call (albo N z --repeat), bez narzędzi, bez wykonywania kodu z PR. Numer
-linii jest wyliczany z cytatu, nie brany z odpowiedzi modelu.
+One call (or N with --repeat), no tools, no execution of code from the PR. The
+line number is derived from the quote, never taken from the model's answer.
 """
 
 from __future__ import annotations
@@ -23,33 +23,33 @@ from pathlib import Path
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-1017"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Ciala plikow wchodza do promptu tylko dla jezykow, ktore diff czyta razem
-# z otaczajacym kontekstem. Frontend (.ts/.tsx) jest tu, bo FP-1 i FP-2 braly
-# sie wylacznie z braku ConfigPage.tsx i types/simulation.ts w kontekscie.
+# File bodies enter the prompt only for languages whose diffs are read together
+# with surrounding context. The frontend (.ts/.tsx) is included because FP-1 and
+# FP-2 came solely from ConfigPage.tsx and types/simulation.ts missing from it.
 BODY_EXTENSIONS = (".cpp", ".hpp", ".py", ".ts", ".tsx", ".js", ".jsx")
 MAX_BODY_CHARS = 24000
 
-# Ścieżka -> numery inwariantów z AGENTS.md (dopasowanie po najdłuższym prefiksie).
-# Pliki .md są pomijane: dokumentacja nie może złamać ABI, RNG ani kontraktu CSV.
+# Path -> invariant numbers from AGENTS.md (longest-prefix match).
+# .md files are skipped: documentation cannot break the ABI, the RNG, or the CSV contract.
 INVARIANTS_FOR = {
     "CellEvoX/src/systems/": [1, 3, 4, 5, 8],
     "CellEvoX/include/systems/": [1, 3, 4, 5],
-    # Wspolny model zdarzen ma dwie kopie (inwariant 4), a 3D jest wylacznie
-    # stochastic + xyz (inwariant 5).
+    # The shared event model exists in two copies (invariant 4), and 3D is
+    # stochastic + xyz only (invariant 5).
     "CellEvoX/src/spatial/": [4, 5],
     "CellEvoX/include/spatial/": [4, 5],
-    # Rodzic -> corki, parent_id i ids mutacji (inwariant 3).
+    # Parent -> daughters, parent_id and mutation ids (invariant 3).
     "CellEvoX/src/ecs/": [3],
     "CellEvoX/include/ecs/": [3],
     "CellEvoX/include/utils/DeterministicRng.hpp": [2],
     "CellEvoX/include/utils/ParallelAlgorithms.hpp": [2],
     "CellEvoX/include/utils/SimulationConfig.hpp": [1],
-    # RunDataEngine pisze CSV, run_metadata.json i snapshoty: ABI + kontrakt CSV.
+    # RunDataEngine writes CSV, run_metadata.json and snapshots: ABI + CSV contract.
     "CellEvoX/src/core/": [6, 7, 8],
     "CellEvoX/include/core/": [6, 7],
     "CellEvoX/include/io/": [6],
-    # Skrypty czytaja nazwy plikow i kolumny CSV (inwariant 7); snapshot_io.py
-    # jest dodatkowo readerem/writerem ABI (inwariant 6).
+    # Scripts read file names and CSV columns (invariant 7); snapshot_io.py is
+    # additionally the ABI reader/writer (invariant 6).
     "CellEvoX/scripts/": [7],
     "CellEvoX/scripts/snapshot_io.py": [6, 7],
     "web/": [7],
@@ -304,7 +304,7 @@ def git(repo: Path, *args: str) -> str:
 
 
 def parse_diff(text: str) -> list[dict]:
-    """Rozbija unified diff na pliki i linie z numerami po obu stronach."""
+    """Split a unified diff into files and lines with numbers on both sides."""
     files: list[dict] = []
     cur: dict | None = None
     old_ln = new_ln = 0
@@ -346,7 +346,7 @@ def parse_diff(text: str) -> list[dict]:
     return [f for f in files if f["path"]]
 
 
-# ---------------------------------------------------------------- wejście
+# ---------------------------------------------------------------- input
 
 def load_invariant_sections(repo: Path) -> dict[int, str]:
     text = (repo / "AGENTS.md").read_text()
@@ -362,10 +362,10 @@ def load_invariant_sections(repo: Path) -> dict[int, str]:
 
 
 def load_negative_space(repo: Path) -> str:
-    """Sekcja 'Negative Space': obszary, ktorych nie wolno zmieniac bez ADR.
+    """The 'Negative Space' section: areas that must not change without an ADR.
 
-    Nie jest numerowana, wiec nie da sie jej mapowac per sciezka; jest krotka
-    i dotyczy kazdego zmienionego pliku, wiec trafia do promptu w calosci.
+    It is not numbered, so it cannot be mapped per path; it is short and applies
+    to every changed file, so it goes into the prompt in full.
     """
     text = (repo / "AGENTS.md").read_text()
     marker = "## Negative Space"
@@ -401,16 +401,16 @@ def test_inventory(repo: Path) -> list[str]:
 
 
 def commit_message(repo: Path, rev: str) -> str:
-    """Pełne ciało commita: subject, uzasadnienie i pomiary.
+    """The full commit body: subject, rationale, and measurements.
 
-    Sam subject nie wystarcza - swiadome zmiany (np. usuniecie wymuszonego
-    snapshotu z powodu regresji w benchmarkach) sa wtedy nierozroznialne
-    od przypadkowych regresji.
+    The subject alone is not enough - intentional changes (e.g. dropping a forced
+    snapshot because of a benchmark regression) would then be indistinguishable
+    from accidental regressions.
     """
     return git(repo, "log", "-1", "--format=%B", rev).strip()
 
 
-# ---------------------------------------------------------------- kontekst
+# ---------------------------------------------------------------- context
 
 def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
                   max_changed: int, max_chars: int,
@@ -440,9 +440,9 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
     else:
         header.append("INVARIANTS IN SCOPE: none matched the changed paths.")
 
-    # Negative Space dotyczy kazdej zmiany kodu, takze builda i configu, ktore
-    # nie maja numerowanego inwariantu (np. CELLEVOX_NATIVE_OPTIMIZATIONS).
-    # Diff wylacznie dokumentacyjny go nie dostaje, zeby nie rozcienczal null testu.
+    # Negative Space applies to every code change, including build and config
+    # files that have no numbered invariant (e.g. CELLEVOX_NATIVE_OPTIMIZATIONS).
+    # A docs-only diff does not get it, so it cannot dilute the null test.
     if any(not (path or "").endswith(".md") for path in stats):
         negative_space = load_negative_space(repo)
         if negative_space:
@@ -457,7 +457,7 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
         f"{p}  (+{a} -{d})" for p, (a, d) in sorted(stats.items()))
 
     dropped: list[str] = []
-    chunks: list[tuple[int, str, str]] = []  # (rozmiar, sciezka, blok)
+    chunks: list[tuple[int, str, str]] = []  # (size, path, block)
     if total_changed <= max_changed:
         for f in files:
             path = f["path"]
@@ -487,9 +487,8 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
         return head + body + tail
 
     payload = assemble(chunks)
-    # Budzet: usuwamy ciala od najwiekszego, az payload sie zmiesci. Wczesniej
-    # przekroczenie limitu usuwalo wszystkie ciala, wiec jeden duzy plik zabieral
-    # kontekst pozostalym.
+    # Budget: drop bodies from the largest until the payload fits. Previously an
+    # over-limit payload dropped every body, so one large file starved the rest.
     while len(payload) > max_chars and chunks:
         biggest = max(chunks, key=lambda c: c[0])
         chunks.remove(biggest)
@@ -609,12 +608,12 @@ def call_provider(provider: str, model: str, system: str, user: str,
 
 
 def extract_json(raw: str) -> dict:
-    """Pierwszy obiekt JSON z kluczem `findings`.
+    """The first JSON object that has a `findings` key.
 
-    Model potrafi wtracić proze i kilka obiektow w jedna odpowiedz, wiec nie
-    sklejamy od pierwszego `{` do ostatniego `}` (to dawalo `Extra data` i
-    tracilo caly przebieg). raw_decode idzie po kolejnych `{` i konczy sie na
-    koncu obiektu, ktory sam sparsowal.
+    The model can interleave prose and several objects in one answer, so we do
+    not slice from the first `{` to the last `}` (that produced `Extra data` and
+    lost the whole run). raw_decode walks successive `{` and stops at the end of
+    the object it actually parsed.
     """
     raw = raw.strip()
     if raw.startswith("```"):
@@ -636,13 +635,13 @@ def extract_json(raw: str) -> dict:
         pos = max(end, i + 1)
 
 
-# ---------------------------------------------------------------- filtr
+# ---------------------------------------------------------------- filter
 
 def _locate(ev: str, index: list) -> tuple | None:
-    """Znajduje w diffie spójny blok linii identycznych z cytatem.
+    """Find a contiguous block of diff lines identical to the quote.
 
-    Modele często cytują kilka kolejnych linii zamiast jednej; każda linia
-    musi wystąpić dosłownie (z markerem lub bez), inaczej cytat nie przechodzi.
+    Models often quote several consecutive lines instead of one; every line must
+    appear verbatim (with or without the marker), otherwise the quote fails.
     """
     lines = [l.rstrip() for l in ev.splitlines() if l.strip()]
     if not lines:
@@ -659,7 +658,7 @@ def _locate(ev: str, index: list) -> tuple | None:
 
 
 def negative_space_items(repo: Path) -> list[str]:
-    """Pozycje Negative Space jako pojedyncze stringi (zawijane linie scalone)."""
+    """Negative Space items as single strings (wrapped lines joined)."""
     items, cur = [], ""
     for line in load_negative_space(repo).splitlines():
         if line.startswith("- "):
@@ -674,7 +673,7 @@ def negative_space_items(repo: Path) -> list[str]:
 
 
 def allowed_invariants(repo: Path, ids: list[int], with_negative_space: bool) -> list[str]:
-    """Inwarianty, ktore model faktycznie widzial w tym payloadzie."""
+    """Invariants the model actually saw in this payload."""
     sections = load_invariant_sections(repo)
     out = [sections[i] for i in sorted(ids) if i in sections]
     if with_negative_space:
@@ -691,7 +690,7 @@ def _norm_path(path: str) -> str:
 
 
 def invariant_matches(value: str, allowed: list[str]) -> bool:
-    """Czy `invariant` pochodzi z listy obecnej w payloadzie (numer lub tytul)."""
+    """Whether `invariant` comes from the list present in the payload (number or title)."""
     value = (value or "").strip()
     if not value:
         return False
@@ -718,8 +717,8 @@ HEDGED_RE = re.compile(
 
 def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
            allowed_invariants: list[str] | None = None) -> tuple[list, list]:
-    """Odrzuca findings bez cytatu, dolicza numer linii, sprawdza was/now/coverage."""
-    index = []  # (raw, bez markerów, kind, old_ln, new_ln, path)
+    """Drop findings without a quote, attach line numbers, check was/now/coverage."""
+    index = []  # (raw, without markers, kind, old_ln, new_ln, path)
     by_path: dict[str, list] = {}
     for f in parsed:
         entries = []
@@ -741,8 +740,8 @@ def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
         if hit is None:
             dropped.append({**item, "_drop": "evidence not in diff"})
             continue
-        # Model czasem podaje plik, a cytat trafia w inny: najpierw probujemy
-        # wskazany plik, a niezgodnosc zostawiamy jako flage, nie jako drop.
+        # The model sometimes names one file while the quote lands in another:
+        # try the declared file first, and keep a mismatch as a flag, not a drop.
         declared = _norm_path(item.get("file") or "")
         if declared and declared != _norm_path(hit[5]):
             alt = _locate(ev, by_path.get(declared, [])) if declared in by_path else None
@@ -761,23 +760,23 @@ def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
             now = (item.get("now") or "").lstrip("+- ").strip()
             item["_was_ok"] = bool(was) and any(e[1] == was and e[2] == "D" for e in index)
             item["_now_ok"] = bool(now) and any(e[1] == now and e[2] == "A" for e in index)
-            # v2 opisuje zachowanie, a nie cytuje diffu, wiec was/now prawie
-            # nigdy nie sa doslowne. To sygnal do sprawdzenia, nie powod do
-            # wyrzucenia - inaczej 5/5 prawdziwych regresji przepada.
+            # v2 describes behavior instead of quoting the diff, so was/now are
+            # almost never verbatim. That is a signal to check, not a reason to
+            # drop - otherwise 5/5 real regressions would be lost.
             if not (item["_was_ok"] or item["_now_ok"]):
                 item["_was_now_unverified"] = True
 
         cov = (item.get("coverage") or "none").strip().lower()
-        # v2 dopisuje uzasadnienie do braku pokrycia ("none - no test asserts
-        # it"); po P0-4 takie findings sa juz widoczne, wiec bez tego zabralyby
-        # falszywa flage INVENTED_TEST.
+        # v2 appends a rationale to missing coverage ("none - no test asserts
+        # it"); after P0-4 such findings are already visible, so without this
+        # they would pick up a false INVENTED_TEST flag.
         if cov.startswith("none"):
             cov = "none"
         if cov not in ("none", "", "n/a") and not any(cov in s for s in inv_lower):
             item["_invented_test"] = True
 
-        # Model czasem zwraca numeryczny invariant ("invariant": 3); bez str()
-        # .strip() wywala caly przebieg i 3 odpowiedzi przepadaja.
+        # The model sometimes returns a numeric invariant ("invariant": 3);
+        # without str().strip() it raises and 3 responses are lost.
         inv = str(item.get("invariant") or "").strip()
         if inv and inv.lower() != "none" and allowed_invariants is not None \
                 and not invariant_matches(inv, allowed_invariants):
@@ -788,11 +787,11 @@ def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
 
 
 def collapse(kept: list[dict]) -> list[dict]:
-    """Scala identyczne findings: ten sam plik, linia i cytat.
+    """Merge identical findings: same file, line, and quote.
 
-    Identyczna linia usunieta w 2D, 3D i 3DCapacity trafia w _locate() zawsze
-    jako pierwsze wystapienie, wiec model zglasza ja kilka razy pod jednym
-    adresem. Scalanie nie dotyka findings o innym cytacie na tej samej linii.
+    The same deleted line in 2D, 3D, and 3DCapacity always resolves in _locate()
+    to the first occurrence, so the model reports it several times under one
+    address. Merging leaves findings with a different quote on the same line alone.
     """
     seen, out = {}, []
     for it in kept:
@@ -804,6 +803,82 @@ def collapse(kept: list[dict]) -> list[dict]:
         seen[key] = it
         out.append(it)
     return out
+
+
+def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
+                    prompt: str, model: str, usage: dict | None = None) -> str:
+    """The PR-comment body: findings first, review context folded away.
+
+    The console report is for a local run; on a pull request the author reads a
+    comment, so the same data is rewritten rather than duplicated by hand.
+    """
+    blockers = sum(1 for it in kept if it.get("severity") == "blocker")
+    warnings = len(kept) - blockers
+    summary = (f"**{len(kept)} finding{'' if len(kept) == 1 else 's'}** — "
+               f"{blockers} blocker{'' if blockers == 1 else 's'}, "
+               f"{warnings} warning{'' if warnings == 1 else 's'}")
+    files = meta["files"]
+    out = [f"### AI diff review — `{model}`, prompt `{prompt}`", "",
+           f"{summary} · {files} file{'' if files == 1 else 's'} · "
+           f"{meta['changed_lines']} changed lines", ""]
+    if not kept:
+        out.append("No findings: the diff does not break an invariant in scope, and "
+                   "no behaviour outside the declared intent changes.")
+
+    for n, it in enumerate(kept, 1):
+        loc = f"{it.get('_path', '?')}:{it.get('_line', '?')}"
+        if it.get("_repeat", 1) > 1:
+            loc += f" (x{it['_repeat']})"
+        flags = []
+        if it.get("_invented_test"):
+            flags.append("INVENTED_TEST")
+        if it.get("_invented_invariant"):
+            flags.append("INVENTED_INVARIANT")
+        if it.get("_was_now_unverified"):
+            flags.append("WAS_NOW_UNVERIFIED")
+        if it.get("_hedged"):
+            flags.append("HEDGED")
+        if it.get("_file_mismatch"):
+            flags.append(f"FILE_MISMATCH(declared {it.get('file')})")
+        if it.get("_support"):
+            flags.append(f"support={it['_support']}")
+        if it.get("_evidence_kind") == "C":
+            flags.append("CONTEXT_LINE")
+
+        out += ["", f"#### {n}. {str(it.get('severity', '?')).upper()} — `{loc}`"]
+        if flags:
+            out.append(f"Flags: {', '.join(flags)}")
+        out.append("")
+        if it.get("invariant"):
+            out.append(f"- **invariant:** {it['invariant']}")
+        if it.get("behavior"):
+            out.append(f"- **behavior:** {it['behavior']}")
+        if it.get("was") or it.get("now"):
+            out.append(f"- **was -> now:** `{it.get('was', '')}` -> `{it.get('now', '')}`")
+        if it.get("coverage"):
+            out.append(f"- **coverage:** {it['coverage']}")
+        out.append(f"- **why:** {it.get('why', '')}")
+        out += ["", "**evidence**", "", "```diff",
+                (it.get("evidence") or "").rstrip(), "```"]
+
+    context = [f"- invariants in scope: `{meta['invariants']}`",
+               f"- prompt payload: {meta['payload_chars']} chars "
+               f"(~{meta['est_input_tokens']} tokens)"]
+    if meta["dropped"]:
+        context.append("- context guards: " + "; ".join(meta["dropped"]))
+    if dropped:
+        context.append(f"- findings dropped by verification: {len(dropped)} "
+                       f"(quote not found in the diff)")
+    out += ["", "<details><summary>Review context</summary>", "", *context, "",
+            "</details>", ""]
+    # Machine-readable cost line for tools/review_bench.py; invisible on GitHub.
+    if usage:
+        out.append("<!-- celeevox-ai-review:usage "
+                   + json.dumps({"model": model,
+                                 "input_tokens": usage.get("prompt_tokens"),
+                                 "output_tokens": usage.get("completion_tokens")})
+                   + " -->")
+    return "\n".join(out)
 
 
 def render(meta: dict, kept: list[dict], dropped: list[dict], run_label: str) -> str:
@@ -847,30 +922,30 @@ def render(meta: dict, kept: list[dict], dropped: list[dict], run_label: str) ->
         out.append(f"    why: {it.get('why','')}")
         out.append("")
     for it in dropped:
-        # Dropy nie maja _path/_line (wlasnie dlatego wypadly), wiec pokazujemy
-        # to, co podal model, zeby dalo sie sprawdzic, czy warto poprawic cytat.
+        # Drops have no _path/_line (that is why they fell out), so show what the
+        # model gave us, to make it possible to judge whether the quote is fixable.
         loc = f"{it.get('_path') or it.get('file') or '?'}:{it.get('_line') or '?'}"
         why = (it.get("why") or "").replace("\n", " ")[:100]
         out.append(f"[DROPPED] {loc} {it.get('_drop')}: {why}")
     return "\n".join(out)
 
 
-# ---------------------------------------------------------------- tryby
+# ---------------------------------------------------------------- modes
 
 def blind(outdir: Path, seed: int) -> None:
-    """Zaślepiona lista z jednego eksperymentu.
+    """A blinded list from a single experiment.
 
-    Wcześniej globbował wszystkie *.json z katalogu, więc findings v1, v2 i
-    różnych modeli trafiały do jednej tabeli i nie dało się przypisać wyniku do
-    wariantu promptu. Teraz katalog musi zawierać dokładnie jeden
-    (prompt, model, range).
+    It used to glob every *.json in the directory, so findings from v1, v2, and
+    different models landed in one table and no result could be attributed to a
+    prompt variant. The directory must now contain exactly one
+    (prompt, model, range) combination.
     """
     combos: dict[tuple, list[Path]] = {}
     for f in sorted(outdir.glob("*.json")):
         if f.name == "blind_key.json":
             continue
         data = json.loads(f.read_text())
-        if "kept" not in data:  # np. *-repeatN.json: nie ma własnej listy kept
+        if "kept" not in data:  # e.g. *-repeatN.json: carries no kept list of its own
             continue
         combos.setdefault((data.get("prompt"), data.get("model"),
                            data.get("range")), []).append(f)
@@ -906,15 +981,15 @@ def blind(outdir: Path, seed: int) -> None:
 
 
 def assert_head_matches_range(repo: Path, rev_range: str, head_rev: str) -> None:
-    """Koniec zakresu musi być tą samą rewizją, z której czytamy ciała plików.
+    """The end of the range must be the same revision the file bodies come from.
 
-    Rozjazd daje diff z jednego commita i kontekst z innego; taki payload nie
-    jest tym, co realnie recenzujemy.
+    A mismatch mixes a diff from one commit with context from another; such a
+    payload is not what we actually review.
     """
     if ".." not in rev_range:
         return
-    # ".." i "..." to różne separatory; zwykły split("..") zostawia kropkę
-    # z "..." na początku rewizji.
+    # ".." and "..." are different separators; a plain split("..") leaves a dot
+    # from "..." at the start of the revision.
     end = re.split(r"\.{2,3}", rev_range)[-1] or "HEAD"
     end_sha = git(repo, "rev-parse", end).strip()
     head_sha = git(repo, "rev-parse", head_rev).strip()
@@ -928,23 +1003,27 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=".")
     ap.add_argument("--range", dest="rev_range", default="origin/main...HEAD")
-    ap.add_argument("--head", default="HEAD", help="rewizja do czytania treści plików")
+    ap.add_argument("--head", default="HEAD", help="revision to read file bodies from")
     ap.add_argument("--intent", default=None,
-                    help="domyslnie pelne cialo commita (subject + uzasadnienie)")
+                    help="defaults to the full commit body (subject + rationale)")
+    ap.add_argument("--intent-file", default=None,
+                    help="read the declared intent from a file (e.g. the PR body)")
     ap.add_argument("--prompt", choices=["v1", "v2", "v3", "v4"], default="v1")
     ap.add_argument("--provider", choices=["auto", "google", "openrouter"], default="auto")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--max-tokens", type=int, default=20000)
     ap.add_argument("--reasoning", choices=["auto", "off"], default="off",
-                    help="auto zuzywa 8-10x wiecej tokenow out i czasu (79 s vs 10 s)")
+                    help="auto uses 8-10x more output tokens and time (79 s vs 10 s)")
     ap.add_argument("--max-changed-lines", type=int, default=1500)
     ap.add_argument("--max-chars", type=int, default=120000)
     ap.add_argument("--repeat", type=int, default=1,
-                    help="liczba przebiegow tego samego payloadu; raportowana jest mediana kept")
+                    help="number of runs of the same payload; the kept median is reported")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--response-file", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--md-out", default=None,
+                    help="write the report as Markdown for a PR comment")
     ap.add_argument("--blind", action="store_true")
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
@@ -958,7 +1037,10 @@ def main() -> None:
         return
 
     assert_head_matches_range(repo, args.rev_range, args.head)
-    intent = args.intent or commit_message(repo, args.head)
+    if args.intent_file:
+        intent = Path(args.intent_file).read_text()
+    else:
+        intent = args.intent or commit_message(repo, args.head)
     user, meta = build_context(repo, args.rev_range, args.head, intent,
                                args.max_changed_lines, args.max_chars,
                                include_inventory=(args.prompt in ("v2", "v3", "v4")))
@@ -981,8 +1063,8 @@ def main() -> None:
         raise SystemExit("--repeat must be >= 1")
 
     inventory = test_inventory(repo)
-    # Dozwolone inwarianty to te, ktore faktycznie sa w payloadzie: sekcje per
-    # sciezka plus Negative Space, jesli zostal wstrzykniety.
+    # Allowed invariants are those actually present in the payload: the per-path
+    # sections plus Negative Space when it was injected.
     allowed = allowed_invariants(
         repo, meta["invariants"],
         any(not (f["path"] or "").endswith(".md") for f in meta["parsed"]))
@@ -1028,17 +1110,23 @@ def main() -> None:
         if args.repeat > 1:
             print()
 
-    # Ten sam payload daje rozny wynik miedzy przebiegami, wiec pojedynczy run
-    # nie jest pomiarem. Mediana z N przebiegow jest odporna na pojedynczy wyskok.
+    if args.md_out and results:
+        last = results[-1]
+        Path(args.md_out).write_text(render_markdown(
+            meta, last.get("kept", []), last.get("dropped", []),
+            args.prompt, args.model, last.get("usage")))
+
+    # The same payload yields different results across runs, so a single run is
+    # not a measurement. The median over N runs resists a single outlier.
     if args.repeat > 1:
         counts = [len(r["kept"]) for r in results if "error" not in r]
         failed = sum(1 for r in results if "error" in r)
         median = statistics.median(counts) if counts else None
         print(f"repeat {args.repeat}: kept per run {counts}, median {median}"
               + (f", failed {failed}" if failed else ""))
-        # Mediana mowi ile findings jest stabilnych, ale nie ktore. Grupowanie
-        # po (_path, _line, evidence) daje _support = "k/N": finding w 3/3
-        # przebiegach jest powtarzalny, w 1/3 to wyskok pojedynczego sampla.
+        # The median says how many findings are stable, not which ones.
+        # Grouping by (_path, _line, evidence) yields _support = "k/N": a finding
+        # in 3/3 runs is repeatable, in 1/3 it is a single-sample outlier.
         groups: dict[tuple, dict] = {}
         for r in results:
             if "error" in r:
