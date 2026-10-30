@@ -1,0 +1,296 @@
+name: Review benchmark
+
+# Three reviewers run on the same pull request - our own tools/ai_review.py
+# (DeepSeek), Robin (https://github.com/antongulin/robin) and Qodo PR-Agent
+# (https://github.com/The-PR-Agent/pr-agent) - and tools/review_bench.py scores
+# what each one posted against the labels of a case in bench/cases/. Detection
+# is compared with the cost each tool publishes about its own run, so the table
+# answers "which one finds the most per dollar", not "which one talks best".
+#
+# Only PRs that carry a case are benchmarked: without labels there is nothing to
+# score, and every bot run costs money. Bot failures never fail the workflow -
+# a reviewer outage is a data point, not a verdict on the PR.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  # Robin asks for `actions: read` to tell a cancelled run from a superseded one.
+  actions: read
+
+concurrency:
+  group: review-benchmark-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  case:
+    name: Find the case
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    outputs:
+      found: ${{ steps.case.outputs.found }}
+      id: ${{ steps.case.outputs.id }}
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Look for a case for this PR
+        id: case
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          id="$(python3 tools/review_bench.py case --pr "$PR_NUMBER" || true)"
+          if [ -n "$id" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "id=$id" >> "$GITHUB_OUTPUT"
+            echo "Case: $id"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No case in bench/cases for PR #$PR_NUMBER - the benchmark is skipped."
+          fi
+
+  ours:
+    name: Review (ours)
+    needs: case
+    if: >-
+      needs.case.outputs.found == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ensure base commit is present
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            exit 0
+          fi
+          git fetch --no-tags --quiet origin "$BASE_SHA"
+
+      - name: Write PR body to file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "${PR_BODY:-}" > pr_body.md
+
+      - name: Run review
+        id: review
+        continue-on-error: true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 tools/ai_review.py \
+            --repo . \
+            --range "${BASE_SHA}...${HEAD_SHA}" \
+            --head "$HEAD_SHA" \
+            --intent-file pr_body.md \
+            --provider openrouter \
+            --model deepseek/deepseek-v4.1-flash-1017 \
+            --prompt v4 \
+            --reasoning off \
+            --out review-out \
+            --md-out review-out/comment.md
+
+      # Same marker as the advisory workflow: the benchmark must score the
+      # comment the reviewer really posts, and two markers would describe two
+      # different comments of the same tool.
+      - name: Post or update the review comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          REVIEW_MD: review-out/comment.md
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- celeevox-ai-review -->';
+            const fallback = '### AI diff review\n\n' +
+              `The review did not produce a result (${process.env.REVIEW_OUTCOME}). ` +
+              'See the job log.';
+            const report = fs.existsSync(process.env.REVIEW_MD)
+              ? fs.readFileSync(process.env.REVIEW_MD, 'utf8')
+              : fallback;
+            const body = (
+              `${marker}\n${report}\n\n_Advisory: findings do not block the merge._`
+            ).slice(0, 60000);
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const previous = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
+
+      - name: Upload review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-benchmark-ours
+          path: review-out/
+          if-no-files-found: ignore
+
+  robin:
+    name: Review (Robin)
+    needs: case
+    if: >-
+      needs.case.outputs.found == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Robin needs LLM_API_KEY, LLM_BASE_URL and LLM_MODEL (an OpenAI-compatible
+      # endpoint, e.g. OpenRouter with a DeepSeek model). Robin publishes no
+      # token counts, so the benchmark always reports it as `unpriced`.
+      - name: Robin
+        uses: antongulin/robin@main
+        with:
+          github-token: ${{ secrets.ROBIN_TOKEN || github.token }}
+          llm-api-key: ${{ secrets.LLM_API_KEY }}
+          llm-base-url: ${{ secrets.LLM_BASE_URL }}
+          model: ${{ secrets.LLM_MODEL }}
+          review-on-synchronize: true
+
+  pr-agent:
+    name: Review (PR-Agent)
+    needs: case
+    if: >-
+      needs.case.outputs.found == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # `pr_actions` cannot express pushes: the runner handles `synchronize`
+      # before it looks at that list, so re-reviewing a push needs
+      # handle_push_trigger + push_commands. The run-details block is what makes
+      # the cost measurable at all.
+      - name: PR-Agent
+        uses: The-PR-Agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          config.model: "openrouter/deepseek/deepseek-v4.1-flash-1017"
+          config.output_run_details: "true"
+          config.output_run_cost: "true"
+          config.inline_key_issues: "true"
+          github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: '["/review"]'
+
+  report:
+    name: Score the reviews
+    needs: [case, ours, robin, pr-agent]
+    if: always() && needs.case.outputs.found == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Prices are never guessed: a tool is priced from its published tokens
+      # only when REVIEW_PRICE_IN/REVIEW_PRICE_OUT are set (USD per million
+      # tokens), and from its own cost line when it publishes one.
+      - name: Collect and score
+        id: bench
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PRICE_IN: ${{ vars.REVIEW_PRICE_IN || '0' }}
+          PRICE_OUT: ${{ vars.REVIEW_PRICE_OUT || '0' }}
+        run: |
+          set -euo pipefail
+          python3 tools/review_bench.py collect \
+            --pr "$PR_NUMBER" \
+            --price-in "$PRICE_IN" \
+            --price-out "$PRICE_OUT" \
+            --out bench/results | tee review-benchmark.md
+
+      - name: Post or update the benchmark comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          BENCH_MD: review-benchmark.md
+          BENCH_OUTCOME: ${{ steps.bench.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- celeevox-review-benchmark -->';
+            const fallback = '### Review benchmark\n\n' +
+              `Scoring produced no table (${process.env.BENCH_OUTCOME}). ` +
+              'See the job log.';
+            const report = fs.existsSync(process.env.BENCH_MD)
+              ? fs.readFileSync(process.env.BENCH_MD, 'utf8')
+              : fallback;
+            const body = `${marker}\n${report}`.slice(0, 60000);
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const previous = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-benchmark
+          path: |
+            review-benchmark.md
+            bench/results/
+          if-no-files-found: ignore

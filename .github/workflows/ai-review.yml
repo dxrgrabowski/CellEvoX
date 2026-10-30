@@ -1,0 +1,136 @@
+name: AI review
+
+# Advisory review of the PR diff by tools/ai_review.py (DeepSeek via OpenRouter).
+# The model reads the diff, file bodies and PR body as data; it never executes
+# PR code, never approves, and never requests changes. Findings land in one
+# sticky comment that is rewritten on every push.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI review (DeepSeek)
+    # Drafts are not worth a model call; fork PRs get no secrets, so they are
+    # skipped instead of failing on a missing OPENROUTER_API_KEY.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Same rule as quality-gates.yml: a missing base must be loud, because
+      # validating against the wrong commit is worse than not validating.
+      - name: Ensure base commit is present
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "Base commit $BASE_SHA is available locally."
+            exit 0
+          fi
+          if ! git fetch --no-tags --quiet origin "$BASE_SHA"; then
+            echo "::error::Could not fetch base commit $BASE_SHA; refusing to review a partial diff."
+            exit 1
+          fi
+
+      # The PR body carries the machine-readable intent; the model reads it as
+      # data. It goes through a file so no untrusted text is interpolated.
+      - name: Write PR body to file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "${PR_BODY:-}" > pr_body.md
+
+      - name: Run review
+        id: review
+        continue-on-error: true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 tools/ai_review.py \
+            --repo . \
+            --range "${BASE_SHA}...${HEAD_SHA}" \
+            --head "$HEAD_SHA" \
+            --intent-file pr_body.md \
+            --provider openrouter \
+            --model deepseek/deepseek-v4.1-flash-1017 \
+            --prompt v4 \
+            --reasoning off \
+            --out review-out \
+            --md-out review-out/comment.md
+
+      - name: Post or update the review comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          REVIEW_MD: review-out/comment.md
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- celeevox-ai-review -->';
+            const fallback = '### AI diff review\n\n' +
+              `The review did not produce a result (${process.env.REVIEW_OUTCOME}). ` +
+              'See the job log.';
+            const report = fs.existsSync(process.env.REVIEW_MD)
+              ? fs.readFileSync(process.env.REVIEW_MD, 'utf8')
+              : fallback;
+            const body = (
+              `${marker}\n${report}\n\n_Advisory: findings do not block the merge._`
+            ).slice(0, 60000);
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const previous = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
+
+      - name: Upload review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review
+          path: review-out/
+          if-no-files-found: ignore
+
+      # A model/API failure must be visible, but it is not a verdict on the PR.
+      - name: Fail when the review could not run
+        if: steps.review.outcome == 'failure'
+        run: |
+          echo "::error::AI review produced no result; see the log above."
+          exit 1
