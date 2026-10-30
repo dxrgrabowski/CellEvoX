@@ -1,0 +1,50 @@
+{
+  "id": "pr50-legacy-config",
+  "source": "PR #50 (fix: remove DETERMINISTIC_RK4 dead code and fail fast, #48). `real` labels are the defects fixed in 0861cff and confirmed in the code (results_parser.py try/except in ConfigPage.tsx, DEFAULT_CONFIG in types/simulation.ts); `fp` labels are reported-but-correct lines; `unverified` has no proof either way.",
+  "repo": "dxrgrabowski/CellEvoX",
+  "pr": 50,
+  "labels": [
+    {
+      "path": "web/backend/results_parser.py",
+      "line": 57,
+      "kind": "real",
+      "expect": "a legacy config with stochastic:true maps to sim_mode 'unknown' instead of 'stochastic'"
+    },
+    {
+      "path": "web/frontend/src/components/results/RunSummary.tsx",
+      "line": 38,
+      "kind": "real",
+      "expect": "formatMode returns undefined for legacy configs, so the mode row of the summary is empty"
+    },
+    {
+      "path": "web/frontend/src/utils/batchQueue.ts",
+      "line": 77,
+      "kind": "real",
+      "expect": "a legacy config with stochastic:true is described in the queue as 'unknown'"
+    },
+    {
+      "path": "web/frontend/src/pages/ConfigPage.tsx",
+      "line": 43,
+      "kind": "real",
+      "expect": "ConfigPage shows the raw parser message instead of the fixed 'Invalid JSON config file'"
+    },
+    {
+      "path": "web/frontend/src/stores/index.ts",
+      "line": 19,
+      "kind": "fp",
+      "expect": "the numa() throw is already wrapped in try/catch (ConfigPage.tsx:41-43)"
+    },
+    {
+      "path": "web/frontend/src/stores/index.ts",
+      "line": 27,
+      "kind": "fp",
+      "expect": "rest carries no simulation_mode, so the spread keeps the DEFAULT_CONFIG value"
+    },
+    {
+      "path": "CellEvoX/include/systems/SimulationEngine.hpp",
+      "line": 19,
+      "kind": "unverified",
+      "expect": "enum renumbering: no proof the numeric value is persisted anywhere"
+    }
+  ]
+}
