@@ -85,3 +85,22 @@ jobs:
 
       - name: Run muller/phylogeny regression test
         run: python3 CellEvoX/scripts/test_plot_muller_and_phylogeny.py
+
+  review-tooling:
+    name: Review tooling tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Standalone unittest, no third-party imports. It pins the comment formats
+      # the three bots publish, which the benchmark parses back.
+      - name: Run review benchmark tests
+        run: python3 tools/test_review_bench.py
