@@ -1009,7 +1009,9 @@ def main() -> None:
     ap.add_argument("--reasoning", choices=["auto", "off"], default="off",
                     help="auto uses 8-10x more output tokens and time (79 s vs 10 s)")
     ap.add_argument("--max-changed-lines", type=int, default=1500)
-    ap.add_argument("--max-chars", type=int, default=120000)
+    ap.add_argument("--max-chars", type=int, default=1000000,
+                    help="context budget in characters; the review refuses to "
+                         "truncate silently above it")
     ap.add_argument("--repeat", type=int, default=1,
                     help="number of runs of the same payload; the kept median is reported")
     ap.add_argument("--dry-run", action="store_true")
