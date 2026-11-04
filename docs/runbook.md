@@ -251,3 +251,16 @@ round, retry at 10 samples per round) and judges a benchmark on the median of
 the round means, so a single noisy round widens the interval instead of moving
 the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
 the older blocked schedule. Rationale: ADR-0009.
+
+`.github/workflows/ai-review.yml` runs the advisory AI review
+(`tools/ai_review.py`, DeepSeek via OpenRouter, prompt `v4`) on non-draft pull
+requests from this repository and rewrites one sticky PR comment on every push.
+It needs the repository secret `OPENROUTER_API_KEY`; fork PRs are skipped
+because secrets are not exposed to them. The job fails only when the review
+cannot run (missing key, API error, unparseable response) — findings never block
+the merge. Run it locally against the same diff:
+
+```bash
+OPENROUTER_API_KEY=... python3 tools/ai_review.py \
+  --range origin/main...HEAD --prompt v4 --reasoning off
+```
