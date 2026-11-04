@@ -91,13 +91,7 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
     const std::vector<MutationType>& mutations = {}
 ) {
     auto cfg = makeConfig(population, env_capacity, mutations);
-    CellMap cells;
-    cells.rehash(population);
-    for (uint32_t id = 0; id < static_cast<uint32_t>(population); ++id) {
-        cells.insert({id, Cell(id)});
-    }
-
-    Graveyard graveyard;
+    CellEvoX::systems::DensePopulation cells(population);
     std::map<uint8_t, MutationType> available_mutation_types;
     double total_mutation_probability = 0.0;
     for (const auto& mutation : mutations) {
@@ -107,16 +101,13 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
 
     size_t actual_population = population;
     size_t total_deaths = 0;
-    std::mt19937 rng(cfg->seed);
     return CellEvoX::systems::applyCommonPopulationStep(cells,
-                                                        graveyard,
                                                         *cfg,
                                                         available_mutation_types,
                                                         total_mutation_probability,
                                                         actual_population,
                                                         total_deaths,
-                                                        cfg->tau_step,
-                                                        rng);
+                                                        cfg->tau_step);
 }
 
 #pragma pack(push, 1)
@@ -353,149 +344,45 @@ TEST_CASE("Simulation: 2D vs 3D Time Comparison", "[benchmark][timing-comparison
     };
 }
 
-namespace {
-
-struct CommonStepState {
-    std::shared_ptr<SimulationConfig> cfg;
-    CellMap cells;
-    std::vector<uint32_t> cached_alive_ids;
-    Graveyard graveyard;
-    std::map<uint8_t, MutationType> mutation_types;
-    size_t actual_population = 0;
-    size_t total_deaths = 0;
-    double tau = 0.0;
-    std::mt19937 rng;
-};
-
-std::unique_ptr<CommonStepState> makeCommonStepState(size_t population, size_t env_capacity) {
-    auto state = std::make_unique<CommonStepState>();
-    state->cfg = makeConfig(population, env_capacity);
-    state->cells.rehash(population);
-    state->cached_alive_ids.reserve(population);
-    for (uint32_t id = 0; id < static_cast<uint32_t>(population); ++id) {
-        state->cells.insert({id, Cell(id)});
-        state->cached_alive_ids.push_back(id);
-    }
-    state->actual_population = state->cells.size();
-    state->rng.seed(state->cfg->seed);
-    return state;
-}
-
-}  // namespace
-
-TEST_CASE("ADR-0003 dense vs shared step isolation", "[benchmark][adr3-experiment]") {
-    std::filesystem::create_directories(benchmarkTempPath("test_bench_sim") / "statistics");
-
+// Keep the existing perf-core/timing benchmark names for paired base/head CI.
+// The old "2D" labels refer to the non-spatial base model.
+TEST_CASE("Dense population step with optional event results", "[benchmark][population-step]") {
     constexpr int steps_per_sample = 5;
-
-    const auto run_common_step = [](CommonStepState& state, bool use_cached_ids) {
-        state.tau += state.cfg->tau_step;
-        CellEvoX::systems::applyCommonPopulationStep(state.cells,
-                                                     state.graveyard,
-                                                     *state.cfg,
-                                                     state.mutation_types,
-                                                     0.0,
-                                                     state.actual_population,
-                                                     state.total_deaths,
-                                                     state.tau,
-                                                     state.rng,
-                                                     use_cached_ids
-                                                         ? &state.cached_alive_ids
-                                                         : nullptr,
-                                                     false);
-    };
-
-    const auto add_common_benchmark = [run_common_step](Catch::Benchmark::Chronometer meter,
-                                                        size_t population,
-                                                        size_t env_capacity,
-                                                        bool use_cached_ids) {
-        // Catch2 doubles the requested repetition count during calibration until the
-        // warm-up target is met, so `runs()` can exceed one. Build one independently
-        // warmed state per repetition so every timed sample still runs exactly
-        // `steps_per_sample` steps from the same starting point.
-        std::vector<std::unique_ptr<CommonStepState>> states;
+    const auto add_benchmark = []<bool collect_events>(Catch::Benchmark::Chronometer meter,
+                                                      size_t population,
+                                                      size_t capacity) {
+        auto cfg = makeConfig(population, capacity);
+        std::vector<CellEvoX::systems::DensePopulation> states;
+        std::vector<size_t> counts(static_cast<size_t>(meter.runs()), population);
+        std::vector<size_t> deaths(static_cast<size_t>(meter.runs()), 0);
         states.reserve(static_cast<size_t>(meter.runs()));
+        const std::map<uint8_t, MutationType> mutations;
+        // Every measured repetition starts from its own independently warmed state.
         for (int run = 0; run < meter.runs(); ++run) {
-            states.push_back(makeCommonStepState(population, env_capacity));
-            run_common_step(*states.back(), use_cached_ids);
+            states.emplace_back(population);
+            CellEvoX::systems::applyCommonPopulationStep<collect_events>(
+                states.back(), *cfg, mutations, 0.0, counts[run], deaths[run], cfg->tau_step);
         }
-        meter.measure([&states, use_cached_ids, &run_common_step](int run) {
-            auto& state = *states[static_cast<size_t>(run)];
+        meter.measure([&](int run) {
             for (int i = 0; i < steps_per_sample; ++i) {
-                run_common_step(state, use_cached_ids);
+                CellEvoX::systems::applyCommonPopulationStep<collect_events>(
+                    states[run], *cfg, mutations, 0.0, counts[run], deaths[run],
+                    (i + 2) * cfg->tau_step);
             }
         });
     };
-
-    const auto add_dense_benchmark = [](Catch::Benchmark::Chronometer meter,
-                                        size_t population,
-                                        size_t env_capacity) {
-        std::vector<std::unique_ptr<SimulationEngine>> engines;
-        engines.reserve(static_cast<size_t>(meter.runs()));
-        for (int run = 0; run < meter.runs(); ++run) {
-            engines.push_back(
-                std::make_unique<SimulationEngine>(makeConfig(population, env_capacity)));
-            engines.back()->step();
+    for (size_t population : {100'000u, 1'000'000u}) {
+        for (size_t capacity : {population, population * 100}) {
+            const auto suffix = " N=" + std::to_string(population) +
+                                " capacity=" + std::to_string(capacity) + " [5 steps]";
+            BENCHMARK_ADVANCED("dense population" + suffix)(Catch::Benchmark::Chronometer meter) {
+                add_benchmark.template operator()<false>(meter, population, capacity);
+            };
+            BENCHMARK_ADVANCED("dense population + event results" + suffix)(Catch::Benchmark::Chronometer meter) {
+                add_benchmark.template operator()<true>(meter, population, capacity);
+            };
         }
-        meter.measure([&engines](int run) {
-            auto& engine = *engines[static_cast<size_t>(run)];
-            for (int i = 0; i < steps_per_sample; ++i) {
-                engine.step();
-            }
-        });
-    };
-
-    BENCHMARK_ADVANCED("dense 2D N=100k low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_dense_benchmark(meter, 100000, 10000000);
-    };
-    BENCHMARK_ADVANCED("shared cached N=100k low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 100000, 10000000, true);
-    };
-    BENCHMARK_ADVANCED("shared collect N=100k low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 100000, 10000000, false);
-    };
-
-    BENCHMARK_ADVANCED("dense 2D N=100k high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_dense_benchmark(meter, 100000, 100000);
-    };
-    BENCHMARK_ADVANCED("shared cached N=100k high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 100000, 100000, true);
-    };
-    BENCHMARK_ADVANCED("shared collect N=100k high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 100000, 100000, false);
-    };
-
-    BENCHMARK_ADVANCED("dense 2D N=1M low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_dense_benchmark(meter, 1000000, 100000000);
-    };
-    BENCHMARK_ADVANCED("shared cached N=1M low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 1000000, 100000000, true);
-    };
-    BENCHMARK_ADVANCED("shared collect N=1M low-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 1000000, 100000000, false);
-    };
-
-    BENCHMARK_ADVANCED("dense 2D N=1M high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_dense_benchmark(meter, 1000000, 1000000);
-    };
-    BENCHMARK_ADVANCED("shared cached N=1M high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 1000000, 1000000, true);
-    };
-    BENCHMARK_ADVANCED("shared collect N=1M high-pressure [isolated]")(
-        Catch::Benchmark::Chronometer meter) {
-        add_common_benchmark(meter, 1000000, 1000000, false);
-    };
+    }
 }
 
 TEST_CASE("Population snapshot serialization tradeoff", "[benchmark][snapshot-serialization][perf-snapshot]") {

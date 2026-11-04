@@ -6,8 +6,10 @@ selection, and lineage dynamics under a soft carrying capacity. It produces
 reproducible population statistics, phylogenies, Muller plots, and 2D/3D
 visualizations, and ships with a local React/FastAPI control surface.
 
-Two simulation modes are supported: **2D stochastic tau-leap** and **3D spatial
-capacity** (the stochastic model plus an xyz mechanical overlay).
+Two simulation modes are supported: **non-spatial stochastic tau-leap** and
+**3D spatial capacity** (the stochastic model plus an xyz mechanical overlay). Both use the
+same dense population step. The base model has no X/Y coordinates; "2D" refers
+to its visualizations.
 
 ## Documentation
 

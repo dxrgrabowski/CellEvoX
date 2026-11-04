@@ -79,12 +79,12 @@ void SimulationEngine3DCapacity::signalHandler(int signum) {
 }
 
 SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<SimulationConfig> config)
-    : actual_population(config->initial_population),
+    : population(config->initial_population),
+      actual_population(config->initial_population),
       total_deaths(0),
       tau(0.0),
       total_mutation_probability(0.0),
       config(std::move(config)),
-      event_rng_(this->config->seed),
       spatial_rng_(this->config->seed ^ 0xA5A5A5A5u),
       spatial_grid_(2.0f * CELL_RADIUS, this->config->spatial_domain_size) {
   switch (this->config->verbosity) {
@@ -110,11 +110,6 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
       std::filesystem::path(this->config->output_path) / "population_data", create_dir_error);
   if (create_dir_error) {
     spdlog::warn("Failed to create population_data directory: {}", create_dir_error.message());
-  }
-
-  cells.rehash(this->config->initial_population * 2 + 1);
-  for (uint32_t id = 0; id < this->config->initial_population; ++id) {
-    cells.insert({id, Cell(id)});
   }
 
   for (const auto& mutation : this->config->mutations) {
@@ -192,7 +187,7 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
       }
       std::cout << "\033[1;32m] " << progress << "% \033[34m" << spinner[spinner_index]
                 << " \033[0m" << remaining_steps << " steps remaining, ~" << std::fixed
-                << std::setprecision(1) << estimated_remaining_time << "s left " << cells.size()
+                << std::setprecision(1) << estimated_remaining_time << "s left " << actual_population
                 << " cells" << std::flush;
 
       spinner_index = (spinner_index + 1) % 4;
@@ -207,9 +202,13 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
   std::cout << "] 100% \033[0m" << std::endl;
 
   if (termination_reason == ecs::TerminationReason::PlannedHorizon &&
-      config->max_population_cutoff > 0 && cells.size() >= config->max_population_cutoff) {
+      config->max_population_cutoff > 0 && actual_population >= config->max_population_cutoff) {
     termination_reason = ecs::TerminationReason::PopulationCutoff;
   }
+
+  CellMap cells;
+  population.materializeCells(cells, actual_population);
+  population.materializeGraveyard(cells_graveyard);
 
   return ecs::Run(std::move(cells),
                   std::move(available_mutation_types),
@@ -228,15 +227,13 @@ void SimulationEngine3DCapacity::step() {
   CellEvoX::systems::CommonPopulationStepResult step_result;
   {
     CELLEVOX_PROFILE_PHASE("3d_capacity_common_population_step");
-    step_result = CellEvoX::systems::applyCommonPopulationStep(cells,
-                                                               cells_graveyard,
+    step_result = CellEvoX::systems::applyCommonPopulationStep(population,
                                                                *config,
                                                                available_mutation_types,
                                                                total_mutation_probability,
                                                                actual_population,
                                                                total_deaths,
-                                                               tau,
-                                                               event_rng_);
+                                                               tau);
   }
 
   {
@@ -331,9 +328,11 @@ void SimulationEngine3DCapacity::rebuildSpatialState() {
       });
 
   spatial_state_.cell_ids.clear();
-  spatial_state_.cell_ids.reserve(cells.size());
-  for (const auto& cell_entry : cells) {
-    spatial_state_.cell_ids.push_back(cell_entry.first);
+  spatial_state_.cell_ids.reserve(actual_population);
+  for (uint32_t id : population.alive_cell_ids) {
+    if (population.isAlive(id)) {
+      spatial_state_.cell_ids.push_back(id);
+    }
   }
   CellEvoX::parallel_algorithms::sortMaybeParallel(
       spatial_state_.cell_ids.begin(), spatial_state_.cell_ids.end());
@@ -595,7 +594,7 @@ void SimulationEngine3DCapacity::mechanicalRelaxationStep() {
 }
 
 void SimulationEngine3DCapacity::takeStatSnapshot() {
-  const size_t living_cells_count = cells.size();
+  const size_t living_cells_count = actual_population;
   if (living_cells_count == 0) {
     generational_stat_report.push_back(
         {tau, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0});
@@ -612,20 +611,11 @@ void SimulationEngine3DCapacity::takeStatSnapshot() {
   double total_mutations_cubed = 0.0;
   double total_mutations_fourth = 0.0;
 
-  std::vector<uint32_t> sorted_keys;
-  sorted_keys.reserve(living_cells_count);
-  for (const auto& cell : cells) {
-    sorted_keys.push_back(cell.first);
-  }
-  CellEvoX::parallel_algorithms::sortMaybeParallel(sorted_keys.begin(), sorted_keys.end());
-
-  for (uint32_t key : sorted_keys) {
-    CellMap::const_accessor accessor;
-    if (!cells.find(accessor, key)) {
+  for (uint32_t id : population.alive_cell_ids) {
+    if (!population.isAlive(id)) {
       continue;
     }
-
-    const auto& cell = accessor->second;
+    const auto& cell = population.at(id);
     const double fitness = cell.fitness;
     const double fitness_sq = fitness * fitness;
     const double fitness_cu = fitness_sq * fitness;
@@ -699,17 +689,14 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
 
   for (size_t i = 0; i < spatial_state_.cell_ids.size(); ++i) {
     const uint32_t id = spatial_state_.cell_ids[i];
-    CellMap::const_accessor accessor;
-    if (!cells.find(accessor, id)) {
-      continue;
-    }
+    const auto& cell = population.at(id);
 
     if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
       spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
       return;
     }
     const uint32_t mutation_payload_offset = static_cast<uint32_t>(mutation_payload.size());
-    for (const auto& [mutation_id, mutation_type] : accessor->second.mutations) {
+    for (const auto& [mutation_id, mutation_type] : cell.mutations) {
       const auto type_it = available_mutation_types.find(mutation_type);
       if (config->full_mutation_payload ||
           (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
@@ -721,13 +708,13 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
                                                std::numeric_limits<uint16_t>::max()));
 
     snapshot.push_back({id,
-                        accessor->second.parent_id,
-                        accessor->second.fitness,
+                        cell.parent_id,
+                        cell.fitness,
                         spatial_state_.pos_x[i],
                         spatial_state_.pos_y[i],
                         spatial_state_.pos_z[i],
                         static_cast<uint16_t>(std::min<size_t>(
-                            accessor->second.mutations.size(),
+                            cell.mutations.size(),
                             std::numeric_limits<uint16_t>::max())),
                         mutation_payload_count,
                         mutation_payload_offset,
@@ -744,19 +731,18 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
 }
 
 void SimulationEngine3DCapacity::pruneGraveyard() {
+  population.materializeGraveyard(cells_graveyard);
   std::unordered_set<uint32_t> living_ids;
-  for (const auto& cell : cells) {
-    living_ids.insert(cell.first);
+  living_ids.reserve(actual_population);
+  for (uint32_t id : population.alive_cell_ids) {
+    if (population.isAlive(id)) {
+      living_ids.insert(id);
+    }
   }
 
   std::unordered_set<uint32_t> reachable_dead_cells;
   for (uint32_t start_id : living_ids) {
-    CellMap::const_accessor accessor;
-    if (!cells.find(accessor, start_id)) {
-      continue;
-    }
-
-    uint32_t parent_id = accessor->second.parent_id;
+    uint32_t parent_id = population.at(start_id).parent_id;
     while (parent_id != 0) {
       if (reachable_dead_cells.count(parent_id) || living_ids.count(parent_id)) {
         break;
@@ -839,8 +825,9 @@ void SimulationEngine3DCapacity::logMemoryUsage() {
   }
 
   const size_t rss_kb = getRSS();
-  const size_t cells_count = cells.size();
-  const size_t graveyard_count = cells_graveyard.size();
+  const size_t cells_count = actual_population;
+  const size_t graveyard_count =
+      cells_graveyard.size() + population.pending_graveyard_entries.size();
   const size_t estimated_cells_kb = (cells_count * sizeof(Cell)) / 1024;
   const size_t estimated_graveyard_kb = (graveyard_count * 48) / 1024;
 

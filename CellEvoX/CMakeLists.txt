@@ -91,6 +91,7 @@ set(HEADERS
     include/core/application.hpp
     include/systems/SimulationEngine.hpp
     include/systems/SimulationEngine3DCapacity.hpp
+    include/systems/DensePopulation.hpp
     include/systems/CommonPopulationStep.hpp
     include/ecs/Cell.hpp
     include/ecs/Run.hpp

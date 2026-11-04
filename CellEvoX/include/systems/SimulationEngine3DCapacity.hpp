@@ -53,7 +53,7 @@ class SimulationEngine3DCapacity {
   size_t getRSS();
   void logMemoryUsage();
 
-  CellMap cells;
+  CellEvoX::systems::DensePopulation population;
   Graveyard cells_graveyard;
   std::map<uint8_t, MutationType> available_mutation_types;
   std::vector<StatSnapshot> generational_stat_report;
@@ -71,7 +71,6 @@ class SimulationEngine3DCapacity {
   ecs::TerminationReason termination_reason = ecs::TerminationReason::PlannedHorizon;
 
   std::shared_ptr<SimulationConfig> config;
-  std::mt19937 event_rng_;
   std::mt19937 spatial_rng_;
 
   SpatialState spatial_state_;

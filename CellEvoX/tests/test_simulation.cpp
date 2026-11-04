@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
@@ -283,12 +284,11 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
     config.tau_step = 1.0;
     config.env_capacity = 1000000000;
 
-    CellMap cells;
+    CellEvoX::systems::DensePopulation population(3);
     auto insert_cell = [&](uint32_t id, uint32_t parent_id) {
-        Cell cell(id);
+        auto& cell = population.at(id);
         cell.parent_id = parent_id;
         cell.fitness = 1.0e20f;
-        REQUIRE(cells.insert({id, std::move(cell)}));
     };
 
     insert_cell(2, 102);
@@ -301,17 +301,18 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
     };
     size_t actual_population = 3;
     size_t total_deaths = 0;
-    std::mt19937 rng(12345);
 
-    const auto result = CellEvoX::systems::applyCommonPopulationStep(cells,
-                                                                     graveyard,
+    const auto result = CellEvoX::systems::applyCommonPopulationStep(population,
                                                                      config,
                                                                      mutations,
                                                                      1.0,
                                                                      actual_population,
                                                                      total_deaths,
-                                                                     12.5,
-                                                                     rng);
+                                                                     12.5);
+
+    CellMap cells;
+    population.materializeCells(cells, actual_population);
+    population.materializeGraveyard(graveyard);
 
     REQUIRE(actual_population == 6);
     REQUIRE(total_deaths == 3);
@@ -1061,8 +1062,9 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
     }
 }
 
-TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[SimulationEngine3DCapacity][Determinism]") {
-    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[SimulationEngine3DCapacity][Determinism]") {
+    const size_t workers = GENERATE(1u, 4u);
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, workers);
 
     auto make_config = [](SimulationType type, const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
@@ -1073,7 +1075,8 @@ TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[Simulatio
         config->env_capacity = 1000;
         config->steps = 100;
         config->stat_res = 1;
-        config->popul_res = 10;
+        config->popul_res = 1;
+        config->graveyard_pruning_interval = 2;
         config->output_path = output_path;
         config->spatial_domain_size = 32.0f;
         config->spring_constant = 0.2f;
@@ -1086,23 +1089,23 @@ TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[Simulatio
         return config;
     };
 
-    auto config_2d = make_config(SimulationType::STOCHASTIC_TAU_LEAP, testTempString("test_sim_2d_parity"));
+    auto config_base = make_config(SimulationType::STOCHASTIC_TAU_LEAP, testTempString("test_sim_base_parity"));
     auto config_3d = make_config(SimulationType::SPATIAL_3D_CAPACITY, testTempString("test_sim_3d_capacity_parity"));
 
-    std::filesystem::remove_all(config_2d->output_path);
+    std::filesystem::remove_all(config_base->output_path);
     std::filesystem::remove_all(config_3d->output_path);
-    std::filesystem::create_directories(config_2d->output_path + "/statistics");
+    std::filesystem::create_directories(config_base->output_path + "/statistics");
     std::filesystem::create_directories(config_3d->output_path + "/statistics");
 
-    SimulationEngine engine_2d(config_2d);
-    auto run_2d = engine_2d.run(100);
+    SimulationEngine engine_base(config_base);
+    auto run_base = engine_base.run(100);
 
     SimulationEngine3DCapacity engine_3d(config_3d);
     auto run_3d = engine_3d.run(100);
 
-    REQUIRE(run_2d.generational_stat_report.size() == run_3d.generational_stat_report.size());
-    for (size_t i = 0; i < run_2d.generational_stat_report.size(); ++i) {
-        const auto& lhs = run_2d.generational_stat_report[i];
+    REQUIRE(run_base.generational_stat_report.size() == run_3d.generational_stat_report.size());
+    for (size_t i = 0; i < run_base.generational_stat_report.size(); ++i) {
+        const auto& lhs = run_base.generational_stat_report[i];
         const auto& rhs = run_3d.generational_stat_report[i];
         require_approx(lhs.tau, rhs.tau);
         require_approx(lhs.mean_fitness, rhs.mean_fitness);
@@ -1112,8 +1115,9 @@ TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[Simulatio
         REQUIRE(lhs.total_living_cells == rhs.total_living_cells);
     }
 
-    REQUIRE(run_2d.cells.size() == run_3d.cells.size());
-    for (const auto& [cell_id, cell] : run_2d.cells) {
+    REQUIRE(run_base.total_deaths == run_3d.total_deaths);
+    REQUIRE(run_base.cells.size() == run_3d.cells.size());
+    for (const auto& [cell_id, cell] : run_base.cells) {
         CellMap::const_accessor accessor;
         REQUIRE(run_3d.cells.find(accessor, cell_id));
         REQUIRE(accessor->second.parent_id == cell.parent_id);
@@ -1121,8 +1125,8 @@ TEST_CASE("SimulationEngine3DCapacity matches 2D population events", "[Simulatio
         REQUIRE(accessor->second.mutations == cell.mutations);
     }
 
-    REQUIRE(run_2d.cells_graveyard.size() == run_3d.cells_graveyard.size());
-    for (const auto& [cell_id, graveyard_entry] : run_2d.cells_graveyard) {
+    REQUIRE(run_base.cells_graveyard.size() == run_3d.cells_graveyard.size());
+    for (const auto& [cell_id, graveyard_entry] : run_base.cells_graveyard) {
         Graveyard::const_accessor accessor;
         REQUIRE(run_3d.cells_graveyard.find(accessor, cell_id));
         REQUIRE(accessor->second.first == graveyard_entry.first);

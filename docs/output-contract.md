@@ -80,7 +80,7 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
   `full_mutation_payload: false` the column contains driver mutations only;
   setting it to `true` exports the full payload and also widens the VAF
   histograms to all mutations.
-- 2D runs leave `X,Y,Z` **empty** (`,,` in the CSV, `NaN` in the binary snapshot)
+- Non-spatial runs leave `X,Y,Z` **empty** (`,,` in the CSV, `NaN` in the binary snapshot)
   with `PositionValid = 0` and `SpatialDimensions = 0`; a CSV reader such as
   pandas loads them as `NaN`, not `0`. 3D runs emit real coordinates with
   `PositionValid = 1` and `SpatialDimensions = 3`. Consumers must key off
