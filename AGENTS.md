@@ -113,3 +113,17 @@ constants, stale Qt/Boost references in CI — belong in issues.
   approved domain invariants (above), the invariant wins: do not weaken it to
   match the code — report the discrepancy, then fix the code or request a domain
   decision.
+
+## Pull Requests
+
+One pull request carries one change. A reviewer holds the whole PR as a single
+context, so unrelated work bundled together hides the risky part behind the
+noisy one and makes a revert take everything down with it. Split instead: each
+PR states one intent, touches only the files that intent needs, and can be
+merged or rejected on its own.
+
+- If the title needs "and", it is probably two PRs.
+- The reasoning that explains a change belongs in the PR description, not in a
+  new file under `docs/` that nobody asked for.
+- A shared file (workflow, config, template) belongs to the PR whose change is
+  the reason it changes, not to the PR that happens to be open.
