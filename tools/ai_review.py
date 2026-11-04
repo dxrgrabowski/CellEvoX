@@ -806,7 +806,7 @@ def collapse(kept: list[dict]) -> list[dict]:
 
 
 def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
-                    prompt: str, model: str, usage: dict | None = None) -> str:
+                    prompt: str, model: str) -> str:
     """The PR-comment body: findings first, review context folded away.
 
     The console report is for a local run; on a pull request the author reads a
@@ -871,13 +871,6 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
                        f"(quote not found in the diff)")
     out += ["", "<details><summary>Review context</summary>", "", *context, "",
             "</details>", ""]
-    # Machine-readable cost line for tools/review_bench.py; invisible on GitHub.
-    if usage:
-        out.append("<!-- celeevox-ai-review:usage "
-                   + json.dumps({"model": model,
-                                 "input_tokens": usage.get("prompt_tokens"),
-                                 "output_tokens": usage.get("completion_tokens")})
-                   + " -->")
     return "\n".join(out)
 
 
@@ -1114,7 +1107,7 @@ def main() -> None:
         last = results[-1]
         Path(args.md_out).write_text(render_markdown(
             meta, last.get("kept", []), last.get("dropped", []),
-            args.prompt, args.model, last.get("usage")))
+            args.prompt, args.model))
 
     # The same payload yields different results across runs, so a single run is
     # not a measurement. The median over N runs resists a single outlier.
