@@ -272,6 +272,11 @@ and `tools/review_bench.py` scores what each one posted against the labels of a
 case in `bench/cases/`. The benchmark is skipped unless the PR has a case:
 unlabelled findings cannot be scored, and every bot run costs money.
 
+The reviewers can still be run on demand on a PR without a case: add the
+`review-benchmark` label and the three bots post their comments for manual
+comparison, while scoring stays skipped because there is nothing to score
+against. Remove the label to stop re-running them on later pushes.
+
 A case is a JSON file with `id`, `repo` (`owner/name`), `pr`, `source` and
 `labels`. Each label is a `path` plus either a `lines` region (derived from the
 fix commit, no tolerance) or a `line` (default tolerance 3), and a `kind` of
