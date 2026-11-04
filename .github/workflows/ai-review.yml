@@ -79,6 +79,7 @@ jobs:
             --model deepseek/deepseek-v4.1-flash-1017 \
             --prompt v4 \
             --reasoning off \
+            --max-chars 250000 \
             --out review-out \
             --md-out review-out/comment.md
 
