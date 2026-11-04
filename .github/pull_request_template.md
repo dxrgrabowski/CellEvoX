@@ -1,8 +1,10 @@
 ---
 # Change contract read by the human and AI reviewer. Required: intent, risk and
 # scope.paths. An empty list means "none" for touches_invariants and must_not_change.
+# Keep these values current: the gate checks them, not their history. A contract
+# change updates the field and records the old value under "Amended" in the body.
 intent: ""                # 1 sentence: why this change exists
-touches_invariants: []    # Invariants (AGENTS.md) this diff could break — the reviewer verifies they still hold. Changing one deliberately also needs owner sign-off and an Accepted ADR
+touches_invariants: []    # Invariants (AGENTS.md) this diff could break — the reviewer verifies they still hold, and checks the ones omitted here. Changing one deliberately also needs owner sign-off and an Accepted ADR
 risk: ""                  # low | medium | high — justify below when not low
 scope:
   paths: []               # Repo-relative globs the diff touches — a map of the change, not a boundary it passed. '*' stops at '/', '**' crosses it; renames are checked on both old and new paths
@@ -42,31 +44,35 @@ leftover HTML comments and template markers instead of reading them as intent.
 
 ## Acceptance Criteria
 
-<!-- Requirement source: issue #N, ADR-XXXX, the owner request, or
-     "discovered in session YYYY-MM-DD, owner-confirmed" when analysis is how the
-     requirement emerged.
-
-     Criteria freeze when the PR opens. Implementation fixes preserve the
-     contract; changing `intent`, scope, or a criterion requires an
-     `Amended YYYY-MM-DD: <what and why>` line and renewed review.
+<!-- Requirement source: issue #N, ADR-XXXX, the owner request, a requirement
+     discovered in session YYYY-MM-DD, or criteria derived from the request when
+     they follow from it unambiguously. Ask the owner only about a real
+     ambiguity, or when the answer chooses new domain semantics.
 
      - State observable behavior, not implementation steps. A criterion the
        reviewer cannot fail is not a criterion.
-     - When the diff touches shared code, outputs, or formats, include at least
-       one criterion for behavior that must stay unchanged.
+     - Use as many criteria as the observable behavior requires; one may
+       suffice. When the diff touches shared code, outputs, or formats, include
+       at least one criterion for behavior that must stay unchanged.
      - Bug fix: the failing case before and the passing case after. Perf: the
        named benchmark and its threshold.
-     - Prefer a short set of criteria. If the list grows, check whether the PR
-       contains separable outcomes.
-     - Docs/CI-only changes: one row or `N/A — <reason>`. Behavior changes get
-       neither. -->
+     - If the list grows, check whether the PR contains separable outcomes.
+     - `N/A — <reason>` only when no behavioral criterion applies. Plain docs
+       and comment changes qualify; CI changes that affect builds, checks, or
+       deployment do not.
 
-Requirement source: <!-- issue/ADR/owner request, or discovered in session -->
+     Keep the criteria and the front matter current: the gate and the reviewer
+     read these values, not their history. An amendment updates the field and
+     appends here `Amended YYYY-MM-DD: <field> changed from <previous> to <new>
+     because <reason>`, and needs renewed review. Refreshing Verification
+     Evidence alone is not an amendment. -->
 
-| ID | Observable condition | Verification reference |
-|---|---|---|
-| AC1 | <!-- behavior after this PR --> | V1 |
-| AC2 | <!-- behavior that must remain stable --> | V2 |
+Requirement source: <!-- issue/ADR/owner request, or "derived from the request: <sentence>" -->
+
+| ID | Observable condition |
+|---|---|
+| AC1 | <!-- behavior after this PR --> |
+| AC2 | <!-- behavior that must remain stable -->
 
 ## Scope Boundaries
 
@@ -77,13 +83,17 @@ Requirement source: <!-- issue/ADR/owner request, or discovered in session -->
 
 Verified commit: <full SHA>
 
-<!-- Each block starts with its verification reference and AC IDs, e.g.
-     "V1 (AC1)", then the exact command as run and the decisive output: exit
-     status, the pass/fail line, and any failure detail. Quote only what a
-     reviewer can judge the criterion by. Full or noisy logs belong in an
-     accessible CI run or uploaded artifact, linked here; artifacts expire, so
-     the verdict and the lines it rests on must stay in the body. "Should work"
-     and "all tests passed" without a command and quotable output are rejected.
-     Every criterion needs evidence; if a check was not run, state why.
-     Verification Evidence is the only section replaced on later commits without
-     an amendment; it always names the commit it was produced against. -->
+<!-- Each block is headed by the criterion it verifies — "### AC1", or
+     "### AC1, AC3" when one command settles several — then the exact command as
+     run and the decisive output: exit status, the pass/fail line, and any
+     failure detail. Quote only what a reviewer can judge the criterion by. Full
+     or noisy logs belong in an accessible CI run or uploaded artifact, linked
+     here; artifacts expire, so the verdict and the lines it rests on must stay
+     in the body. "Should work" and "all tests passed" without a command and
+     quotable output are rejected. Every criterion needs a block; if a check was
+     not run, state why. This section is the only one replaced on later commits
+     without an amendment; it always names the commit it was produced against. -->
+
+### AC1
+
+<!-- command and its decisive output -->
