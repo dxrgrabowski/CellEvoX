@@ -31,6 +31,9 @@ DOC_CHOICE = re.compile(
     re.MULTILINE,
 )
 VERIFIED_COMMIT = re.compile(r"^Verified commit:\s*[0-9a-f]{40}\s*$", re.MULTILINE)
+AC_ROW = re.compile(r"^\|\s*(AC\d+)\s*\|", re.MULTILINE)
+AC_NONE = re.compile(r"(^|\s)N/A\s+[—-]")
+SECTION_TITLE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
 class Report:
@@ -172,6 +175,36 @@ def check_body(body: str, report: Report) -> None:
         report.error("'Verification Evidence' must name the full 40-character commit SHA it was produced against: 'Verified commit: <sha>'.")
 
 
+def section(body: str, title: str) -> str:
+    """Return the text under '## <title>', up to the next level-2 heading."""
+    match = re.search(rf"^##\s+{re.escape(title)}\s*$", body, re.MULTILINE)
+    if not match:
+        return ""
+    rest = body[match.end():]
+    end = SECTION_TITLE.search(rest)
+    return rest[: end.start()] if end else rest
+
+
+def check_criteria(body: str, report: Report) -> None:
+    """The criteria are the contract; every one needs a block that verifies it."""
+    criteria = section(body, "Acceptance Criteria")
+    if not criteria:
+        report.error("missing '## Acceptance Criteria' section.")
+        return
+
+    ids = AC_ROW.findall(criteria)
+    duplicates = sorted({ac for ac in ids if ids.count(ac) > 1})
+    if duplicates:
+        report.error(f"duplicate acceptance criterion id(s): {', '.join(duplicates)}.")
+    if not ids and not AC_NONE.search(criteria):
+        report.error("'Acceptance Criteria' has neither an 'AC<n>' row nor 'N/A — <reason>'.")
+
+    evidence = section(body, "Verification Evidence")
+    for ac in ids:
+        if not re.search(rf"^\s*(#+|[-*])\s*.*\b{ac}\b", evidence, re.MULTILINE):
+            report.error(f"no 'Verification Evidence' block for {ac}: head it '### {ac}' with the command and its decisive output.")
+
+
 def check_scope(files: list[str], paths: list[str], forbidden: list[str], report: Report) -> tuple[list[str], list[str]]:
     if not files:
         report.warn("diff is empty: nothing to check against scope.")
@@ -250,6 +283,7 @@ def main() -> int:
 
     paths, forbidden, risk = validate_contract(contract, report)
     check_body(body, report)
+    check_criteria(body, report)
 
     files: list[str] = []
     if args.base and args.head:

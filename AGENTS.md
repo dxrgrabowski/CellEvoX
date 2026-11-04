@@ -66,11 +66,12 @@ the owner decision and Accepted ADR described under Precedence.
 6. **`snapshot-abi`** — Population snapshots have one binary ABI per version.
    Layout, sizes, flags and the reader matrix live in
    [docs/output-contract.md](docs/output-contract.md#binary-snapshot-abi-celxpop1);
-   the rule here is that a writer change needs a version bump plus synchronized
-   updates to every in-repo reader, the tests, and the CSV export. Compatibility
-   with older versions is **not** supported or guaranteed, so old runs need not
-   stay readable and the remaining v1/raw-3D snapshot readers are removable
-   legacy.
+   the rule here is that a change to the serialized layout, encoding, or
+   interpretation needs a version bump plus synchronized updates to every
+   in-repo reader, the tests, and the CSV export. A writer refactor that
+   preserves the serialized contract needs no bump. Compatibility with older
+   versions is **not** supported or guaranteed, so old runs need not stay
+   readable and the remaining v1/raw-3D snapshot readers are removable legacy.
 7. **`output-names`** — Run output names and CSV columns are a contract for the
    Python scripts, `results_parser.py`, and the frontend at the current commit.
    Treat renames as breaking and update every in-repo consumer in the same
@@ -158,32 +159,41 @@ on its own.
   artifacts stay out of the commit.
 - **Acceptance criteria are agreed before the change is finalized.** State the
   observable pass/fail condition, including what must keep working. When the
-  request does not provide one — analysis frequently discovers the requirement —
-  do that discovery first: summarize the findings, propose the criteria, and get
-  the owner's confirmation. If the owner asked for analysis only, stop there;
-  implementation starts on an explicit go-ahead. Never write a criterion after
-  the fact to justify code that already exists, and never invent precision the
-  owner has not agreed to. Criteria are frozen with the rest of the contract at
-  PR open. Editing a criterion is a contract change even when the new wording
-  looks equivalent: append an `Amended` line instead of quietly rewriting it.
+  request does not spell one out, derive it when it follows unambiguously from
+  the request — analysis frequently discovers the requirement — and record the
+  derivation in `Requirement source`. Ask the owner only where the request is
+  genuinely ambiguous, or where the answer chooses new domain semantics. If the
+  owner asked for analysis only, stop there; implementation starts on an explicit
+  go-ahead. Never write a criterion after the fact to justify code that already
+  exists, and never invent precision the owner has not agreed to.
 - **The PR body is the change contract.** Complete every section of
   `.github/pull_request_template.md`, fill the front matter, and strip all HTML
   comments. Declared behavioral changes are intentional; everything the contract
   does not declare is judged against the previous behavior, the tests, and the
   invariants. Reasoning belongs in the PR body or in an ADR — not in a new
   descriptive file under `docs/`.
-- **A review round does not rewrite the contract.** `intent`, the acceptance
-  criteria, `touches_invariants`, `risk`, the behavioral delta, and the scope are
-  frozen once the PR is open. Later commits replace only `Verification Evidence`,
-  which names the full commit SHA it was produced against.
-  If review changes the target behavior rather than fixing it, the contract
-  changed: append an `Amended YYYY-MM-DD: <what and why>` line and leave the
-  original claim visible; the amended contract needs renewed review. Never
-  quietly narrow evidence or scope to fit a later commit.
+- **Intent declares the change; it does not bound the review.** Read the complete
+  diff and the callers, consumers, and formats it affects. A declaration waives
+  neither correctness, nor compatibility, security, nor any Hard Domain
+  Invariant, and `touches_invariants` guides the review without limiting it:
+  verify every invariant the diff could break, listed or not. Flag any gap
+  between the implementation, the contract, and the accepted requirements —
+  including an invariant broken without a `Status: Accepted` ADR in the same
+  diff.
+- **A review round does not rewrite the contract silently.** `intent`, the
+  acceptance criteria, `touches_invariants`, `risk`, the behavioral delta, and the
+  scope are fixed once the PR is open, and the fields always carry their current
+  values — the gate and the reviewer read those, not the history. When review
+  changes the target rather than fixing it, update the field and record under
+  Acceptance Criteria
+  `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because <reason>`;
+  the amended contract needs renewed review. Refreshing `Verification Evidence`
+  for a later commit is not an amendment, and it names the full SHA it was
+  produced against. Never quietly narrow evidence or scope to fit a later commit.
 - **Done means a mergeable PR.** Before opening it, the build is clean, the tests
   for the touched code pass locally, and `Verification Evidence` holds the exact
-  command plus the decisive output (exit status, pass/fail line, failure detail),
-  labelled by its verification reference and acceptance criterion. Full or noisy
+  command plus the decisive output (exit status, pass/fail line, failure detail)
+  under the heading of the acceptance criterion it verifies. Full or noisy
   logs live in an accessible CI run or uploaded artifact linked from that section;
   the verdict and the lines it rests on stay in the body. A check you did not run
   is declared, never implied; a criterion with no evidence is an unverified
