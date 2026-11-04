@@ -8,10 +8,10 @@ and external constraints. Command details live in [docs/runbook.md](docs/runbook
 
 ## Live simulation modes
 
-There are exactly two supported modes, and the long-term model is
+There are exactly two supported modes, built on
 **stochastic base + xyz spatial overlay**:
 
-1. **2D stochastic tau-leap** — density-dependent birth/death/mutation.
+1. **Non-spatial stochastic tau-leap** — density-dependent birth/death/mutation.
 2. **3D capacity** — the same stochastic event model with a spatial layer
    (positions, spatial hash grid, soft-sphere mechanical relaxation).
 
@@ -40,10 +40,10 @@ Never violate these, even if the code appears not to enforce them.
    ids record the cell where each mutation originated (inherited ids survive, a
    new mutation's placeholder is rewritten to the daughter's own id). Ordering of
    daughters is fully deterministic (explicit tie-break chain).
-4. **2D and 3D must stay semantically identical** for the shared event model.
-   They currently carry two copies of the event loop: apply every event/RNG
-   change to both and keep the parity test green, but do not unify or delete
-   either copy ad hoc — see [ADR-0003](docs/adr/0003-dual-storage-engines.md).
+4. **Base and xyz must stay semantically identical** for the shared event model.
+   Both use the same dense population step; apply event/RNG changes there and
+   keep the parity test green. Preserve dense storage and optional event-result
+   collection — see [ADR-0003](docs/adr/0003-dense-population-step.md).
 5. **3D is strictly `stochastic + xyz`.** Spatial state may not change event
    probabilities, selection, or lineage semantics. Mechanical relaxation only
    resolves overlap; it must not create or destroy cells.

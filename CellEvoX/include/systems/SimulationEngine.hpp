@@ -11,6 +11,7 @@
 
 #include "ecs/Cell.hpp"
 #include "ecs/Run.hpp"
+#include "systems/DensePopulation.hpp"
 
 using CellMap = tbb::concurrent_hash_map<uint32_t, Cell>;
 using Graveyard = tbb::concurrent_hash_map<uint32_t, std::pair<uint32_t, double>>;
@@ -69,21 +70,10 @@ class SimulationEngine {
  private:
   void runSteps(uint32_t steps);
   void stochasticStep();
-  void stochasticDenseStep();
   void pruneGraveyard();
   void takeStatSnapshot();
   void takePopulationSnapshot();
-  void materializeCellsFromDense();
-  void materializeGraveyardFromDense();
-  CellMap cells;
-  std::vector<uint32_t> alive_cell_indices_cache;
-  std::vector<Cell> dense_cells;
-  std::vector<uint32_t> dense_alive_cell_ids;
-  std::vector<uint32_t> dense_cell_slot_by_id;
-  std::vector<uint8_t> dense_alive_flags;
-  std::vector<uint32_t> dense_free_slots;
-  std::vector<std::pair<uint32_t, std::pair<uint32_t, double>>> dense_pending_graveyard_entries;
-  bool cells_dirty_from_dense = true;
+  CellEvoX::systems::DensePopulation population;
   // <id, <parent_id, death_time>>
   Graveyard cells_graveyard;
   std::map<uint8_t, MutationType> available_mutation_types;
@@ -99,7 +89,6 @@ class SimulationEngine {
   int last_pruning_tau = -1;
   ecs::TerminationReason termination_reason = ecs::TerminationReason::PlannedHorizon;
   std::shared_ptr<SimulationConfig> config;
-  std::mt19937 rng;
   
   std::ofstream memory_log_file;
   void logMemoryUsage();
