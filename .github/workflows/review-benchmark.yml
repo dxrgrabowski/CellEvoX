@@ -12,7 +12,7 @@ name: Review benchmark
 # a reviewer outage is a data point, not a verdict on the PR.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 permissions:
   contents: read
@@ -27,11 +27,15 @@ concurrency:
 jobs:
   case:
     name: Find the case
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (github.event.action != 'labeled' ||
+       contains(github.event.pull_request.labels.*.name, 'review-benchmark'))
     runs-on: ubuntu-24.04
     outputs:
       found: ${{ steps.case.outputs.found }}
       id: ${{ steps.case.outputs.id }}
+      run: ${{ steps.case.outputs.run }}
     steps:
       - name: Checkout head commit
         uses: actions/checkout@v4
@@ -42,15 +46,22 @@ jobs:
         id: case
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          ON_DEMAND: ${{ contains(github.event.pull_request.labels.*.name, 'review-benchmark') }}
         run: |
           set -euo pipefail
           id="$(python3 tools/review_bench.py case --pr "$PR_NUMBER" || true)"
           if [ -n "$id" ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
             echo "id=$id" >> "$GITHUB_OUTPUT"
             echo "Case: $id"
+          elif [ "${ON_DEMAND:-false}" = "true" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No case for PR #$PR_NUMBER - running the reviewers for manual comparison; scoring is skipped."
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No case in bench/cases for PR #$PR_NUMBER - the benchmark is skipped."
           fi
 
@@ -58,7 +69,7 @@ jobs:
     name: Review (ours)
     needs: case
     if: >-
-      needs.case.outputs.found == 'true' &&
+      needs.case.outputs.run == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository
     continue-on-error: true
     runs-on: ubuntu-24.04
@@ -165,7 +176,7 @@ jobs:
     name: Review (Robin)
     needs: case
     if: >-
-      needs.case.outputs.found == 'true' &&
+      needs.case.outputs.run == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository
     continue-on-error: true
     runs-on: ubuntu-latest
@@ -187,7 +198,7 @@ jobs:
     name: Review (PR-Agent)
     needs: case
     if: >-
-      needs.case.outputs.found == 'true' &&
+      needs.case.outputs.run == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository
     continue-on-error: true
     runs-on: ubuntu-latest
