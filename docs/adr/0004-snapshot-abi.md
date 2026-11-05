@@ -22,9 +22,10 @@ editing one side cannot silently diverge from the other. That fixture does not
 exist yet (tracked as the P1 "one executable contract" item); until it lands,
 the contract is only as strong as the duplicated readers.
 ## Consequences
-- A writer change requires a version bump and synchronized updates across C++,
-  `snapshot_io.py`, tests, and the CSV export that the web backend reads. Old
-  runs do **not** have to stay readable.
+- A change to the serialized layout, encoding, or interpretation requires a
+  version bump and synchronized updates across C++, `snapshot_io.py`, tests, and
+  the CSV export that the web backend reads. A writer refactor that emits the
+  same bytes needs no bump. Old runs do **not** have to stay readable.
 - The C++ v1/raw-3D fallbacks may be deleted without an ADR, since no
   compatibility guarantee backs them.
 - Cadence and terminal-state rules are part of the same output contract; this
