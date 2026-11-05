@@ -155,8 +155,9 @@ on its own.
 - **`must_not_change` is the check, `scope.paths` is the map.** Name the globs the
   change must leave alone before you start, and verify the diff against them: a
   touched path there means stop and ask the owner. `scope.paths` is filled from the
-  finished diff, so it describes the change and can never be violated — never
-  present it as a boundary the PR passed. Stage files explicitly (`git add <path>`,
+  finished diff, so it describes the change rather than constraining it — never
+  present it as a boundary the PR passed. Adding a file the outcome genuinely
+  needs is an ordinary update to the map. Stage files explicitly (`git add <path>`,
   never `git add .`), so worktree directories, build output, and benchmark or test
   artifacts stay out of the commit.
 - **Acceptance criteria are agreed before the change is finalized.** State the
@@ -178,22 +179,29 @@ on its own.
   diff and the callers, consumers, and formats it affects. A declaration waives
   neither correctness, nor compatibility, security, nor any Hard Domain
   Invariant, and `touches_invariants` guides the review without limiting it:
-  verify every invariant the diff could break, listed or not. Flag any gap
+  verify every invariant the diff could break, listed or not. `risk` is the
+  author's estimate: the reviewer assesses risk independently and reads the whole
+  diff, affected consumers, and applicable invariants whatever the label says.
+  Higher risk raises the evidence bar — preserved-behavior criteria, owner
+  sign-off, invariant/ADR analysis — not the minimum scope of the review. Flag any gap
   between the implementation, the contract, and the accepted requirements —
   including an invariant broken without a `Status: Accepted` ADR in the same
   diff.
-- **A review round does not rewrite the contract silently.** `intent`, the
-  acceptance criteria, `touches_invariants`, `risk`, the behavioral delta, and the
-  scope are fixed once the PR is open, and the fields always carry their current
-  values — the gate and the reviewer read those, not the history. When review
-  changes the target rather than fixing it, update the field and record under
-  Acceptance Criteria
+- **A review round does not rewrite the target silently.** The fields always
+  carry their current values — the gate and the reviewer read those, not the
+  history. Changing the intended behavior, an acceptance criterion, or an agreed
+  constraint is an amendment: update the field and record under Acceptance
+  Criteria
   `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because <reason>`;
-  the amended contract needs renewed review. Refreshing `Verification` for a
-  later commit is not an amendment, and it names the full SHA it was produced
-  against. Never quietly narrow evidence or scope to fit a later commit.
-- **Done means a mergeable PR.** Before opening it, the build is clean and the
-  tests for the touched code pass — locally, or in CI with the run linked — and
+  the amended contract needs renewed review. Updating the file map, the
+  implementation description, the risk estimate, or the evidence is an ordinary
+  PR update — no amendment, though the map must still match the finished diff and
+  evidence must name the full SHA it was produced against. Never quietly narrow
+  either to fit a later commit.
+- **Done means a mergeable PR.** Opening a draft is how a change reaches CI: a
+  draft PR may open before the checks have run. The requirement binds when the
+  task is done and the PR is ready for review — by then the build is clean and the
+  tests for the touched code pass, locally or in CI with the run linked, and
   `Verification` holds the exact command
   plus the decisive output (exit status, pass/fail line, failure detail) under the
   heading of the acceptance criterion it verifies. Full or noisy logs live in an
