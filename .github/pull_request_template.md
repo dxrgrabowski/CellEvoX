@@ -4,9 +4,9 @@
 # scope.paths. Keep the values current — the gate reads them, not their history.
 intent: ""                # 1 sentence: the outcome this PR delivers
 touches_invariants: []    # AGENTS.md invariant slugs this diff could break; the reviewer checks every applicable one, listed or not
-risk: ""                  # low | medium | high — sets the review depth: low = delta + check; medium = also preserved-behavior criteria and consumers; high = also owner sign-off and invariant/ADR impact
+risk: ""                  # low | medium | high — the author's estimate, not the reviewer's minimum: every review reads the whole diff, affected consumers, and applicable invariants. Higher risk raises the evidence bar and may add owner sign-off
 scope:
-  paths: []               # repo-relative globs: the map of this diff, and the budget for later commits of the same PR. '*' stops at '/', '**' crosses it; renames count on both paths
+  paths: []               # repo-relative globs: the map of this diff. '*' stops at '/', '**' crosses it; renames count on both paths. Refining the map is an ordinary PR update
   must_not_change: []     # globs the diff must never touch; empty means none
 ---
 
@@ -28,9 +28,11 @@ Behavioral delta:
      `N/A — <reason>` only when no behavioral criterion applies: a docs or comment
      change qualifies, CI that changes builds, checks, or deployment does not.
 
-     Contract amendment after the PR opened: update the field, and add under this
-     section `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because
-     <reason>`. Refreshing Verification alone is not an amendment. -->
+     Amendment after the PR opened: changing the intended behavior, a criterion,
+     or an agreed constraint needs `Amended YYYY-MM-DD: <field> changed from
+     <previous> to <new> because <reason>` under this section. Updating the file
+     map, the implementation description, the risk estimate, or the evidence is an
+     ordinary PR update. -->
 
 Requirement source:
 
@@ -40,7 +42,9 @@ Requirement source:
 
 ## Risk & Impact
 
-<!-- Answer the lines that apply, delete the rest. `none` is an answer only when true. -->
+<!-- Answer the lines that apply, delete the rest. `none` is an answer only when
+     true. `Docs / ADR impact:` must start with `none`, `updated:`, or `override:`
+     and name what changed. -->
 
 Docs / ADR impact:
 
@@ -54,8 +58,8 @@ Docs / ADR impact:
      "### AC1, AC3" when one command settles several. Give the exact command, the
      exit status, and the decisive lines rather than the full log; long output
      belongs in a CI run or artifact linked here. A criterion with no block fails
-     the gate, and a check you did not run is declared, never implied. This section
-     is the only one that may be replaced on later commits without an amendment. -->
+     the gate, and a check you did not run is declared, never implied. Replacing
+     this section on a later commit is an ordinary update, not an amendment. -->
 
 Verified commit:
 
