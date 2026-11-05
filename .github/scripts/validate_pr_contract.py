@@ -161,7 +161,7 @@ def one_line(body: str, label: str) -> list[str]:
     return [value.strip() for value in re.findall(pattern, body, re.MULTILINE)]
 
 
-def check_body(body: str, report: Report) -> None:
+def check_body(body: str, report: Report, root: str) -> None:
     """Reject template scaffolding instead of letting a reviewer read it as intent."""
     if "<!--" in body:
         report.error("body still contains an HTML comment: delete the template scaffolding rather than leaving it to be interpreted.")
@@ -182,8 +182,17 @@ def check_body(body: str, report: Report) -> None:
         elif prefix != "none" and not answer[len(prefix):].strip(" :-"):
             report.error(f"'Docs / ADR impact: {prefix}' names nothing: add the paths or the ADR it refers to.")
 
-    if not VERIFIED_COMMIT.search(body):
+    verified = VERIFIED_COMMIT.search(body)
+    if not verified:
         report.error("'Verification' must name the full 40-character commit SHA it was produced against: 'Verified commit: <sha>'.")
+    else:
+        sha = re.search(r"[0-9a-f]{40}", verified.group(0)).group(0)
+        exists = subprocess.run(
+            ["git", "-C", root, "cat-file", "-e", f"{sha}^{{commit}}"],
+            capture_output=True,
+        )
+        if exists.returncode != 0:
+            report.error(f"'Verified commit: {sha}' is not a commit in this repository: name the commit the evidence was produced against.")
 
 
 def section(body: str, title: str) -> str:
@@ -225,7 +234,7 @@ def check_criteria(body: str, report: Report) -> None:
             report.error(f"no 'Verification' block for {ac}: head it '### {ac}' with the command and its decisive output.")
             continue
         # A block is proof only if it says more than the 'Not checked' disclaimer.
-        has_output = any(re.sub(r"^Not checked:.*$", "", content, flags=re.MULTILINE).strip(" -") for content in headed)
+        has_output = any(re.sub(r"^Not checked:.*$", "", content, flags=re.MULTILINE).strip() for content in headed)
         if not has_output:
             report.error(f"the 'Verification' block for {ac} holds no command or output: a heading alone verifies nothing.")
 
@@ -307,7 +316,7 @@ def main() -> int:
         return 1
 
     paths, forbidden, risk = validate_contract(contract, report)
-    check_body(body, report)
+    check_body(body, report, args.root)
     check_criteria(body, report)
 
     files: list[str] = []
