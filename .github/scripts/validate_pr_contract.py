@@ -24,15 +24,12 @@ RISK_LEVELS = ("low", "medium", "high")
 # Paths where a "low" risk declaration is almost always a mistake. Warning only.
 HIGH_BLAST_PREFIXES = ("CellEvoX/src/", "CellEvoX/include/", "web/backend/")
 INVARIANT_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-# Visible template markers that must be replaced by the author, not interpreted.
-PLACEHOLDERS = ("[doc/ADR path]", "[reason]")
-DOC_CHOICE = re.compile(
-    r"^\s*-\s*\[([ xX])\]\s*`?(No impact|Updated in this PR|Intentional Override)`?",
-    re.MULTILINE,
-)
+# One-line answers the reviewer reads as contract fields, not prose.
+ONE_LINE_FIELDS = ("Behavioral delta:", "Requirement source:", "Docs / ADR impact:", "Not checked:")
+DOC_VALUES = ("none", "updated:", "override:")
 VERIFIED_COMMIT = re.compile(r"^Verified commit:\s*[0-9a-f]{40}\s*$", re.MULTILINE)
-AC_ROW = re.compile(r"^\|\s*(AC\d+)\s*\|", re.MULTILINE)
-AC_NONE = re.compile(r"(^|\s)N/A\s+[—-]")
+AC_ROW = re.compile(r"^\|\s*(AC\d+)\s*\|(.*)\|\s*$", re.MULTILINE)
+AC_NONE = re.compile(r"(^|\s)N/A\s+[—-]\s*\S")
 SECTION_TITLE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
@@ -149,7 +146,7 @@ def validate_contract(contract: Any, report: Report) -> tuple[list[str], list[st
                 report.error(f"scope glob '{pattern}' must be repo-relative (no leading '/' or '..').")
 
     if "verification" in contract:
-        report.warn("'verification' moved out of the front matter: put commands and output in the 'Verification Evidence' section.")
+        report.warn("'verification' moved out of the front matter: put commands and output in the 'Verification' section.")
 
     return paths, forbidden, risk if isinstance(risk, str) else None
 
@@ -158,21 +155,35 @@ def patterns_of(values: list[str]) -> list[str]:
     return [value for value in values if isinstance(value, str)]
 
 
+def one_line(body: str, label: str) -> list[str]:
+    """Every 'Label: value' line in the body, stripped, in document order."""
+    pattern = rf"^{re.escape(label)}[ \t]*(.*)$"
+    return [value.strip() for value in re.findall(pattern, body, re.MULTILINE)]
+
+
 def check_body(body: str, report: Report) -> None:
     """Reject template scaffolding instead of letting a reviewer read it as intent."""
     if "<!--" in body:
         report.error("body still contains an HTML comment: delete the template scaffolding rather than leaving it to be interpreted.")
-    for marker in PLACEHOLDERS:
-        if marker in body:
-            report.error(f"body still contains the template placeholder '{marker}'.")
 
-    ticked = [match.group(2) for match in DOC_CHOICE.finditer(body) if match.group(1).lower() == "x"]
-    if len(ticked) != 1:
-        found = ", ".join(ticked) if ticked else "none"
-        report.error(f"'Docs & ADR Alignment' must tick exactly one choice (found: {found}).")
+    for label in ONE_LINE_FIELDS:
+        values = one_line(body, label)
+        if len(values) != 1:
+            report.error(f"'{label}' must appear once as a filled-in line (found {len(values)}).")
+        elif not values[0]:
+            report.error(f"'{label}' is empty: answer it, or write the answer that makes it true.")
+
+    answers = one_line(body, "Docs / ADR impact:")
+    if len(answers) == 1:
+        answer = answers[0]
+        prefix = next((value for value in DOC_VALUES if answer.lower().startswith(value)), None)
+        if prefix is None:
+            report.error(f"'Docs / ADR impact:' must start with one of {', '.join(DOC_VALUES)} (got '{answer}').")
+        elif prefix != "none" and not answer[len(prefix):].strip(" :-"):
+            report.error(f"'Docs / ADR impact: {prefix}' names nothing: add the paths or the ADR it refers to.")
 
     if not VERIFIED_COMMIT.search(body):
-        report.error("'Verification Evidence' must name the full 40-character commit SHA it was produced against: 'Verified commit: <sha>'.")
+        report.error("'Verification' must name the full 40-character commit SHA it was produced against: 'Verified commit: <sha>'.")
 
 
 def section(body: str, title: str) -> str:
@@ -192,17 +203,31 @@ def check_criteria(body: str, report: Report) -> None:
         report.error("missing '## Acceptance Criteria' section.")
         return
 
-    ids = AC_ROW.findall(criteria)
+    rows = AC_ROW.findall(criteria)
+    ids = [ac for ac, _ in rows]
     duplicates = sorted({ac for ac in ids if ids.count(ac) > 1})
     if duplicates:
         report.error(f"duplicate acceptance criterion id(s): {', '.join(duplicates)}.")
+    for ac, condition in rows:
+        if not condition.strip(" -|"):
+            report.error(f"{ac} has no observable condition: state what must be observably true, or drop the row.")
     if not ids and not AC_NONE.search(criteria):
         report.error("'Acceptance Criteria' has neither an 'AC<n>' row nor 'N/A — <reason>'.")
 
-    evidence = section(body, "Verification Evidence")
+    verification = section(body, "Verification")
+    if not verification:
+        report.error("missing '## Verification' section.")
+        return
+    blocks = re.findall(r"^#{3,}\s+(.+?)\s*$\n?(.*?)(?=^#{3,}\s|\Z)", verification, re.MULTILINE | re.DOTALL)
     for ac in ids:
-        if not re.search(rf"^\s*(#+|[-*])\s*.*\b{ac}\b", evidence, re.MULTILINE):
-            report.error(f"no 'Verification Evidence' block for {ac}: head it '### {ac}' with the command and its decisive output.")
+        headed = [content for heading, content in blocks if re.search(rf"\b{ac}\b", heading)]
+        if not headed:
+            report.error(f"no 'Verification' block for {ac}: head it '### {ac}' with the command and its decisive output.")
+            continue
+        # A block is proof only if it says more than the 'Not checked' disclaimer.
+        has_output = any(re.sub(r"^Not checked:.*$", "", content, flags=re.MULTILINE).strip(" -") for content in headed)
+        if not has_output:
+            report.error(f"the 'Verification' block for {ac} holds no command or output: a heading alone verifies nothing.")
 
 
 def check_scope(files: list[str], paths: list[str], forbidden: list[str], report: Report) -> tuple[list[str], list[str]]:

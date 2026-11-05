@@ -1,99 +1,66 @@
 ---
-# Change contract read by the human and AI reviewer. Required: intent, risk and
-# scope.paths. An empty list means "none" for touches_invariants and must_not_change.
-# Keep these values current: the gate checks them, not their history. A contract
-# change updates the field and records the old value under "Amended" in the body.
-intent: ""                # 1 sentence: why this change exists
-touches_invariants: []    # Invariants (AGENTS.md) this diff could break — the reviewer verifies they still hold, and checks the ones omitted here. Changing one deliberately also needs owner sign-off and an Accepted ADR
-risk: ""                  # low | medium | high — justify below when not low
+# Machine-read contract: the human and AI reviewer parse these fields and the
+# `PR change contract` gate checks them against the diff. Required: intent, risk,
+# scope.paths. Keep the values current — the gate reads them, not their history.
+intent: ""                # 1 sentence: the outcome this PR delivers
+touches_invariants: []    # AGENTS.md invariant slugs this diff could break; the reviewer checks every applicable one, listed or not
+risk: ""                  # low | medium | high — sets the review depth: low = delta + check; medium = also preserved-behavior criteria and consumers; high = also owner sign-off and invariant/ADR impact
 scope:
-  paths: []               # Repo-relative globs the diff touches — a map of the change, not a boundary it passed. '*' stops at '/', '**' crosses it; renames are checked on both old and new paths
-  must_not_change: []     # Globs the diff must NOT touch; empty means none (Reviewer: this is the check — flag any touch here)
+  paths: []               # repo-relative globs: the map of this diff, and the budget for later commits of the same PR. '*' stops at '/', '**' crosses it; renames count on both paths
+  must_not_change: []     # globs the diff must never touch; empty means none
 ---
 
-<!--
-DELETE THIS COMMENT, AND EVERY OTHER HTML COMMENT IN THIS BODY, BEFORE OPENING THE PR.
-An unresolved placeholder is an incomplete contract: the contract gate rejects
-leftover HTML comments and template markers instead of reading them as intent.
+<!-- Fill this in, then delete every HTML comment and template marker: leftovers
+     fail the gate. The rules behind these sections are in AGENTS.md. -->
 
-1. `intent`, the acceptance criteria, and "Context & Behavioral Delta" define the
-   target state. Treat explicitly declared behavioral changes as intentional;
-   previous behavior remains the baseline for everything the contract does not
-   change.
-2. Intent describes the change; it does not bound the review. Read the complete
-   diff and the callers, consumers, and formats it affects. Declared intent and
-   scope do not waive correctness, compatibility, security, or any Hard Domain
-   Invariant. Flag discrepancies between the implementation, the contract, and the
-   accepted requirements — including an invariant broken without an ADR in
-   `docs/adr/` with `Status: Accepted` in this diff.
-3. One coherent outcome per PR. Implementation, tests, docs, and caller updates
-   for that outcome belong together; unrelated work is a separate PR.
--->
+## Behavioral Delta
 
-## Context & Behavioral Delta
+<!-- Observable before → after: values, names, formats, exit codes. A
+     non-behavioral PR says "no runtime change: <what does change>". -->
 
-- **Why:** <!-- the constraint or failure that forced this choice; do not restate `intent` -->
-- **Previous Behavior:** <!-- observable behavior before this PR -->
-- **New Behavior:** <!-- observable behavior after; name specific mechanisms and values -->
-- **Risk Justification:** <!-- required when `risk` is medium/high: what makes it so, what catches regressions (`N/A` if low) -->
-- **Compatibility / Migration / Recovery:** <!-- `None`, or affected consumers outside this diff, required merge/deploy order, migration steps, and recovery limitations. Required for schema, persistent-state, API, and config changes -->
-- **Docs & ADR Alignment:** <!-- tick exactly one; the contract gate rejects zero or multiple ticks -->
-  - [ ] `No impact` — aligns with existing architecture and ADRs.
-  - [ ] `Updated in this PR` — docs or ADRs corrected in this diff (list paths); plain documentation drift needs no ADR.
-  - [ ] `Intentional Override` — deliberately deviates from `[doc/ADR path]` because `[reason]`. Breaking a Hard Domain Invariant additionally requires an ADR in `docs/adr/` with `Status: Accepted` in this diff.
+Behavioral delta:
 
 ## Acceptance Criteria
 
-<!-- Requirement source: issue #N, ADR-XXXX, the owner request, a requirement
-     discovered in session YYYY-MM-DD, or criteria derived from the request when
-     they follow from it unambiguously. Ask the owner only about a real
-     ambiguity, or when the answer chooses new domain semantics.
+<!-- One row per observable pass/fail condition; one may suffice. Phrase it so a
+     reviewer can repeat the check. When the diff touches shared code, outputs, or
+     formats, include a row for behavior that must stay unchanged.
+     `N/A — <reason>` only when no behavioral criterion applies: a docs or comment
+     change qualifies, CI that changes builds, checks, or deployment does not.
 
-     - State observable behavior, not implementation steps. A criterion the
-       reviewer cannot fail is not a criterion.
-     - Use as many criteria as the observable behavior requires; one may
-       suffice. When the diff touches shared code, outputs, or formats, include
-       at least one criterion for behavior that must stay unchanged.
-     - Bug fix: the failing case before and the passing case after. Perf: the
-       named benchmark and its threshold.
-     - If the list grows, check whether the PR contains separable outcomes.
-     - `N/A — <reason>` only when no behavioral criterion applies. Plain docs
-       and comment changes qualify; CI changes that affect builds, checks, or
-       deployment do not.
+     Contract amendment after the PR opened: update the field, and add under this
+     section `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because
+     <reason>`. Refreshing Verification alone is not an amendment. -->
 
-     Keep the criteria and the front matter current: the gate and the reviewer
-     read these values, not their history. An amendment updates the field and
-     appends here `Amended YYYY-MM-DD: <field> changed from <previous> to <new>
-     because <reason>`, and needs renewed review. Refreshing Verification
-     Evidence alone is not an amendment. -->
-
-Requirement source: <!-- issue/ADR/owner request, or "derived from the request: <sentence>" -->
+Requirement source:
 
 | ID | Observable condition |
 |---|---|
-| AC1 | <!-- behavior after this PR --> |
-| AC2 | <!-- behavior that must remain stable -->
+| AC1 |  |
 
-## Scope Boundaries
+## Risk & Impact
 
-- **In Scope:** <!-- the primary concern; plus adjacent fixes the Owner approved during the session, with the rationale. Nothing under `must_not_change`. -->
-- **Deliberately Untouched / Known Gaps:** <!-- left alone or deferred, and why; link the follow-up issue/PR, or `None` -->
+<!-- Answer the lines that apply, delete the rest. `none` is an answer only when true. -->
 
-## Verification Evidence
+Docs / ADR impact:
 
-Verified commit: <full SHA>
+- **Risk justification:** required when risk is not low: what makes it so, and what catches a regression
+- **Compatibility / migration / recovery:** only when a consumer, output, format, persisted artifact, or config changes
+- **Out of scope / deferred:** adjacent problems this PR leaves alone, with a follow-up link; or none
 
-<!-- Each block is headed by the criterion it verifies — "### AC1", or
-     "### AC1, AC3" when one command settles several — then the exact command as
-     run and the decisive output: exit status, the pass/fail line, and any
-     failure detail. Quote only what a reviewer can judge the criterion by. Full
-     or noisy logs belong in an accessible CI run or uploaded artifact, linked
-     here; artifacts expire, so the verdict and the lines it rests on must stay
-     in the body. "Should work" and "all tests passed" without a command and
-     quotable output are rejected. Every criterion needs a block; if a check was
-     not run, state why. This section is the only one replaced on later commits
-     without an amendment; it always names the commit it was produced against. -->
+## Verification
+
+<!-- One block per criterion, headed by the criterion it verifies — "### AC1", or
+     "### AC1, AC3" when one command settles several. Give the exact command, the
+     exit status, and the decisive lines rather than the full log; long output
+     belongs in a CI run or artifact linked here. A criterion with no block fails
+     the gate, and a check you did not run is declared, never implied. This section
+     is the only one that may be replaced on later commits without an amendment. -->
+
+Verified commit:
 
 ### AC1
 
-<!-- command and its decisive output -->
+<!-- the command and its decisive lines -->
+
+Not checked: <!-- checks you did not run, and why; or "Nothing" -->
