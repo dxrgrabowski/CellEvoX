@@ -6,6 +6,17 @@ not feature count. Code is the single source of truth for *what* and *how*. This
 file records only what cannot be reverse-engineered: domain rules, guardrails,
 and external constraints. Command details live in [docs/runbook.md](docs/runbook.md).
 
+## Precedence
+
+Invariants > code > descriptive docs. For descriptive documentation, code wins —
+fix the doc in the same change. For Hard Domain Invariants and Negative Space,
+the invariant wins by default: never weaken it to match broken code. Changing an
+invariant, or superseding an ADR, requires an explicit domain-owner decision and
+a `Status: Accepted` ADR in the same PR; the old ADR is marked
+`Superseded by ADR-XXXX`, never deleted. An agent may argue that an invariant or
+ADR is wrong — the argument goes in the PR body or the new ADR, and the change
+waits for the owner.
+
 ## Live simulation modes
 
 There are exactly two supported modes, built on
@@ -23,46 +34,53 @@ decision.
 
 ## Hard Domain Invariants
 
-Never violate these, even if the code appears not to enforce them.
+Never violate these, even if the code appears not to enforce them. The bold slug
+in each entry is the identifier `touches_invariants` accepts in the PR body.
+Listing an invariant means the reviewer must verify the diff still preserves it;
+it does not authorize a redefinition. Changing an invariant deliberately needs
+the owner decision and Accepted ADR described under Precedence.
 
-1. **`env_capacity` (`Nc`) is a soft baseline, never a ceiling.** It only scales
-   density-dependent mortality (`N/Nc`). A lineage with strong driver mutations
-   can exceed `Nc` many-fold; there is no upper bound. Never clamp `N` to `Nc`,
-   never validate `N <= Nc`, and never size buffers or reserve memory assuming
-   `N` stays near `Nc`.
-2. **Reproducibility is thread-count-independent.** Randomness comes from a
-   counter-based hash keyed by `(seed, step, cell_id, stream)`, not from a shared
-   sequential engine. Any change that makes results depend on TBB scheduling,
-   iteration order, or thread count is a correctness bug. Stream numbering is
-   part of the contract.
-3. **Birth replaces the parent.** A birth event kills the parent and installs
+1. **`env-capacity`** — `env_capacity` (`Nc`) is a soft baseline, never a
+   ceiling. It only scales density-dependent mortality (`N/Nc`). A lineage with
+   strong driver mutations can exceed `Nc` many-fold; there is no upper bound.
+   Never clamp `N` to `Nc`, never validate `N <= Nc`, and never size buffers or
+   reserve memory assuming `N` stays near `Nc`.
+2. **`determinism`** — Reproducibility is thread-count-independent. Randomness
+   comes from a counter-based hash keyed by `(seed, step, cell_id, stream)`, not
+   from a shared sequential engine. Any change that makes results depend on TBB
+   scheduling, iteration order, or thread count is a correctness bug. Stream
+   numbering is part of the contract.
+3. **`birth-replaces-parent`** — A birth event kills the parent and installs
    exactly two daughters. `Cell::parent_id` records the parent; mutation payload
    ids record the cell where each mutation originated (inherited ids survive, a
    new mutation's placeholder is rewritten to the daughter's own id). Ordering of
    daughters is fully deterministic (explicit tie-break chain).
-4. **Base and xyz must stay semantically identical** for the shared event model.
-   Both use the same dense population step; apply event/RNG changes there and
-   keep the parity test green. Preserve dense storage and optional event-result
-   collection — see [ADR-0003](docs/adr/0003-dense-population-step.md).
-5. **3D is strictly `stochastic + xyz`.** Spatial state may not change event
-   probabilities, selection, or lineage semantics. Mechanical relaxation only
-   resolves overlap; it must not create or destroy cells.
-6. **Population snapshots have one binary ABI per version.** Layout, sizes,
-   flags and the reader matrix live in
+4. **`mode-parity`** — Base and xyz must stay semantically identical for the
+   shared event model. Both use the same dense population step; apply event/RNG
+   changes there and keep the parity test green. Preserve dense storage and
+   optional event-result collection — see
+   [ADR-0003](docs/adr/0003-dense-population-step.md).
+5. **`3d-xyz-overlay`** — 3D is strictly `stochastic + xyz`. Spatial state may
+   not change event probabilities, selection, or lineage semantics. Mechanical
+   relaxation only resolves overlap; it must not create or destroy cells.
+6. **`snapshot-abi`** — Population snapshots have one binary ABI per version.
+   Layout, sizes, flags and the reader matrix live in
    [docs/output-contract.md](docs/output-contract.md#binary-snapshot-abi-celxpop1);
-   the rule here is that a writer change needs a version bump plus synchronized
-   updates to every in-repo reader, the tests, and the CSV export. Compatibility
-   with older versions is **not** supported or guaranteed, so old runs need not
-   stay readable and the remaining v1/raw-3D readers are removable legacy.
-7. **Run output names and CSV columns are a contract** for the Python scripts,
-   `results_parser.py`, and the frontend at the current commit. Treat renames as
-   breaking and update every in-repo consumer in the same change; old run
-   directories do not have to stay readable.
-8. **Snapshot cadence uses integer generation indices**, taken as
-   `floor(tau + epsilon)`; integer indexing exists to avoid float-modulo drift.
-   There is no forced terminal write, so the last snapshot can predate the end of
-   the run and terminal state comes from `run_metadata.json` and the phylogeny.
-   Details in
+   the rule here is that a change to the serialized layout, encoding, or
+   interpretation needs a version bump plus synchronized updates to every
+   in-repo reader, the tests, and the CSV export. A writer refactor that
+   emits the same bytes needs no bump. Compatibility with older
+   versions is **not** supported or guaranteed, so old runs need not stay
+   readable and the remaining v1/raw-3D snapshot readers are removable legacy.
+7. **`output-names`** — Run output names and CSV columns are a contract for the
+   Python scripts, `results_parser.py`, and the frontend at the current commit.
+   Treat renames as breaking and update every in-repo consumer in the same
+   change; old run directories do not have to stay readable.
+8. **`snapshot-cadence`** — Snapshot cadence uses integer generation indices,
+   taken as `floor(tau + epsilon)`; integer indexing exists to avoid float-modulo
+   drift. There is no forced terminal write, so the last snapshot can predate the
+   end of the run and terminal state comes from `run_metadata.json` and the
+   phylogeny. Details in
    [docs/output-contract.md](docs/output-contract.md#snapshot-cadence-and-terminal-state).
 
 ## Negative Space — Do Not Change Without an ADR
@@ -105,11 +123,95 @@ constants, stale Qt/Boost references in CI — belong in issues.
 - Add *why* to `docs/adr/` when you make a non-obvious decision.
 - Agents may propose an ADR. If a task forces a non-obvious trade-off (a new
   dependency, a format change, a concurrency model), create
-  `docs/adr/NNNN-slug.md` from the template in `docs/adr/README.md` with
-  `Status: Proposed`, link it from the change description, and let the domain
-  owner accept or reject it. Do not silently pick a design that deserves a
-  record.
-- For descriptive documentation, code wins: fix the doc in the same change. For
-  approved domain invariants (above), the invariant wins: do not weaken it to
-  match the code — report the discrepancy, then fix the code or request a domain
-  decision.
+  `docs/adr/NNNN-slug.md` from the template in `docs/adr/README.md`. File it as
+  `Status: Proposed` and let the domain owner accept or reject it — unless the
+  owner explicitly authorized that decision during the working session, in which
+  case file it as `Status: Accepted` with `Evidence: owner decision, YYYY-MM-DD`.
+  Do not silently pick a design that deserves a record, and do not open an ADR
+  for a reversible local choice: an ADR exists to constrain future work, so state
+  what it forbids.
+
+## Change Workflow
+
+One PR carries one coherent change. A reviewer holds the whole PR as a single
+context, so unrelated work bundled together hides the risky part behind the
+noisy one and makes a revert take everything down with it. Each PR states one
+intent, touches only the files that intent needs, and can be merged or rejected
+on its own.
+
+- **One coherent outcome per PR.** Implementation, tests, docs, and caller
+  updates for that outcome belong together; two unrelated outcomes are two PRs —
+  a title joined by "and" is a hint, not a rule. A shared file (workflow, config,
+  template) belongs to the PR whose change is the reason it changes.
+- **Opportunistic finds need owner approval.** Do not bundle unrequested
+  refactoring or "while I'm here" cleanups. A repair the outcome cannot be
+  completed without — a caller left stale by an interface change, a test helper
+  that no longer compiles — is part of that outcome: make the minimal fix and
+  declare it in `scope`. Everything else found in adjacent code, a critical bug
+  included, is reported for the owner to place in this PR or a follow-up, and
+  listed in the out-of-scope notes when it stays out. Independent cleanups,
+  product extensions, and new domain semantics are decisions rather than
+  repairs, and never ride along.
+- **`must_not_change` is the check, `scope.paths` is the map.** Name the globs the
+  change must leave alone before you start, and verify the diff against them: a
+  touched path there means stop and ask the owner. `scope.paths` is filled from the
+  finished diff, so it describes the change rather than constraining it — never
+  present it as a boundary the PR passed. Adding a file the outcome genuinely
+  needs is an ordinary update to the map. Stage files explicitly (`git add <path>`,
+  never `git add .`), so worktree directories, build output, and benchmark or test
+  artifacts stay out of the commit.
+- **Acceptance criteria are agreed before the change is finalized.** State the
+  observable pass/fail condition, including what must keep working. When the
+  request does not spell one out, derive it when it follows unambiguously from
+  the request — analysis frequently discovers the requirement — and record the
+  derivation in `Requirement source`. Ask the owner only where the request is
+  genuinely ambiguous, or where the answer chooses new domain semantics. If the
+  owner asked for analysis only, stop there; implementation starts on an explicit
+  go-ahead. Never write a criterion after the fact to justify code that already
+  exists, and never invent precision the owner has not agreed to.
+- **The PR body is the change contract.** Complete every section of
+  `.github/pull_request_template.md`, fill the front matter, and strip all HTML
+  comments. Declared behavioral changes are intentional; everything the contract
+  does not declare is judged against the previous behavior, the tests, and the
+  invariants. Reasoning belongs in the PR body or in an ADR — not in a new
+  descriptive file under `docs/`.
+- **Intent declares the change; it does not bound the review.** Read the complete
+  diff and the callers, consumers, and formats it affects. A declaration waives
+  neither correctness, nor compatibility, security, nor any Hard Domain
+  Invariant, and `touches_invariants` guides the review without limiting it:
+  verify every invariant the diff could break, listed or not. `risk` is the
+  author's estimate: the reviewer assesses risk independently and reads the whole
+  diff, affected consumers, and applicable invariants whatever the label says.
+  Higher risk raises the evidence bar — preserved-behavior criteria, owner
+  sign-off, invariant/ADR analysis — not the minimum scope of the review. Flag any gap
+  between the implementation, the contract, and the accepted requirements —
+  including an invariant broken without a `Status: Accepted` ADR in the same
+  diff.
+- **A review round does not rewrite the target silently.** The fields always
+  carry their current values — the gate and the reviewer read those, not the
+  history. Changing the intended behavior, an acceptance criterion, or an agreed
+  constraint is an amendment: update the field and record under Acceptance
+  Criteria
+  `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because <reason>`;
+  the amended contract needs renewed review. Updating the file map, the
+  implementation description, the risk estimate, or the evidence is an ordinary
+  PR update — no amendment, though the map must still match the finished diff and
+  evidence must name the full SHA it was produced against. Never quietly narrow
+  either to fit a later commit.
+- **Done means a mergeable PR.** Opening a draft is how a change reaches CI: a
+  draft PR may open before the checks have run. The requirement binds when the
+  task is done and the PR is ready for review — by then the build is clean and the
+  tests for the touched code pass, locally or in CI with the run linked, and
+  `Verification` holds the exact command
+  plus the decisive output (exit status, pass/fail line, failure detail) under the
+  heading of the acceptance criterion it verifies. Full or noisy logs live in an
+  accessible CI run or uploaded artifact linked from that section; the verdict and
+  the lines it rests on stay in the body. A check you did not run is declared in
+  `Not checked`, never implied; a criterion with no evidence is an unverified
+  claim, not a pass.
+- **A regression is fixed, not absorbed.** Benchmark thresholds are engineering
+  defaults, not invariants: correcting one needs paired base/head measurements on
+  the same host, recorded in the PR
+  ([ADR-0008](docs/adr/0008-performance-gate.md)). Raising a threshold so a
+  measured regression passes is never a fix, and no ADR is needed for the
+  correction itself.
