@@ -148,8 +148,8 @@ on its own.
 - **Opportunistic finds need owner approval.** Do not bundle unrequested
   refactoring or "while I'm here" cleanups. If you find a critical bug or an
   immediate blocker in adjacent code, report it and ask whether to include it or
-  defer it; only owner-approved adjacent fixes go in, declared under `In Scope`
-  in the PR body.
+  defer it; only owner-approved adjacent fixes go in, declared in `scope` and in
+  the out-of-scope notes of the PR body.
 - **`must_not_change` is the check, `scope.paths` is the map.** Name the globs the
   change must leave alone before you start, and verify the diff against them: a
   touched path there means stop and ask the owner. `scope.paths` is filled from the
@@ -187,14 +187,14 @@ on its own.
   changes the target rather than fixing it, update the field and record under
   Acceptance Criteria
   `Amended YYYY-MM-DD: <field> changed from <previous> to <new> because <reason>`;
-  the amended contract needs renewed review. Refreshing `Verification Evidence`
-  for a later commit is not an amendment, and it names the full SHA it was
-  produced against. Never quietly narrow evidence or scope to fit a later commit.
+  the amended contract needs renewed review. Refreshing `Verification` for a
+  later commit is not an amendment, and it names the full SHA it was produced
+  against. Never quietly narrow evidence or scope to fit a later commit.
 - **Done means a mergeable PR.** Before opening it, the build is clean, the tests
-  for the touched code pass locally, and `Verification Evidence` holds the exact
-  command plus the decisive output (exit status, pass/fail line, failure detail)
-  under the heading of the acceptance criterion it verifies. Full or noisy
-  logs live in an accessible CI run or uploaded artifact linked from that section;
-  the verdict and the lines it rests on stay in the body. A check you did not run
-  is declared, never implied; a criterion with no evidence is an unverified
+  for the touched code pass locally, and `Verification` holds the exact command
+  plus the decisive output (exit status, pass/fail line, failure detail) under the
+  heading of the acceptance criterion it verifies. Full or noisy logs live in an
+  accessible CI run or uploaded artifact linked from that section; the verdict and
+  the lines it rests on stay in the body. A check you did not run is declared in
+  `Not checked`, never implied; a criterion with no evidence is an unverified
   claim, not a pass.
