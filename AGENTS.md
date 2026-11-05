@@ -69,7 +69,7 @@ the owner decision and Accepted ADR described under Precedence.
    the rule here is that a change to the serialized layout, encoding, or
    interpretation needs a version bump plus synchronized updates to every
    in-repo reader, the tests, and the CSV export. A writer refactor that
-   preserves the serialized contract needs no bump. Compatibility with older
+   emits the same bytes needs no bump. Compatibility with older
    versions is **not** supported or guaranteed, so old runs need not stay
    readable and the remaining v1/raw-3D snapshot readers are removable legacy.
 7. **`output-names`** — Run output names and CSV columns are a contract for the
@@ -95,8 +95,6 @@ the owner decision and Accepted ADR described under Precedence.
   Portable Docker images and binaries for other hosts must configure
   `-DCELLEVOX_NATIVE_OPTIMIZATIONS=OFF`, otherwise `SIGILL` is possible on a
   different CPU ([ADR-0007](docs/adr/0007-build-portability.md)).
-- Loosening a benchmark threshold in `CellEvoX/tests/benchmarks/`. A genuine
-  regression is fixed, not absorbed into the baseline.
 
 ## Known Tech Debt
 
@@ -146,10 +144,14 @@ on its own.
   a title joined by "and" is a hint, not a rule. A shared file (workflow, config,
   template) belongs to the PR whose change is the reason it changes.
 - **Opportunistic finds need owner approval.** Do not bundle unrequested
-  refactoring or "while I'm here" cleanups. If you find a critical bug or an
-  immediate blocker in adjacent code, report it and ask whether to include it or
-  defer it; only owner-approved adjacent fixes go in, declared in `scope` and in
-  the out-of-scope notes of the PR body.
+  refactoring or "while I'm here" cleanups. A repair the outcome cannot be
+  completed without — a caller left stale by an interface change, a test helper
+  that no longer compiles — is part of that outcome: make the minimal fix and
+  declare it in `scope`. Everything else found in adjacent code, a critical bug
+  included, is reported for the owner to place in this PR or a follow-up, and
+  listed in the out-of-scope notes when it stays out. Independent cleanups,
+  product extensions, and new domain semantics are decisions rather than
+  repairs, and never ride along.
 - **`must_not_change` is the check, `scope.paths` is the map.** Name the globs the
   change must leave alone before you start, and verify the diff against them: a
   touched path there means stop and ask the owner. `scope.paths` is filled from the
@@ -198,3 +200,9 @@ on its own.
   the lines it rests on stay in the body. A check you did not run is declared in
   `Not checked`, never implied; a criterion with no evidence is an unverified
   claim, not a pass.
+- **A regression is fixed, not absorbed.** Benchmark thresholds are engineering
+  defaults, not invariants: correcting one needs paired base/head measurements on
+  the same host, recorded in the PR
+  ([ADR-0008](docs/adr/0008-performance-gate.md)). Raising a threshold so a
+  measured regression passes is never a fix, and no ADR is needed for the
+  correction itself.
