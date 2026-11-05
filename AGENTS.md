@@ -192,8 +192,9 @@ on its own.
   the amended contract needs renewed review. Refreshing `Verification` for a
   later commit is not an amendment, and it names the full SHA it was produced
   against. Never quietly narrow evidence or scope to fit a later commit.
-- **Done means a mergeable PR.** Before opening it, the build is clean, the tests
-  for the touched code pass locally, and `Verification` holds the exact command
+- **Done means a mergeable PR.** Before opening it, the build is clean and the
+  tests for the touched code pass — locally, or in CI with the run linked — and
+  `Verification` holds the exact command
   plus the decisive output (exit status, pass/fail line, failure detail) under the
   heading of the acceptance criterion it verifies. Full or noisy logs live in an
   accessible CI run or uploaded artifact linked from that section; the verdict and
