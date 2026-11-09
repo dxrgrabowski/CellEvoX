@@ -161,20 +161,29 @@ on its own.
   never `git add .`), so worktree directories, build output, and benchmark or test
   artifacts stay out of the commit.
 - **Acceptance criteria are agreed before the change is finalized.** State the
-  observable pass/fail condition, including what must keep working. When the
-  request does not spell one out, derive it when it follows unambiguously from
-  the request — analysis frequently discovers the requirement — and record the
-  derivation in `Requirement source`. Ask the owner only where the request is
-  genuinely ambiguous, or where the answer chooses new domain semantics. If the
-  owner asked for analysis only, stop there; implementation starts on an explicit
-  go-ahead. Never write a criterion after the fact to justify code that already
-  exists, and never invent precision the owner has not agreed to.
-- **The PR body is the change contract.** Complete every section of
-  `.github/pull_request_template.md`, fill the front matter, and strip all HTML
+  observable pass/fail condition, including what must keep working. A change with
+  no observable behavior — documentation or a comment — answers `N/A — <reason>`
+  instead of inventing a criterion. When the request does not spell one out,
+  derive it when it follows unambiguously from the request — analysis frequently
+  discovers the requirement — and record the derivation in `Requirement source`.
+  Ask the owner only where the request is genuinely ambiguous, or where the answer
+  chooses new domain semantics. If the owner asked for analysis only, stop there;
+  implementation starts on an explicit go-ahead. Never write a criterion after the
+  fact to justify code that already exists, and never invent precision the owner
+  has not agreed to.
+- **The PR body is the change contract.** Fill every schema key of
+  `.github/pull_request_template.md` — each stays exactly once, answered on its
+  own line — replace the scaffolding with the answer, and strip all HTML
   comments. Declared behavioral changes are intentional; everything the contract
   does not declare is judged against the previous behavior, the tests, and the
   invariants. Reasoning belongs in the PR body or in an ADR — not in a new
   descriptive file under `docs/`.
+- **Record the choice a reviewer would otherwise re-litigate.** Answer
+  `Approach / rejected alternatives` with what you ruled out and the constraint
+  that ruled it out — a build limit, a lifetime, an invariant — or `none` when
+  the diff takes the obvious route. A reviewer who cannot see the rejected option
+  proposes it, and the round is spent on the alternative the diff already
+  disproved.
 - **Intent declares the change; it does not bound the review.** Read the complete
   diff and the callers, consumers, and formats it affects. A declaration waives
   neither correctness, nor compatibility, security, nor any Hard Domain

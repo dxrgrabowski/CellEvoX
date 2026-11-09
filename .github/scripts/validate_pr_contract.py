@@ -25,7 +25,13 @@ RISK_LEVELS = ("low", "medium", "high")
 HIGH_BLAST_PREFIXES = ("CellEvoX/src/", "CellEvoX/include/", "web/backend/")
 INVARIANT_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 # One-line answers the reviewer reads as contract fields, not prose.
-ONE_LINE_FIELDS = ("Behavioral delta:", "Requirement source:", "Docs / ADR impact:", "Not checked:")
+ONE_LINE_FIELDS = (
+    "Behavioral delta:",
+    "Approach / rejected alternatives:",
+    "Requirement source:",
+    "Docs / ADR impact:",
+    "Not checked:",
+)
 DOC_VALUES = ("none", "updated:", "override:")
 VERIFIED_COMMIT = re.compile(r"^Verified commit:\s*[0-9a-f]{40}\s*$", re.MULTILINE)
 AC_ROW = re.compile(r"^\|\s*(AC\d+)\s*\|(.*)\|\s*$", re.MULTILINE)

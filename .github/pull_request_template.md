@@ -10,23 +10,38 @@ scope:
   must_not_change: []     # globs the diff must never touch; empty means none
 ---
 
-<!-- Fill this in, then delete every HTML comment and template marker: leftovers
-     fail the gate. The rules behind these sections are in AGENTS.md. -->
+<!-- The body mixes two kinds of line. Schema keys stay, exactly once each, with
+     the answer on the same line: `Behavioral delta:`,
+     `Approach / rejected alternatives:`, `Requirement source:`,
+     `Docs / ADR impact:`, `Verified commit:`, `Not checked:`, and either the
+     criteria table or the `N/A` line that replaces it. Everything else is
+     scaffolding — these comments, the bullet prompts, the sample `### AC1` —
+     replaced with the answer and deleted: a leftover comment or an empty key
+     fails the gate. The rules behind these sections are in AGENTS.md. -->
 
-## Behavioral Delta
+## Change
 
 <!-- Observable before → after: values, names, formats, exit codes. A
      non-behavioral PR says "no runtime change: <what does change>". -->
 
 Behavioral delta:
 
+<!-- What you rejected, and the constraint that ruled it out — a build limit, a
+     lifetime, an invariant — in a sentence or two. Write `none` when the diff
+     takes the obvious route. This is what stops a reviewer proposing the
+     alternative you already tried and proved broken. -->
+
+Approach / rejected alternatives:
+
 ## Acceptance Criteria
 
 <!-- One row per observable pass/fail condition; one may suffice. Phrase it so a
      reviewer can repeat the check. When the diff touches shared code, outputs, or
      formats, include a row for behavior that must stay unchanged.
-     `N/A — <reason>` only when no behavioral criterion applies: a docs or comment
-     change qualifies, CI that changes builds, checks, or deployment does not.
+
+     No behavioral criterion applies — a docs or comment change, not CI that
+     changes builds, checks, or deployment: delete the table and write the answer
+     as one line, `N/A — <reason>`. A row `| N/A | … |` is not an answer.
 
      Amendment after the PR opened: changing the intended behavior, a criterion,
      or an agreed constraint needs `Amended YYYY-MM-DD: <field> changed from
@@ -42,9 +57,10 @@ Requirement source:
 
 ## Risk & Impact
 
-<!-- Answer the lines that apply, delete the rest. `none` is an answer only when
-     true. `Docs / ADR impact:` must start with `none`, `updated:`, or `override:`
-     and name what changed. -->
+<!-- `Docs / ADR impact:` is a schema key: keep it and answer it, starting with
+     `none` only when no document changed, or with `updated:` / `override:` and
+     naming the files or the ADR. The bullets below are prompts: keep the ones
+     that apply and delete the rest. -->
 
 Docs / ADR impact:
 
@@ -59,7 +75,12 @@ Docs / ADR impact:
      exit status, and the decisive lines rather than the full log; long output
      belongs in a CI run or artifact linked here. A criterion with no block fails
      the gate, and a check you did not run is declared, never implied. Replacing
-     this section on a later commit is an ordinary update, not an amendment. -->
+     this section on a later commit is an ordinary update, not an amendment.
+
+     Criteria are `N/A`: delete the `### AC1` block and write the single line
+     `N/A — no behavioral criteria` in its place. `Verified commit:` and
+     `Not checked:` stay — a reviewer still needs to know what was verified
+     against and what was not. -->
 
 Verified commit:
 
