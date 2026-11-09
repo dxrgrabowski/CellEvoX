@@ -44,3 +44,7 @@ the contract is only as strong as the duplicated readers.
   guaranteed (recorded in the PR #45 review discussion, 2026-10-26). The
   `Proposed` status covers the missing fixture and enforcement, not the
   compatibility policy itself.
+- Owner decision: the bump is required by a change to the serialized layout,
+  encoding, or interpretation, not by any edit of the writer, so a writer
+  refactor that produces identical output needs none (owner clarification
+  during the PR #65 review, 2026-11-10).
