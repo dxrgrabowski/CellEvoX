@@ -30,13 +30,15 @@ ONE_LINE_FIELDS = (
     "Approach / rejected alternatives:",
     "Requirement source:",
     "Docs / ADR impact:",
+    "Verified commit:",
     "Not checked:",
 )
 DOC_VALUES = ("none", "updated:", "override:")
-VERIFIED_COMMIT = re.compile(r"^Verified commit:\s*[0-9a-f]{40}\s*$", re.MULTILINE)
+FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 AC_ROW = re.compile(r"^\|\s*(AC\d+)\s*\|(.*)\|\s*$", re.MULTILINE)
 AC_NONE = re.compile(r"(^|\s)N/A\s+[—-]\s*\S")
 SECTION_TITLE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 
 
 class Report:
@@ -62,8 +64,22 @@ def split_front_matter(body: str) -> tuple[Any, str | None]:
 
     import yaml
 
+    class StrictLoader(yaml.SafeLoader):
+        """SafeLoader that rejects duplicate keys instead of keeping the last one."""
+
+        def construct_mapping(self, node, deep=False):
+            seen: set[Any] = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in seen:
+                    raise yaml.YAMLError(
+                        f"duplicate key {key!r} in front matter (line {key_node.start_mark.line + 2})"
+                    )
+                seen.add(key)
+            return super().construct_mapping(node, deep=deep)
+
     try:
-        return yaml.safe_load("\n".join(lines[1:closing])), None
+        return yaml.load("\n".join(lines[1:closing]), Loader=StrictLoader), None
     except yaml.YAMLError as exc:
         return None, f"front matter is not valid YAML: {exc}"
 
@@ -94,13 +110,18 @@ def matches_any(path: str, patterns: list[str]) -> bool:
 
 def changed_files(root: str, base: str, head: str) -> list[str]:
     # --no-renames keeps both sides of a rename visible to the scope check.
+    # -z emits raw paths: without it git quotes non-ASCII names into escape
+    # sequences that no glob matches. Split on NUL and decode explicitly.
     result = subprocess.run(
-        ["git", "-C", root, "diff", "--name-only", "--no-renames", f"{base}...{head}"],
+        ["git", "-C", root, "diff", "--name-only", "-z", "--no-renames", f"{base}...{head}"],
         capture_output=True,
-        text=True,
         check=True,
     )
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    return [
+        name.decode("utf-8", "surrogateescape")
+        for name in result.stdout.split(b"\0")
+        if name.strip()
+    ]
 
 
 def validate_contract(contract: Any, report: Report) -> tuple[list[str], list[str], str | None]:
@@ -137,6 +158,8 @@ def validate_contract(contract: Any, report: Report) -> tuple[list[str], list[st
     if not isinstance(scope, dict):
         report.error("'scope' must be a mapping with 'paths' (and optionally 'must_not_change').")
     else:
+        for key in sorted(set(scope) - {"paths", "must_not_change"}):
+            report.warn(f"unknown scope key '{key}' (allowed: paths, must_not_change).")
         paths = scope.get("paths") or []
         forbidden = scope.get("must_not_change") or []
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
@@ -161,15 +184,38 @@ def patterns_of(values: list[str]) -> list[str]:
     return [value for value in values if isinstance(value, str)]
 
 
+def unfenced_lines(body: str) -> list[tuple[int, str]]:
+    """Every (offset, line) pair outside a fenced code block."""
+    kept: list[tuple[int, str]] = []
+    fence: str | None = None
+    offset = 0
+    for line in body.splitlines(keepends=True):
+        marker = FENCE.match(line)
+        if fence is None:
+            if marker:
+                fence = marker.group(1)
+            else:
+                kept.append((offset, line))
+        elif marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+            fence = None
+        offset += len(line)
+    return kept
+
+
 def one_line(body: str, label: str) -> list[str]:
-    """Every 'Label: value' line in the body, stripped, in document order."""
-    pattern = rf"^{re.escape(label)}[ \t]*(.*)$"
-    return [value.strip() for value in re.findall(pattern, body, re.MULTILINE)]
+    """Every 'Label: value' line outside code blocks, stripped, in document order."""
+    pattern = re.compile(rf"^{re.escape(label)}[ \t]*(.*)$")
+    values: list[str] = []
+    for _, line in unfenced_lines(body):
+        match = pattern.match(line.rstrip("\r\n"))
+        if match:
+            values.append(match.group(1).strip())
+    return values
 
 
 def check_body(body: str, report: Report, root: str) -> None:
     """Reject template scaffolding instead of letting a reviewer read it as intent."""
-    if "<!--" in body:
+    if any("<!--" in line for _, line in unfenced_lines(body)):
         report.error("body still contains an HTML comment: delete the template scaffolding rather than leaving it to be interpreted.")
 
     for label in ONE_LINE_FIELDS:
@@ -188,27 +234,61 @@ def check_body(body: str, report: Report, root: str) -> None:
         elif prefix != "none" and not answer[len(prefix):].strip(" :-"):
             report.error(f"'Docs / ADR impact: {prefix}' names nothing: add the paths or the ADR it refers to.")
 
-    verified = VERIFIED_COMMIT.search(body)
-    if not verified:
-        report.error("'Verification' must name the full 40-character commit SHA it was produced against: 'Verified commit: <sha>'.")
-    else:
-        sha = re.search(r"[0-9a-f]{40}", verified.group(0)).group(0)
-        exists = subprocess.run(
-            ["git", "-C", root, "cat-file", "-e", f"{sha}^{{commit}}"],
-            capture_output=True,
-        )
-        if exists.returncode != 0:
-            report.error(f"'Verified commit: {sha}' is not a commit in this repository: name the commit the evidence was produced against.")
+    # Read from the same place every other key is read: a SHA quoted inside a
+    # fenced block is output, not the contract.
+    verified = one_line(body, "Verified commit:")
+    if len(verified) != 1 or not verified[0]:
+        return
+    sha = verified[0]
+    if not FULL_SHA.match(sha):
+        report.error(f"'Verified commit: {sha}' must be the full 40-character SHA the evidence was produced against.")
+        return
+    exists = subprocess.run(
+        ["git", "-C", root, "cat-file", "-e", f"{sha}^{{commit}}"],
+        capture_output=True,
+    )
+    if exists.returncode != 0:
+        report.error(f"'Verified commit: {sha}' is not a commit in this repository: name the commit the evidence was produced against.")
 
 
 def section(body: str, title: str) -> str:
-    """Return the text under '## <title>', up to the next level-2 heading."""
-    match = re.search(rf"^##\s+{re.escape(title)}\s*$", body, re.MULTILINE)
-    if not match:
-        return ""
-    rest = body[match.end():]
-    end = SECTION_TITLE.search(rest)
-    return rest[: end.start()] if end else rest
+    """Return the text under '## <title>', up to the next level-2 heading.
+
+    Headings and labels inside fenced code blocks are quoted output, not structure.
+    """
+    heading = re.compile(rf"^##\s+{re.escape(title)}\s*$")
+    lines = unfenced_lines(body)
+    for index, (start, line) in enumerate(lines):
+        if not heading.match(line.rstrip("\r\n")):
+            continue
+        content_start = start + len(line)
+        for next_start, next_line in lines[index + 1:]:
+            if SECTION_TITLE.match(next_line.rstrip("\r\n")):
+                return body[content_start:next_start]
+        return body[content_start:]
+    return ""
+
+
+def headed_blocks(text: str) -> list[tuple[str, str]]:
+    """(heading, body) for every level-3+ heading outside fenced code blocks.
+
+    A command output may quote a '### ...' line; that is content, not a block.
+    """
+    heading = re.compile(r"^#{3,}\s+(.+?)\s*$")
+    lines = unfenced_lines(text)
+    blocks: list[tuple[str, str]] = []
+    for index, (start, line) in enumerate(lines):
+        match = heading.match(line.rstrip("\r\n"))
+        if not match:
+            continue
+        content_start = start + len(line)
+        end = len(text)
+        for next_start, next_line in lines[index + 1:]:
+            if heading.match(next_line.rstrip("\r\n")):
+                end = next_start
+                break
+        blocks.append((match.group(1), text[content_start:end]))
+    return blocks
 
 
 def check_criteria(body: str, report: Report) -> None:
@@ -233,14 +313,19 @@ def check_criteria(body: str, report: Report) -> None:
     if not verification:
         report.error("missing '## Verification' section.")
         return
-    blocks = re.findall(r"^#{3,}\s+(.+?)\s*$\n?(.*?)(?=^#{3,}\s|\Z)", verification, re.MULTILINE | re.DOTALL)
+    blocks = headed_blocks(verification)
     for ac in ids:
         headed = [content for heading, content in blocks if re.search(rf"\b{ac}\b", heading)]
         if not headed:
             report.error(f"no 'Verification' block for {ac}: head it '### {ac}' with the command and its decisive output.")
             continue
-        # A block is proof only if it says more than the 'Not checked' disclaimer.
-        has_output = any(re.sub(r"^Not checked:.*$", "", content, flags=re.MULTILINE).strip() for content in headed)
+        # A block is proof only if it says more than fences and disclaimers.
+        has_output = any(
+            re.sub(
+                r"^(Not (checked|run)\b.*|`{3,}.*|~{3,}.*)$", "", content, flags=re.MULTILINE
+            ).strip()
+            for content in headed
+        )
         if not has_output:
             report.error(f"the 'Verification' block for {ac} holds no command or output: a heading alone verifies nothing.")
 

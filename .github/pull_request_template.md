@@ -49,6 +49,11 @@ Approach / rejected alternatives:
      map, the implementation description, the risk estimate, or the evidence is an
      ordinary PR update. -->
 
+<!-- Who asked, and for what: `owner request: <what was asked>`,
+     `review: <link or round>`, `derived from the request: <the implication they
+     drew>`, or `none — self-initiated: <what surfaced it>`. A change nothing
+     external asked for says so; it does not invent a request. -->
+
 Requirement source:
 
 | ID | Observable condition |

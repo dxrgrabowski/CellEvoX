@@ -166,6 +166,8 @@ on its own.
   instead of inventing a criterion. When the request does not spell one out,
   derive it when it follows unambiguously from the request — analysis frequently
   discovers the requirement — and record the derivation in `Requirement source`.
+  A change nothing external asked for answers
+  `none — self-initiated: <what surfaced it>` instead of inventing a request.
   Ask the owner only where the request is genuinely ambiguous, or where the answer
   chooses new domain semantics. If the owner asked for analysis only, stop there;
   implementation starts on an explicit go-ahead. Never write a criterion after the
