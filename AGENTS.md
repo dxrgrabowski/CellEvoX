@@ -107,6 +107,9 @@ constants, stale Qt/Boost references in CI — belong in issues.
 
 ## Documentation Rules
 
+- Write repository text in English: code, comments, commit messages,
+  documentation, and PR bodies. Quote the owner's request translated or
+  summarized, not verbatim in another language.
 - Do not duplicate what code already shows line by line (directory trees,
   signatures, control flow); stale copies cause confident wrong turns. Public
   surfaces that outside consumers depend on are the exception and need durable
@@ -160,30 +163,34 @@ on its own.
   Stage files explicitly (`git add <path>`, never `git add .`), so worktree
   directories, build output, and benchmark or test artifacts stay out of the
   commit.
-- **Acceptance criteria are agreed before the change is finalized.** State the
-  observable pass/fail condition, including what must keep working. A change with
-  no observable behavior — documentation or a comment — says so instead of
-  inventing a criterion. When the request does not spell one out, derive it only
-  when it follows unambiguously from the request, and present it as derived
-  rather than as the user's words. Ask the owner only where the request is
-  genuinely ambiguous, or where the answer chooses new domain semantics. If the
-  owner asked for analysis only, stop there; implementation starts on an explicit
-  go-ahead. Never write a criterion after the fact to justify code that already
-  exists, and never invent precision the owner has not agreed to.
+- **Acceptance criteria are agreed before the change is finalized when the
+  change has an observable outcome.** State the observable pass/fail condition,
+  including what must keep working; a small change carries it as a sentence in
+  `Goal and result`, while a larger one may add an `Acceptance criteria`
+  subsection. A change with no observable behavior — documentation or a comment —
+  says so instead of inventing a criterion. When the request does not spell one
+  out, derive it only when it follows unambiguously from the request, and present
+  it as derived rather than as the user's words. Ask the owner only where the
+  request is genuinely ambiguous, or where the answer chooses new domain
+  semantics. If the owner asked for analysis only, stop there; implementation
+  starts on an explicit go-ahead. Never write a criterion after the fact to
+  justify code that already exists, and never invent precision the owner has not
+  agreed to.
 - **Quote the requirement, not a label for it.** Name the task, issue, or comment
   that asked for the change; when it came from a conversation, quote or summarize
   the sentence that carries the requirement. Separate what the user asked for
   from what you inferred. Do not demand a link when none exists, and do not ask
   for confirmation of an implication the task makes obvious.
-- **The PR body is the handoff between agents.** Answer every applicable section
-  of `.github/pull_request_template.md` and delete its scaffolding; drop a section
-  that does not apply instead of writing "none". The automated check reads
-  headings and the presence of an answer; it cannot tell whether the answer is
-  true, whether the user approved it, or whether the change works.
-  Declared behavioral changes are intentional; everything the description does
-  not declare is judged against the previous behavior, the tests, and the
-  invariants. Reasoning belongs in the PR body or in an ADR — not in a new
-  descriptive file under `docs/`.
+- **The PR body is the handoff between agents.** Answer the sections of
+  `.github/pull_request_template.md` that apply and delete the rest, including
+  their comments; scale the description to the change instead of filling sections
+  for their own sake. No parser checks the structure — the reviewer decides
+  whether the context is sufficient. State the task context a reviewer cannot
+  recover from the diff, and separate what the owner asked for from what you
+  inferred. Declared behavioral changes are intentional; everything the
+  description does not declare is judged against the previous behavior, the
+  tests, and the invariants. Reasoning belongs in the PR body or in an ADR — not
+  in a new descriptive file under `docs/`.
 - **Explain only the choice a reviewer would otherwise re-litigate.** When the
   diff takes a non-obvious route — a new dependency, a format, an architectural
   trade-off — name what you ruled out and the constraint that ruled it out. An
@@ -213,8 +220,8 @@ on its own.
   without a `Status: Accepted` ADR in the same diff.
 - **A review round does not rewrite the target silently.** The description
   carries current values, not a history. Changing the intended behavior, an
-  acceptance criterion, or an agreed constraint needs a short note under
-  Acceptance criteria: what changed, why, and which agreement it rests on. The
+  acceptance criterion, or an agreed constraint needs a short note in the
+  description: what changed, why, and which agreement it rests on. The
   updated criterion needs renewed review. Updating the implementation
   description or the evidence is an ordinary PR update. Never quietly narrow a
   criterion or a constraint to fit a later commit.
