@@ -2,7 +2,7 @@ name: PR Quality Gates
 
 # Deterministic gates only: no model, no secrets, no network beyond package installs.
 # The PR body is treated as untrusted input and is never interpolated into a shell.
-# Pull-request only: the contract is validated against the PR body, which does
+# Pull-request only: the body structure is checked against the PR body, which does
 # not exist for `workflow_dispatch`, so a dispatched run could only fail.
 on:
   pull_request:
@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  contract:
-    name: PR change contract
+  body:
+    name: PR body structure
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     steps:
@@ -32,34 +32,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install validator dependency
-        run: python3 -m pip install --quiet pyyaml
-
-      # The base tip is not necessarily an ancestor of the head commit, so a
-      # "main moved" state would otherwise fail the diff for the wrong reason.
-      # A missing base must be loud: validating against the wrong commit is worse
-      # than not validating at all.
-      - name: Ensure base commit is present
-        run: |
-          set -euo pipefail
-          BASE="${{ github.event.pull_request.base.sha }}"
-          if git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            echo "Base commit $BASE is already available locally."
-            exit 0
-          fi
-          if ! git fetch --no-tags --quiet origin "$BASE"; then
-            echo "::error::Could not fetch base commit $BASE; refusing to validate against a missing base."
-            exit 1
-          fi
+      - name: Test the body check
+        run: python3 .github/scripts/test_validate_pr_body.py
 
       - name: Write PR body to file
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s' "${PR_BODY:-}" > pr_body.md
 
-      - name: Validate contract against the real diff
-        run: |
-          python3 .github/scripts/validate_pr_contract.py \
-            --body-file pr_body.md \
-            --base "${{ github.event.pull_request.base.sha }}" \
-            --head "${{ github.event.pull_request.head.sha }}"
+      # Structure only: the check cannot confirm that a criterion is right, that
+      # the user approved a decision, or that the change works.
+      - name: Check the PR body structure
+        run: python3 .github/scripts/validate_pr_body.py --body-file pr_body.md
