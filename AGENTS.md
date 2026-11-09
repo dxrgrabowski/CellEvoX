@@ -175,10 +175,11 @@ on its own.
   the sentence that carries the requirement. Separate what the user asked for
   from what you inferred. Do not demand a link when none exists, and do not ask
   for confirmation of an implication the task makes obvious.
-- **The PR body is the handoff between agents.** Answer every section of
-  `.github/pull_request_template.md`, then delete its scaffolding. The automated
-  check reads headings and the presence of an answer; it cannot tell whether the
-  answer is true, whether the user approved it, or whether the change works.
+- **The PR body is the handoff between agents.** Answer every applicable section
+  of `.github/pull_request_template.md` and delete its scaffolding; drop a section
+  that does not apply instead of writing "none". The automated check reads
+  headings and the presence of an answer; it cannot tell whether the answer is
+  true, whether the user approved it, or whether the change works.
   Declared behavioral changes are intentional; everything the description does
   not declare is judged against the previous behavior, the tests, and the
   invariants. Reasoning belongs in the PR body or in an ADR — not in a new

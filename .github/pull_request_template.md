@@ -1,7 +1,9 @@
-<!-- Replace each comment with the answer, then delete it. The automated check
-     reads only the section headings and whether they hold an answer; it cannot
-     tell whether the answer is true, whether the user approved it, or whether
-     the change works. The rules behind the sections are in AGENTS.md. -->
+<!-- Answer every section that applies. What changed and why, Acceptance criteria,
+     and Verification are required; delete the other two with their comments when
+     they do not apply. The automated check reads the headings, the two
+     verification labels, and whether an answer is present; it cannot tell whether
+     the answer is true, whether the user approved it, or whether the change
+     works. The rules behind the sections are in AGENTS.md. -->
 
 ## What changed and why
 
