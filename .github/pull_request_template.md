@@ -7,13 +7,15 @@
 
 <!-- What was requested, and what observable result does this PR deliver?
      Include task context that is unavailable from the diff, and separate what
-     the owner asked for from what you inferred. For a bug fix, give a short
-     before → after example. -->
+     the owner asked for from what you inferred. When the task implies a
+     pass/fail success condition, state it so a reviewer can check it. For a bug
+     fix, give a short before → after example. -->
 
 ## Decisions and limitations
 
 <!-- Only meaningful assumptions, trade-offs, compatibility changes, or
-     unresolved questions. Delete this section when there is nothing to say. -->
+     unresolved questions. Mark any unresolved decision that blocks merge.
+     Delete this section when there is nothing to say. -->
 
 ## Verification
 

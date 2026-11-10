@@ -35,10 +35,9 @@ decision.
 ## Hard Domain Invariants
 
 Never violate these, even if the code appears not to enforce them. The bold slug
-in each entry is how the PR description should name the invariant. Naming an
-invariant means the reviewer must verify the diff still preserves it; it does not
-authorize a redefinition. Changing an invariant deliberately needs
-the owner decision and Accepted ADR described under Precedence.
+in each entry is how the PR description should name the invariant; it does not
+authorize a redefinition. Changing an invariant deliberately needs the owner
+decision and Accepted ADR described under Precedence.
 
 1. **`env-capacity`** — `env_capacity` (`Nc`) is a soft baseline, never a
    ceiling. It only scales density-dependent mortality (`N/Nc`). A lineage with
@@ -133,14 +132,10 @@ constants, stale Qt/Boost references in CI — belong in issues.
   Do not silently pick a design that deserves a record, and do not open an ADR
   for a reversible local choice: an ADR exists to constrain future work, so state
   what it forbids.
+- Documentation-only changes state the intended documentation outcome and the
+  checks that apply; runtime tests may be unnecessary.
 
 ## Change Workflow
-
-One PR carries one coherent change. A reviewer holds the whole PR as a single
-context, so unrelated work bundled together hides the risky part behind the
-noisy one and makes a revert take everything down with it. Each PR states one
-intent, touches only the files that intent needs, and can be merged or rejected
-on its own.
 
 - **One coherent outcome per PR.** Implementation, tests, docs, and caller
   updates for that outcome belong together; two unrelated outcomes are two PRs —
@@ -163,34 +158,27 @@ on its own.
   Stage files explicitly (`git add <path>`, never `git add .`), so worktree
   directories, build output, and benchmark or test artifacts stay out of the
   commit.
-- **Acceptance criteria are agreed before the change is finalized.** State the
-  observable pass/fail condition, including what must keep working; a small
-  change carries it as a sentence in `Goal and result`, while a larger one may
-  add an `Acceptance criteria` subsection. Documentation-only changes state the
-  intended documentation outcome and the checks that apply; runtime tests may be
-  unnecessary. When the request does not spell one
-  out, derive it only when it follows unambiguously from the request, and present
-  it as derived rather than as the user's words. Ask the owner only where the
-  request is genuinely ambiguous, or where the answer chooses new domain
-  semantics. If the owner asked for analysis only, stop there; implementation
-  starts on an explicit go-ahead. Never write a criterion after the fact to
-  justify code that already exists, and never invent precision the owner has not
-  agreed to.
-- **Quote the requirement, not a label for it.** Name the task, issue, or comment
-  that asked for the change; when it came from a conversation, quote or summarize
-  the sentence that carries the requirement. Separate what the user asked for
-  from what you inferred. Do not demand a link when none exists, and do not ask
-  for confirmation of an implication the task makes obvious.
+- **Name the requirement and the success condition.** Quote the task, issue, or
+  comment that asked for the change; for a conversational request, quote or
+  summarize the sentence that carries the requirement, and do not demand a link
+  when none exists. Separate what the owner asked for from what you inferred.
+  When the request implies a pass/fail condition, state it in `Goal and result`,
+  including what must keep working; a larger change may add an `Acceptance
+  criteria` subsection. Derive a criterion only when it follows unambiguously
+  from the request, and present it as derived. Ask the owner only where the
+  request is genuinely ambiguous or the answer chooses new domain semantics.
+  An analysis-only request stops at analysis until the owner says to implement.
+  Never write a criterion after the fact to justify code that already exists,
+  and never invent precision the owner has not agreed to.
 - **The PR body is the handoff between agents.** Answer the sections of
   `.github/pull_request_template.md` that apply and delete the rest, including
   their comments; scale the description to the change instead of filling sections
   for their own sake. No parser checks the structure — the reviewer decides
   whether the context is sufficient. State the task context a reviewer cannot
-  recover from the diff, and separate what the owner asked for from what you
-  inferred. Declared behavioral changes are intentional; everything the
-  description does not declare is judged against the previous behavior, the
-  tests, and the invariants. Reasoning belongs in the PR body or in an ADR — not
-  in a new descriptive file under `docs/`.
+  recover from the diff. Declared behavioral changes are intentional;
+  everything the description does not declare is judged against the previous
+  behavior, the tests, and the invariants. Reasoning belongs in the PR body or
+  in an ADR — not in a new descriptive file under `docs/`.
 - **Explain only the choice a reviewer would otherwise re-litigate.** When the
   diff takes a non-obvious route — a new dependency, a format, an architectural
   trade-off — name what you ruled out and the constraint that ruled it out. An
@@ -207,38 +195,45 @@ on its own.
   correctness problem in the change and any decision beyond your mandate are
   resolved before merge. Record the outcome, not a table of statuses, dates, or
   empty fields.
-- **Intent declares the change; it does not bound the review.** Read the complete
-  diff and the callers, consumers, and formats it affects. A declaration waives
-  neither correctness, nor compatibility, security, nor any Hard Domain
-  Invariant; verify every invariant the diff could break, listed or not. An
-  author's risk estimate is not a review setting: the reviewer assesses risk
-  independently and reads the whole diff, affected consumers, and applicable
-  invariants whatever the description says. Higher risk raises the evidence bar —
-  preserved-behavior criteria, owner sign-off, invariant/ADR analysis — not the
-  minimum scope of the review. Flag any gap between the implementation, the
-  description, and the accepted requirements — including an invariant broken
-  without a `Status: Accepted` ADR in the same diff.
 - **A review round does not rewrite the target silently.** The description
   carries current values, not a history. Changing the intended behavior, an
   acceptance criterion, or an agreed constraint needs a short note in the
-  description: what changed, why, and which agreement it rests on. The
-  updated criterion needs renewed review. Updating the implementation
-  description or the evidence is an ordinary PR update. Never quietly narrow a
-  criterion or a constraint to fit a later commit.
-- **Done means a mergeable PR.** Opening a draft is how a change reaches CI: a
-  draft PR may open before the checks have run. The requirement binds when the
-  task is done and the PR is ready for review — by then the build is clean and the
-  tests for the touched code pass, locally or in CI with the run linked, and
-  `Verification` says what was checked, against which commit, with the decisive
-  output, and what was not checked. Full or noisy logs live in an accessible CI
-  run or uploaded artifact linked from that section; the verdict and the lines it
-  rests on stay in the body. A criterion with no evidence is an unverified claim,
-  not a pass. A complete description does not prove the change is correct: the
-  reviewer still judges whether the criteria match the requirements, whether the
-  checks are adequate, and whether the evidence is current.
+  description: what changed, why, and which agreement it rests on. Never quietly
+  narrow a criterion or a constraint to fit a later commit.
+- **When the task includes delivering a PR, ready for review means** the build
+  is clean and the tests for the touched code pass, locally or in CI with the
+  run linked, and `Verification` says what was checked, against which commit,
+  with the decisive output, and what was not checked. Before asking for review,
+  self-review the whole diff: re-read it as a reviewer, run the checks CI will
+  run, confirm that no caller, format, or invariant is left broken, and note
+  whether a test can cover the change — add one when it can. Full or noisy logs
+  live in an accessible CI run or uploaded artifact linked from `Verification`;
+  the verdict and the lines it rests on stay in the body. A criterion with no
+  evidence is an unverified claim, not a pass. Opening a draft is how a change
+  reaches CI, so the requirement binds when the task is done and the PR is ready
+  for review.
 - **A regression is fixed, not absorbed.** Benchmark thresholds are engineering
   defaults, not invariants: correcting one needs paired base/head measurements on
   the same host, recorded in the PR
   ([ADR-0008](docs/adr/0008-performance-gate.md)). Raising a threshold so a
   measured regression passes is never a fix, and no ADR is needed for the
   correction itself.
+
+## Code Review Rules
+
+Review the change, not the author's summary of it.
+
+- **Read the complete diff and every affected consumer.** A declared intent
+  waives neither correctness, nor compatibility, security, nor any Hard Domain
+  Invariant. Check the callers, formats, docs, and tests the diff touches or
+  invalidates.
+- **Verify every applicable invariant**, named in the description or not. A Hard
+  Domain Invariant or Negative Space rule broken without a `Status: Accepted`
+  ADR in the same diff is a finding.
+- **Compare the result with the accepted requirements.** Flag any gap between the
+  implementation, the description, and what the owner asked for, including a
+  criterion added after the fact.
+- **Judge the evidence.** It must match the commit under review and support each
+  criterion; a missing check must be acknowledged, not implied. An author's risk
+  estimate is not a review setting: assess risk independently, and raise the
+  evidence bar rather than lower the scope for a higher-risk change.
