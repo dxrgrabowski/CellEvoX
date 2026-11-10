@@ -204,14 +204,14 @@ constants, stale Qt/Boost references in CI — belong in issues.
   is clean and the tests for the touched code pass, locally or in CI with the
   run linked, and `Verification` says what was checked, against which commit,
   with the decisive output, and what was not checked. Before asking for review,
-  self-review the whole diff: re-read it as a reviewer, run the checks CI will
-  run, confirm that no caller, format, or invariant is left broken, and note
-  whether a test can cover the change — add one when it can. Full or noisy logs
-  live in an accessible CI run or uploaded artifact linked from `Verification`;
-  the verdict and the lines it rests on stay in the body. A criterion with no
-  evidence is an unverified claim, not a pass. Opening a draft is how a change
-  reaches CI, so the requirement binds when the task is done and the PR is ready
-  for review.
+  self-review the whole diff and verify the checks relevant to the change,
+  locally or through linked CI results. Add or update tests when they provide
+  meaningful regression coverage. Explain any important verification gaps. Full
+  or noisy logs live in an accessible CI run or uploaded artifact linked from
+  `Verification`; the verdict and the lines it rests on stay in the body. A
+  criterion with no evidence is an unverified claim, not a pass. Opening a draft
+  is how a change reaches CI, so the requirement binds when the task is done and
+  the PR is ready for review.
 - **A regression is fixed, not absorbed.** Benchmark thresholds are engineering
   defaults, not invariants: correcting one needs paired base/head measurements on
   the same host, recorded in the PR
