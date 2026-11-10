@@ -163,12 +163,12 @@ on its own.
   Stage files explicitly (`git add <path>`, never `git add .`), so worktree
   directories, build output, and benchmark or test artifacts stay out of the
   commit.
-- **Acceptance criteria are agreed before the change is finalized when the
-  change has an observable outcome.** State the observable pass/fail condition,
-  including what must keep working; a small change carries it as a sentence in
-  `Goal and result`, while a larger one may add an `Acceptance criteria`
-  subsection. A change with no observable behavior — documentation or a comment —
-  says so instead of inventing a criterion. When the request does not spell one
+- **Acceptance criteria are agreed before the change is finalized.** State the
+  observable pass/fail condition, including what must keep working; a small
+  change carries it as a sentence in `Goal and result`, while a larger one may
+  add an `Acceptance criteria` subsection. Documentation-only changes state the
+  intended documentation outcome and the checks that apply; runtime tests may be
+  unnecessary. When the request does not spell one
   out, derive it only when it follows unambiguously from the request, and present
   it as derived rather than as the user's words. Ask the owner only where the
   request is genuinely ambiguous, or where the answer chooses new domain
