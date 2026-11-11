@@ -57,7 +57,13 @@ to a hosted model and posts the result as a single sticky PR comment.
   line the author controls cannot ping a user or close the code block.
 - **Bounded egress.** The payload is the unified diff, the full body of changed
   files in `BODY_EXTENSIONS` (capped at `MAX_BODY_CHARS` each), the PR body, the
-  `AGENTS.md` invariants for the changed paths and the `TEST_CASE` inventory.
+  `AGENTS.md` invariants for the changed paths and the test inventory (Catch2
+  cases and pytest test functions). A diff touching only `.github/`, `tools/` or
+  `docs/` matches no numbered invariant, so it is given a short infrastructure
+  scope instead of "none matched": a secret reachable from code or a third-party
+  action, a mutable action pin, a failure path that fails open, and a result
+  dropped without a trace. That block is in the citable allow-list as well, so
+  citing it is not an invented invariant.
   Nothing else from the checkout is read, and none of the application code is
   executed: the tool reads the diff and file bodies, it does not build or run the
   project. The tool itself is PR code — a `pull_request` run uses the head
@@ -76,7 +82,11 @@ to a hosted model and posts the result as a single sticky PR comment.
 - **Grounded findings.** The model must quote the changed line it is talking
   about. The line number is derived from that quote's position in the diff, never
   taken from the answer, and a finding whose quote is not in the diff is dropped
-  and listed as dropped instead of being shown. A quote that also matches an
+  and listed as dropped instead of being shown. A finding whose own reasoning
+  concludes there is nothing to report is dropped as `self-refuted`, so the model
+  cannot publish its own refutation as a finding; a contrast marker after the
+  refutation (`consistent, but ...`) keeps a claim that is still live. A quote
+  that also matches an
   unchanged context line resolves to the added or removed line, so it cannot be
   pinned to a line the PR did not touch. The deterministic test inventory
   and invariant list are injected by path prefix, not guessed by the model; the
@@ -151,12 +161,15 @@ to a hosted model and posts the result as a single sticky PR comment.
 - Cost scales with diff size and is not capped by the workflow. The payload cap
   (`--max-chars`) and `--max-changed-lines` bound it, but a large PR still costs
   more than a small one, and nothing stops a series of large PRs.
-- Above `--max-changed-lines` (default 1500) every file body is dropped and the
-  review sees the diff alone. That keeps a huge PR from producing a huge request,
-  but it also means the largest PRs get the weakest review; the run reports the
-  drop instead of hiding it. A body dropped to fit `--max-chars` is reported
-  separately from a file that was never eligible, so the two reasons are not
-  conflated in the comment.
+- File bodies are bounded twice: a body above `MAX_BODY_CHARS` is skipped, and
+  `--max-chars` drops the largest remaining bodies until the payload fits. When
+  no readable body survives (every changed file is too large, or
+  `--max-changed-lines` is below the diff size), the review is *diff-only*: it
+  sees the changed lines but not the files around them. A blocker claims
+  knowledge that view cannot give, so every blocker is published as a warning
+  with `DOWNGRADED_DIFF_ONLY`, the header says `diff-only`, and the skipped
+  bodies are listed by reason. `--max-changed-lines` defaults to 0 (no line cap),
+  so `--max-chars` is the single budget a local run and CI share.
 - The review needs `OPENROUTER_API_KEY` in repository secrets. Missing or expired
   keys surface as a failed job and a fallback comment, not a silent pass.
 - Changing the model is a one-line default plus a workflow line; the JSON schema,
@@ -178,13 +191,19 @@ to a hosted model and posts the result as a single sticky PR comment.
   disables both reviews at once. Robin publishes no token counts, so its cost is
   visible only in the OpenRouter dashboard, not in the run.
 - The tool is stdlib-only and pinned to this repository by design: it reads
-  `AGENTS.md`, the `INVARIANTS_FOR` path map and the Catch2 test tree. (Its tests
+  `AGENTS.md`, the `INVARIANTS_FOR` path map and the Catch2 and pytest test
+  trees. (Its tests
   use pytest, like the other test jobs; the claim covers the tool.) It is not
   a reusable action until a second repository needs it.
 
 ## Evidence
 - `tools/test_ai_review.py` — unit tests over diff parsing (including the
-  `--- `/`+++ ` content-line case), quote verification and drop reporting,
+  `--- `/`+++ ` content-line case), quote verification and drop reporting, a
+  finding that refutes itself dropped as `self-refuted` while a refutation
+  followed by a contrast keeps its live claim, pytest names in the inventory,
+  the infrastructure scope for a `.github/`-only diff, a zero line cap still
+  sending bodies, a body above `MAX_BODY_CHARS` making the review diff-only,
+  a blocker downgraded to a warning in that mode,
   changed-line preference over an identical context line, longest-prefix
   invariant selection, the `INVARIANTS_FOR` map checked against `AGENTS.md`'s
   numbering so a renumbering fails CI, unconditional invariant/inventory/file-body
@@ -219,14 +238,13 @@ to a hosted model and posts the result as a single sticky PR comment.
   bot-identity lookup keyed on the marker plus the review heading opening the
   body. Run by the
   `review-tools` job in `.github/workflows/ci.yml` with no network access.
-- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, just
-  over 2000 changed lines, a payload just over 100k characters (~27k tokens;
-  the real run is larger because the PR body is the intent), 51 test cases in
-  the inventory.
-  The figures are rounded because the diff contains this ADR: every edit to it
-  moves the measurement. The run needed no key and no network, and reported
-  `bodies skipped: above the 1500-line threshold`, so the bound on egress is
-  observable per run rather than implicit.
+- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, 2527
+  changed lines, a payload of ~136k characters (~34k tokens; the real run is
+  larger because the PR body is the intent), 118 tests in the inventory, the
+  infrastructure scope injected, and `diff-only` reported because both readable
+  changed files (`tools/ai_review.py`, `tools/test_ai_review.py`) are above
+  `MAX_BODY_CHARS`. The figures are rounded because the diff contains this ADR:
+  every edit to it moves the measurement. The run needed no key and no network.
 - `tools/ai_review.py` (`build_context`, `verify`, `render_markdown`),
   `.github/workflows/ai-review.yml` (upsert script, fallback body) and
   `.github/workflows/robin.yml` (pinned action, advisory and single-shot inputs).

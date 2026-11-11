@@ -55,6 +55,23 @@ INVARIANTS_FOR = {
     "web/": [7],
 }
 
+# .github/, tools/ and docs/ carry the workflow, the reviewer and the published
+# contract, but no numbered invariant. Without guidance the prompt then says
+# "none matched" and the model has no rules for the files that decide whether a
+# secret leaks or a failing check turns the PR green. These are the patterns the
+# repo actually cares about there.
+INFRA_PREFIXES = (".github/", "tools/", "docs/")
+INFRA_GUIDANCE = """INFRASTRUCTURE REVIEW SCOPE (.github/, tools/, docs/ changed; no numbered domain
+invariant applies). Report only what the diff shows:
+  - a secret or token made reachable to code or a third-party action the PR can change
+  - an action or tool pinned by a mutable ref (tag/branch) where the repo pins SHAs
+  - a failure path that fails open: a failed or skipped check reported as success,
+    or an exception swallowed
+  - a result silently truncated or dropped: a size cap that discards findings
+    without saying so, or a comment overwritten with no trace
+Do not report style, naming, workflow refactors, "add tests", or an ADR filed as
+`Status: Proposed` (AGENTS.md requires that status until the owner accepts it)."""
+
 SYSTEM = """You review a committed diff from the CellEvoX repository. Your output is read by
 an agent that will act on it, and by a human who skims.
 
@@ -225,16 +242,33 @@ def invariants_for(path: str) -> list[int]:
 
 
 def test_inventory(repo: Path) -> list[str]:
-    out = []
+    """Names a finding may cite as coverage: Catch2 cases and pytest tests.
+
+    A Python test asserts behaviour just as a C++ one does. Indexing only
+    CellEvoX/tests made a real pytest name look invented, which cost the
+    finding its credibility on a workflow-only PR.
+    """
+    out: list[str] = []
     tests_dir = repo / "CellEvoX/tests"
-    if not tests_dir.is_dir():
-        return out
-    for p in sorted(tests_dir.glob("*.cpp")):
+    if tests_dir.is_dir():
+        for p in sorted(tests_dir.glob("*.cpp")):
+            for line in p.read_text(errors="replace").splitlines():
+                m = re.search(r'TEST_CASE\(\s*"([^"]+)"\s*(?:,\s*"([^"]*)")?', line)
+                if m:
+                    tags = f" {m.group(2)}" if m.group(2) else ""
+                    out.append(f"{m.group(1)}{tags}")
+    py_tests = (sorted(repo.glob("CellEvoX/scripts/test_*.py"))
+                + sorted(repo.glob("tools/test_*.py"))
+                + sorted(repo.glob(".github/scripts/test_*.py")))
+    seen = set(out)
+    for p in py_tests:
         for line in p.read_text(errors="replace").splitlines():
-            m = re.search(r'TEST_CASE\(\s*"([^"]+)"\s*(?:,\s*"([^"]*)")?', line)
+            m = re.match(r"\s*def (test_[A-Za-z0-9_]+)\s*\(", line)
             if m:
-                tags = f" {m.group(2)}" if m.group(2) else ""
-                out.append(f"{m.group(1)}{tags}")
+                name = m.group(1)
+                if name not in seen:
+                    seen.add(name)
+                    out.append(f"{name} ({p.name})")
     return out
 
 
@@ -271,11 +305,17 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
 
     inventory = test_inventory(repo)
 
+    # Infra files carry no numbered invariant, so they get their own rules
+    # instead of a bare "none matched"; a mixed diff keeps both blocks.
+    infra = sorted(p for p in stats if (p or "").startswith(INFRA_PREFIXES))
+
     header = [f"INTENT (declared by the author, may be wrong):\n    {intent}"]
     if chosen:
         header.append("INVARIANTS IN SCOPE (verbatim from AGENTS.md):\n\n" + "\n\n".join(chosen))
-    else:
+    elif not infra:
         header.append("INVARIANTS IN SCOPE: none matched the changed paths.")
+    if infra:
+        header.append(INFRA_GUIDANCE)
 
     # Negative Space applies to every code change, including build and config
     # files that have no numbered invariant (e.g. CELLEVOX_NATIVE_OPTIMIZATIONS).
@@ -287,7 +327,8 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
             header.append(negative_space)
             negative_space_injected = True
 
-    inv_block = ("\n\nTEST INVENTORY (from CellEvoX/tests):\n"
+    inv_block = ("\n\nTEST INVENTORY (Catch2 in CellEvoX/tests; pytest in "
+                 "CellEvoX/scripts, tools, .github/scripts):\n"
                  + "\n".join(f"- {name}" for name in inventory))
 
     changed_block = "\n\nCHANGED FILES:\n" + "\n".join(
@@ -296,7 +337,12 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
     dropped: list[str] = []
     trimmed: list[str] = []  # budget drops, kept apart from eligibility skips
     chunks: list[tuple[int, str, str]] = []  # (size, path, block)
-    if total_changed <= max_changed:
+    readable = [f["path"] for f in files
+                if not f.get("deleted") and (f["path"] or "").endswith(BODY_EXTENSIONS)]
+    # A line cap of 0 means no cap: --max-chars already bounds the payload and
+    # drops bodies largest-first, so a separate line ceiling only costs context.
+    diff_only = max_changed > 0 and total_changed > max_changed
+    if not diff_only:
         for f in files:
             path = f["path"]
             if f.get("deleted"):
@@ -343,12 +389,19 @@ def build_context(repo: Path, rev_range: str, head_rev: str, intent: str,
             f"file body; the diff alone exceeds the budget. Narrow the range or raise "
             f"--max-chars.")
 
+    if not diff_only and readable and not chunks:
+        # Every body that could have been read was too large or was trimmed to
+        # fit the budget, so the model saw the diff only. This is the same
+        # limitation as the line cap above and gets the same treatment.
+        diff_only = True
+
     meta = {
         "files": len(stats), "changed_lines": total_changed,
         "invariants": sorted(ids), "inventory": len(inventory),
         "payload_chars": len(payload), "est_input_tokens": len(payload) // 4,
         "dropped": dropped, "trimmed": trimmed, "diff": diff, "parsed": files,
-        "negative_space": negative_space_injected,
+        "negative_space": negative_space_injected, "infra": bool(infra),
+        "diff_only": diff_only,
     }
     return payload, meta
 
@@ -573,10 +626,13 @@ def negative_space_items(repo: Path) -> list[str]:
     return items
 
 
-def allowed_invariants(repo: Path, ids: list[int], with_negative_space: bool) -> list[str]:
+def allowed_invariants(repo: Path, ids: list[int], with_negative_space: bool,
+                      with_infra: bool = False) -> list[str]:
     """Invariants the model actually saw in this payload."""
     sections = load_invariant_sections(repo)
     out = [sections[i] for i in sorted(ids) if i in sections]
+    if with_infra:
+        out.append(INFRA_GUIDANCE)
     if with_negative_space:
         out.extend(negative_space_items(repo))
     return out
@@ -618,6 +674,31 @@ HEDGED_RE = re.compile(
     r"could be|if it does, this is benign|needs? .{0,12}(?:checked|verified)|"
     r"i can't confirm", re.IGNORECASE)
 
+# A finding whose own `why` concludes there is nothing to report was refuted by
+# the model that wrote it ("This is consistent; not a finding."). Publishing it
+# tells the author nothing. Only the tail after the last refutation counts, so
+# "the default is consistent, but the loader still reads the old key" survives.
+SELF_REFUTING_RE = re.compile(
+    r"\bnot (?:a|an) (?:finding|issue|problem|regression|bug)\b|"
+    r"\b(?:this|that|it) is (?:fine|correct|consistent|expected|intended|"
+    r"unchanged|equivalent)\b|"
+    r"\b(?:is|are) consistent\b|\bbehav(?:e|es|ing) the same\b|"
+    r"\bno (?:behaviou?r(?:al)? change|change in behavio?ur|problem|issue)\b|"
+    r"\bnothing (?:changed|changes|wrong)\b", re.IGNORECASE)
+CONTRAST_RE = re.compile(r"\b(?:but|however|still|yet|except|although|though)\b",
+                         re.IGNORECASE)
+
+
+def self_refuted(why: str) -> bool:
+    """Whether the finding's own reasoning concludes there is no finding."""
+    text = why or ""
+    last = None
+    for m in SELF_REFUTING_RE.finditer(text):
+        last = m
+    if last is None:
+        return False
+    return not CONTRAST_RE.search(text[last.end():])
+
 
 def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
            allowed_invariants: list[str] | None = None) -> tuple[list, list]:
@@ -640,8 +721,14 @@ def verify(findings: list[dict], parsed: list[dict], inventory: list[str],
     inv_lower = [s.lower() for s in inventory]
     kept, dropped = [], []
     for item in findings:
-        if HEDGED_RE.search(item.get("why") or ""):
+        why = item.get("why") or ""
+        if HEDGED_RE.search(why):
             item["_hedged"] = True
+        # Checked before the quote: a finding that refutes itself is not worth
+        # anchoring, and dropping it here keeps it out of the comment entirely.
+        if self_refuted(why):
+            dropped.append({**item, "_drop": "self-refuted"})
+            continue
 
         ev = (item.get("evidence") or "").rstrip()
         hit = _locate(ev, index) if ev else None
@@ -833,7 +920,16 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
     The console report is for a local run; on a pull request the author reads a
     comment, so the same data is rewritten rather than duplicated by hand.
     """
-    blockers = sum(1 for it in kept if it.get("severity") == "blocker")
+    # A diff-only review saw the changed lines, not the files around them. A
+    # blocker claims certain knowledge of a break, which that view cannot give,
+    # so every blocker is published as a warning and the comment says why.
+    diff_only = bool(meta.get("diff_only"))
+
+    def severity(it: dict) -> str:
+        sev = str(it.get("severity", "?"))
+        return "warning" if diff_only and sev == "blocker" else sev
+
+    blockers = sum(1 for it in kept if severity(it) == "blocker")
     warnings = len(kept) - blockers
     summary = (f"**{len(kept)} finding{'' if len(kept) == 1 else 's'}** — "
                f"{blockers} blocker{'' if blockers == 1 else 's'}, "
@@ -845,16 +941,28 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
         # A repeat where only some calls returned is still a valid comment, but
         # the failed calls bound how much the support counts mean.
         header += f" · {failed_runs} repeat call{'' if failed_runs == 1 else 's'} failed"
+    if diff_only:
+        header += " · diff-only"
     out = [f"### AI diff review — `{model}`", "", header, ""]
+    if diff_only:
+        out += [f"File bodies were skipped (size), so this review saw the diff only. "
+                f"No blocker can be confirmed from it, and any blocker is reported as "
+                f"a warning.", ""]
     if not kept:
-        out.append("No findings: the diff does not break an invariant in scope, and "
-                   "no behaviour outside the declared intent changes.")
+        if diff_only:
+            out.append("No findings in the diff. The files around the changed lines "
+                       "were not read, so this covers the diff only.")
+        else:
+            out.append("No findings: the diff does not break an invariant in scope, and "
+                       "no behaviour outside the declared intent changes.")
 
     for n, it in enumerate(kept, 1):
         loc = f"{it.get('_path', '?')}:{it.get('_line', '?')}"
         if it.get("_repeat", 1) > 1:
             loc += f" (x{it['_repeat']})"
         flags = []
+        if diff_only and it.get("severity") == "blocker":
+            flags.append("DOWNGRADED_DIFF_ONLY")
         if it.get("_invented_test"):
             flags.append("INVENTED_TEST")
         if it.get("_invented_invariant"):
@@ -870,7 +978,7 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
         if it.get("_evidence_kind") == "C":
             flags.append("CONTEXT_LINE")
 
-        out += ["", f"#### {n}. {str(it.get('severity', '?')).upper()} — `{loc}`"]
+        out += ["", f"#### {n}. {severity(it).upper()} — `{loc}`"]
         if flags:
             out.append(f"Flags: {', '.join(flags)}")
         out.append("")
@@ -897,8 +1005,14 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
         context.append("- file bodies dropped to fit the budget: "
                        + "; ".join(meta["trimmed"]))
     if dropped:
-        context.append(f"- findings dropped by verification: {len(dropped)} "
-                       f"(quote not found in the diff)")
+        # More than one reason can apply; naming only "quote not found" would
+        # call a self-refuted finding a bad quote.
+        reasons: dict[str, int] = {}
+        for it in dropped:
+            reason = it.get("_drop") or "unverified"
+            reasons[reason] = reasons.get(reason, 0) + 1
+        detail = ", ".join(f"{n} {reason}" for reason, n in sorted(reasons.items()))
+        context.append(f"- findings dropped by verification: {len(dropped)} ({detail})")
     out += ["", "<details><summary>Review context</summary>", "", *context, "",
             "</details>", ""]
     # The body is model text rendered for humans: a quoted diff line can hold a
@@ -908,10 +1022,14 @@ def render_markdown(meta: dict, kept: list[dict], dropped: list[dict],
 
 def render(meta: dict, kept: list[dict], dropped: list[dict], run_label: str) -> str:
     repeats = sum(it.get("_repeat", 1) - 1 for it in kept)
+    diff_only = bool(meta.get("diff_only"))
     out = [f"{run_label} - {meta['files']} files, {meta['changed_lines']} changed lines, "
            f"~{meta['est_input_tokens']} in-tokens, invariants {meta['invariants']}",
            f"kept {len(kept)}, dropped {len(dropped)}"
            + (f" (+{repeats} duplicates collapsed)" if repeats else "")]
+    if diff_only:
+        out.append("diff-only: file bodies were skipped (size), so blockers are "
+                   "reported as warnings")
     if meta["dropped"]:
         out.append("skipped: " + "; ".join(meta["dropped"]))
     if meta.get("trimmed"):
@@ -922,6 +1040,8 @@ def render(meta: dict, kept: list[dict], dropped: list[dict], run_label: str) ->
         if it.get("_repeat", 1) > 1:
             loc += f" x{it['_repeat']}"
         flags = []
+        if diff_only and it.get("severity") == "blocker":
+            flags.append("DOWNGRADED_DIFF_ONLY")
         if it.get("_invented_test"):
             flags.append("INVENTED_TEST")
         if it.get("_invented_invariant"):
@@ -936,7 +1056,10 @@ def render(meta: dict, kept: list[dict], dropped: list[dict], run_label: str) ->
             flags.append(f"support={it['_support']}")
         if it.get("_evidence_kind") == "C":
             flags.append("CONTEXT_LINE")
-        out.append(f"[{str(it.get('severity','?')).upper()}] {loc} {' '.join(flags)}".rstrip())
+        sev = str(it.get("severity", "?"))
+        if diff_only and sev == "blocker":
+            sev = "warning"
+        out.append(f"[{sev.upper()}] {loc} {' '.join(flags)}".rstrip())
         if it.get("invariant"):
             out.append(f"    invariant: {it['invariant']}")
         if it.get("behavior"):
@@ -1041,7 +1164,10 @@ def main() -> None:
     ap.add_argument("--reasoning", choices=["auto", "off"], default="off",
                     help="auto leaves the provider's reasoning default on (more "
                          "output tokens and time); off sends an explicit disable")
-    ap.add_argument("--max-changed-lines", type=int, default=1500)
+    ap.add_argument("--max-changed-lines", type=int, default=0,
+                    help="read file bodies only when the diff is at most this many "
+                         "changed lines; 0 (default) means no line cap, so the "
+                         "--max-chars budget alone decides which bodies fit")
     ap.add_argument("--max-chars", type=int, default=1000000,
                     help="context budget in characters; file bodies are dropped "
                          "largest-first and reported to fit it, and the run fails "
@@ -1088,7 +1214,9 @@ def main() -> None:
     if args.dry_run:
         (outdir / f"{slug}.payload.txt").write_text(user)
         print(f"{label}\n  files={meta['files']} changed_lines={meta['changed_lines']} "
-              f"invariants={meta['invariants']} inventory={meta['inventory']}")
+              f"invariants={meta['invariants']} inventory={meta['inventory']}"
+              + (" infra" if meta["infra"] else "")
+              + (" diff-only" if meta["diff_only"] else ""))
         print(f"  payload={meta['payload_chars']} chars ~{meta['est_input_tokens']} tokens "
               f"-> {outdir/f'{slug}.payload.txt'}")
         if meta["dropped"]:
@@ -1110,7 +1238,8 @@ def main() -> None:
     # sections plus Negative Space when it was injected. The payload builder
     # records that decision; deriving it again here would let the two drift and
     # flag a finding the model saw as an invented invariant.
-    allowed = allowed_invariants(repo, meta["invariants"], meta["negative_space"])
+    allowed = allowed_invariants(repo, meta["invariants"], meta["negative_space"],
+                                 meta.get("infra", False))
     results: list[dict] = []
     files: list[str] = []
     for i in range(args.repeat):

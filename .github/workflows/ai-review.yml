@@ -82,9 +82,11 @@ jobs:
           # --max-chars is left at the tool's default so a local run without the
           # flag uses the same budget as this job. The default matches Robin's
           # max-diff-size in characters but bounds a different quantity (this
-          # budget also counts the injected inventory and, below the line cap,
-          # file bodies), so neither ceiling contains the other; each arm refuses
-          # an oversized PR rather than truncating it.
+          # budget also counts the injected inventory and file bodies), so
+          # neither ceiling contains the other; each arm refuses an oversized PR
+          # rather than truncating it. There is no separate line cap: the body
+          # budget alone decides what fits, and anything dropped is named in the
+          # comment's review context.
           python3 tools/ai_review.py \
             --repo . \
             --range "${BASE_SHA}...${HEAD_SHA}" \

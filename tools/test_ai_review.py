@@ -141,6 +141,30 @@ def test_verify_attaches_location_and_drops_an_unquoted_finding():
     assert dropped[0]["_drop"] == "evidence not in diff"
 
 
+def test_verify_drops_a_finding_that_refutes_itself():
+    # The model sometimes writes the refutation into `why` ("This is
+    # consistent; not a finding."). Publishing that tells the author nothing.
+    parsed = ai.parse_diff(
+        "diff --git a/engine.cpp b/engine.cpp\n"
+        "--- a/engine.cpp\n"
+        "+++ b/engine.cpp\n"
+        "@@ -10,1 +10,1 @@\n"
+        "-    return 1;\n"
+        "+    return 2;\n")
+    findings = [
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "This is consistent; not a finding."},
+        # A contrast marker after the refutation carries a live claim, so this
+        # one is kept: the model refuted one part, not the finding.
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "The default is consistent, but the loader still reads the old key."},
+    ]
+    kept, dropped = ai.verify(findings, parsed, [], [])
+    assert [it["why"] for it in kept] == [
+        "The default is consistent, but the loader still reads the old key."]
+    assert dropped[0]["_drop"] == "self-refuted"
+
+
 def test_locate_prefers_a_changed_line_over_an_identical_context_line():
     # A markerless quote that matches both an unchanged context line and an
     # added line must resolve to the added one; otherwise the finding is pinned
@@ -202,13 +226,112 @@ def test_build_context_always_sends_invariants_inventory_and_file_body(tmp_path)
     payload, meta = ai.build_context(
         repo, "HEAD~1...HEAD", "HEAD", "change the step result", 1500, 1_000_000)
 
-    assert "TEST INVENTORY (from CellEvoX/tests):" in payload
+    assert "TEST INVENTORY (Catch2 in CellEvoX/tests" in payload
     assert "deterministic replay" in payload
     assert "Deterministic replay" in payload
     assert "Anything that changes the snapshot ABI" in payload
     assert "--- FULL FILE CellEvoX/src/systems/engine.cpp" in payload
     assert meta["files"] == 1
     assert meta["inventory"] == 2
+
+
+def test_test_inventory_includes_python_tests(tmp_path):
+    # A pytest test asserts behaviour like a Catch2 case; before this, a real
+    # pytest name in `coverage` was flagged INVENTED_TEST on a workflow-only PR.
+    repo = _make_repo(tmp_path)
+    widget = repo / "tools/test_widget.py"
+    widget.parent.mkdir(parents=True)
+    widget.write_text("def test_widget_works():\n    assert True\n")
+    io_test = repo / "CellEvoX/scripts/test_io.py"
+    io_test.parent.mkdir(parents=True)
+    io_test.write_text("class TestReader:\n    def test_reader_fields(self):\n        pass\n")
+
+    inventory = ai.test_inventory(repo)
+    assert "deterministic replay [systems]" in inventory
+    assert "test_widget_works (test_widget.py)" in inventory
+    assert "test_reader_fields (test_io.py)" in inventory
+    assert len(inventory) == len(set(inventory))
+
+
+def test_build_context_gives_infrastructure_files_their_own_rules(tmp_path):
+    # .github/, tools/ and docs/ carry no numbered invariant. The bare "none
+    # matched" line left the model without any rule for secrets, pins and
+    # fail-open checks, so those files get an explicit scope instead.
+    repo = _make_repo(tmp_path)
+    workflow = repo / ".github/workflows/ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("on: push\njobs: {}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "add ci")
+
+    payload, meta = ai.build_context(
+        repo, "HEAD~1...HEAD", "HEAD", "add ci", 0, 1_000_000)
+
+    assert "INFRASTRUCTURE REVIEW SCOPE" in payload
+    assert "none matched the changed paths" not in payload
+    assert meta["infra"] is True
+    allowed = ai.allowed_invariants(
+        repo, meta["invariants"], meta["negative_space"], meta["infra"])
+    # The guidance is part of the payload, so citing it is not an invented
+    # invariant.
+    assert ai.invariant_matches("infrastructure review scope", allowed)
+
+
+def test_a_zero_line_cap_still_sends_file_bodies(tmp_path):
+    # 0 is "no line cap": --max-chars already bounds the payload, so a separate
+    # line ceiling only costs the context needed to judge the change.
+    repo = _make_repo(tmp_path)
+    payload, meta = ai.build_context(
+        repo, "HEAD~1...HEAD", "HEAD", "change the step result", 0, 1_000_000)
+
+    assert meta["diff_only"] is False
+    assert "--- FULL FILE CellEvoX/src/systems/engine.cpp" in payload
+    assert not meta["dropped"]
+
+
+def test_build_context_marks_a_diff_only_review(tmp_path):
+    repo = _make_repo(tmp_path)
+    payload, meta = ai.build_context(
+        repo, "HEAD~1...HEAD", "HEAD", "change the step result", 1, 1_000_000)
+
+    assert meta["diff_only"] is True
+    assert "--- FULL FILE" not in payload
+    assert meta["dropped"] == ["above the 1-line threshold (2 changed lines)"]
+
+
+def test_build_context_is_diff_only_when_the_only_body_is_too_large(tmp_path):
+    # The line cap is not the only way to lose every body: a file above
+    # MAX_BODY_CHARS is skipped for size, and that is the same blind spot.
+    repo = _make_repo(tmp_path)
+    big = repo / "CellEvoX/src/systems/big.cpp"
+    pad = "// " + "x" * ai.MAX_BODY_CHARS + "\n"
+    big.write_text(pad + "int big() {\n    return 1;\n}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "add big")
+    big.write_text(pad + "int big() {\n    return 2;\n}\n")
+    _git(repo, "commit", "-q", "-am", "change big")
+
+    payload, meta = ai.build_context(
+        repo, "HEAD~1...HEAD", "HEAD", "change big", 0, 1_000_000)
+
+    assert meta["diff_only"] is True
+    assert "--- FULL FILE" not in payload
+    assert any("chars >" in d for d in meta["dropped"])
+
+
+def test_render_markdown_publishes_a_diff_only_blocker_as_a_warning():
+    meta = {"files": 1, "changed_lines": 2, "invariants": [], "payload_chars": 10,
+            "est_input_tokens": 3, "dropped": ["engine.cpp: 90000 chars > 24000"],
+            "diff_only": True}
+    finding = {"_path": "CellEvoX/src/systems/engine.cpp", "_line": 2,
+               "severity": "blocker", "behavior": "step() returns 2",
+               "why": "callers assume 1"}
+    md = ai.render_markdown(meta, [finding], [], "deepseek/test")
+
+    assert "1 warning" in md
+    assert "WARNING — `CellEvoX/src/systems/engine.cpp:2`" in md
+    assert "DOWNGRADED_DIFF_ONLY" in md
+    assert "diff-only" in md
 
 
 def test_build_context_refuses_a_payload_over_the_budget(tmp_path):
