@@ -141,9 +141,18 @@ jobs:
               fs.existsSync(process.env.REVIEW_MD)
               ? fs.readFileSync(process.env.REVIEW_MD, 'utf8')
               : fallback;
-            const body = (
-              `${marker}\n${report}\n\n_Advisory: findings do not block the merge._`
-            ).slice(0, 60000);
+            // GitHub rejects a comment over 65536 characters. Slicing the
+            // composed body cut the tail of the findings and the advisory line
+            // without saying so, so the report is shortened first, and the cut
+            // is named in the comment.
+            const advisory = '_Advisory: findings do not block the merge._';
+            const notice = '\n\n_Report truncated at the comment size limit; ' +
+              'the full text is in the ai-review artifact._';
+            const room = 60000 - marker.length - advisory.length - notice.length - 4;
+            const shown = report.length > room
+              ? report.slice(0, room) + notice
+              : report;
+            const body = `${marker}\n${shown}\n\n${advisory}`;
 
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;

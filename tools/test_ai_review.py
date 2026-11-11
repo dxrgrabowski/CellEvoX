@@ -856,6 +856,17 @@ def test_review_workflow_surfaces_why_no_result_was_produced():
     assert "default=1000000" in (TOOL).read_text()
 
 
+def test_review_workflow_says_when_the_comment_was_truncated():
+    workflow = (TOOL.parent.parent / ".github/workflows/ai-review.yml").read_text()
+    post_step = workflow.split("Post or update the review comment")[1].split("- name:")[0]
+    # Slicing the composed body dropped the tail of the findings and the
+    # advisory line without saying so. The report is shortened before the
+    # advisory is appended, and the cut is named in the comment.
+    assert ").slice(0, 60000);" not in post_step
+    assert "Report truncated at the comment size limit" in post_step
+    assert "const advisory = '_Advisory: findings do not block the merge._';" in post_step
+
+
 def test_review_workflow_finds_the_sticky_comment_by_bot_not_login():
     workflow = (TOOL.parent.parent / ".github/workflows/ai-review.yml").read_text()
     assert "c.user?.type === 'Bot'" in workflow
