@@ -687,8 +687,11 @@ HEDGED_RE = re.compile(
 # the model that wrote it ("This is consistent; not a finding."). Publishing it
 # tells the author nothing. Only the tail after the last refutation counts, so
 # "the default is consistent, but the loader still reads the old key" survives.
+# "Not a silent drop." is the same move on the truncation path: the model says
+# the notice exists and publishes the notice as a warning anyway.
 SELF_REFUTING_RE = re.compile(
     r"\bnot (?:a|an) (?:finding|issue|problem|regression|bug)\b|"
+    r"\bnot (?:a|an) silent \w+\b|"
     r"\bno findings?\b|"
     r"\b(?:this|that|it) is (?:fine|correct|consistent|expected|intended|"
     r"unchanged|equivalent)\b|"

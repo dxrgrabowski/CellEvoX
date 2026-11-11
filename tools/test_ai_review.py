@@ -173,11 +173,20 @@ def test_verify_drops_a_finding_that_refutes_itself():
          "why": "This is the intentional decision recorded in the ADR, so per "
                 "policy it is not itself a finding — but the key is handed to "
                 "a third-party action whose update path is manual."},
+        # The phrasing from the live run on PR #64 for the truncation and
+        # body-drop findings: the model checks that the behaviour is named and
+        # then publishes that check as a warning.
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "INTENT says the truncation is named; the test asserts the "
+                "notice. Not a silent drop."},
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "The test asserts the drop is recorded. Not a silent "
+                "truncation."},
     ]
     kept, dropped = ai.verify(findings, parsed, [], [])
     assert [it["why"] for it in kept] == [
         "The default is consistent, but the loader still reads the old key."]
-    assert [it["_drop"] for it in dropped] == ["self-refuted"] * 4
+    assert [it["_drop"] for it in dropped] == ["self-refuted"] * 6
 
 
 def test_locate_prefers_a_changed_line_over_an_identical_context_line():

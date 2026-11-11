@@ -203,8 +203,9 @@ to a hosted model and posts the result as a single sticky PR comment.
 - `tools/test_ai_review.py` — unit tests over diff parsing (including the
   `--- `/`+++ ` content-line case), quote verification and drop reporting, a
   finding that refutes itself dropped as `self-refuted` while a refutation
-  followed by a contrast keeps its live claim, and a "not itself a finding"
-  phrasing dropped even when a contrast follows it, pytest names in the inventory,
+  followed by a contrast keeps its live claim, a "not itself a finding"
+  phrasing dropped even when a contrast follows it, and a "Not a silent drop."
+  tail dropped as the same refutation, pytest names in the inventory,
   the infrastructure scope for a `.github/`-only diff, a zero line cap still
   sending bodies, a body above `MAX_BODY_CHARS` making the review diff-only,
   a blocker downgraded to a warning in that mode,
