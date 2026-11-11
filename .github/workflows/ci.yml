@@ -125,7 +125,9 @@ jobs:
 
     # Blocking performance signal (ADR-0010). Retired instruction counts are
     # reproducible run-to-run, unlike wall-clock timings on shared runners, so a
-    # regression here is a real change in work performed.
+    # regression here is a real change in work performed. To admit a cost this
+    # PR deliberately accepts, add --accepted-delta WORKLOAD=RATIO here (one
+    # workload, visible in review); do not raise --threshold.
     - name: Deterministic Instruction Gate
       run: |
         mkdir -p benchmark_reports

@@ -10,7 +10,8 @@ TBB thread, so both the work and the instruction count are reproducible.
 The gate builds nothing. It is given a base and a head probe binary, measures
 each workload under Callgrind, and compares Ir:
 
-  * delta > --threshold           -> REGRESSED (blocks)
+  * delta > --threshold, or its
+    --accepted-delta if named     -> REGRESSED (blocks)
   * delta < -threshold            -> IMPROVED
   * otherwise                     -> OK
   * checksum differs              -> SEMANTICS CHANGED (blocks: the two binaries
@@ -23,6 +24,12 @@ each workload under Callgrind, and compares Ir:
 
 Everything that is not a measured, deterministic, semantically identical
 comparison fails the gate. There is no skip path.
+
+A workload named in ``--accepted-delta WORKLOAD=RATIO`` may grow by that ratio
+instead of ``--threshold``, and its row is printed as ``OK (accepted +N%)``. This
+is for a cost the project has decided to pay in the current PR, not for widening
+the gate: it is scoped to one workload and visible in the CI invocation, so the
+reviewer sees it.
 
 Instruction collection is limited to the probe's ``main`` with
 ``--collect-atstart=no --toggle-collect=main``. Anything the dynamic loader
@@ -64,6 +71,10 @@ def parse_args() -> argparse.Namespace:
                         help="Comma-separated workload names (default: all)")
     parser.add_argument("--threshold", type=float, default=0.02,
                         help="Maximum allowed Ir increase before the gate blocks (default: 2%%)")
+    parser.add_argument("--accepted-delta", action="append", default=[], metavar="WORKLOAD=RATIO",
+                        help="Allow one workload to grow by RATIO (e.g. realistic-2d-450=0.03) as a cost "
+                             "the project has accepted; repeatable, and the row is reported as an "
+                             "accepted cost instead of a silent pass")
     parser.add_argument("--max-spread", type=float, default=0.02,
                         help="Maximum spread between repeated runs of one side; a wider spread means "
                              "the workload is not deterministic (default: 2%%)")
@@ -76,7 +87,27 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
+    args.accepted_delta = parse_accepted_deltas(args.accepted_delta, parser)
     return args
+
+
+def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser) -> Dict[str, float]:
+    accepted: Dict[str, float] = {}
+    for entry in entries:
+        name, _, ratio = entry.partition("=")
+        name = name.strip()
+        try:
+            value = float(ratio)
+        except ValueError:
+            parser.error(f"--accepted-delta expects WORKLOAD=RATIO, got {entry!r}")
+        if name not in WORKLOADS:
+            parser.error(f"--accepted-delta: unknown workload {name!r}")
+        if not 0 < value <= 0.5:
+            parser.error(f"--accepted-delta: {name} ratio must be in (0, 0.5], got {value}")
+        if name in accepted:
+            parser.error(f"--accepted-delta: {name} given more than once")
+        accepted[name] = value
+    return accepted
 
 
 def measure(side: str, binary: Path, workload: str, run_index: int, args: argparse.Namespace) -> Dict:
@@ -165,19 +196,26 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["detail"] = f"base=0x{base['checksums'][0]} head=0x{head['checksums'][0]}"
         return entry
     delta = (head["ir"] - base["ir"]) / base["ir"]
+    allowed = args.accepted_delta.get(workload, args.threshold)
     entry["delta"] = delta
-    if delta > args.threshold:
+    entry["allowed"] = allowed
+    if delta > allowed:
         entry["status"] = "REGRESSED"
     elif delta < -args.threshold:
         entry["status"] = "IMPROVED"
     else:
         entry["status"] = "OK"
+        if delta > args.threshold:
+            entry["accepted"] = allowed
     return entry
 
 
 def print_report(results: List[Dict], args: argparse.Namespace) -> None:
     print(f"\n=== Deterministic instruction gate (threshold {args.threshold:+.1%}, "
           f"{args.runs} runs per side, minimum Ir) ===")
+    accepted = ", ".join(f"{name} {ratio:+.1%}" for name, ratio in sorted(args.accepted_delta.items()))
+    if accepted:
+        print(f"    accepted deltas: {accepted}")
     print(f"{'Workload':<28} {'Base Ir':>15} {'Head Ir':>15} {'Change':>9}  Status")
     print("-" * 82)
     for entry in results:
@@ -187,8 +225,11 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
             if entry.get("detail"):
                 print(f"  {'':<26} {entry['detail']}")
             continue
+        status_text = status
+        if entry.get("accepted") is not None:
+            status_text = f"OK (accepted +{entry['accepted']:.1%})"
         print(f"  {entry['workload']:<26} {entry['base']['ir']:>15,} {entry['head']['ir']:>15,} "
-              f"{entry['delta']:+9.2%}  {status}")
+              f"{entry['delta']:+9.2%}  {status_text}")
     print("-" * 82)
     failures = [entry for entry in results if entry["status"] in
                 {"REGRESSED", "MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"}]
@@ -229,6 +270,7 @@ def main() -> int:
                     "max_spread": args.max_spread,
                     "runs": args.runs,
                     "workloads": workloads,
+                    "accepted_delta": args.accepted_delta,
                 },
                 "results": results,
             }, handle, indent=2)

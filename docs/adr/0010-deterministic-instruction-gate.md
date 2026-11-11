@@ -16,9 +16,10 @@ verdicts are advisory.
   fixed iteration counts, a fixed seed and one TBB thread, and prints a FNV-1a
   checksum of the state it produced.
 - `CellEvoX/tests/benchmarks/perf_ir_gate.py` measures each side twice per
-  workload and fails on an `Ir` increase above 2%, differing checksums (the
-  binaries no longer do the same work), a spread above 2% between repeats (the
-  workload is not deterministic), or an unrunnable/unparsable measurement.
+  workload and fails on an `Ir` increase above 2% (or above its named
+  `--accepted-delta`), differing checksums (the binaries no longer do the same
+  work), a spread above 2% between repeats (the workload is not deterministic),
+  or an unrunnable/unparsable measurement.
 - Reproducibility rests on two bounds: collection is toggled on `main`
   (`--collect-atstart=no --toggle-collect=main`), and every measurement starts
   from a stats directory that does not exist yet.
@@ -35,7 +36,11 @@ verdicts are advisory.
   advisory report is what surfaces that; neither signal alone is a verdict.
 - `--threshold 0.02` is headroom over a measured floor of 0.0000%, not tolerance
   for a known cost. Raising it to admit a known cost is forbidden by
-  `AGENTS.md` (Negative Space), and it would be invisible in the diff.
+  `AGENTS.md` (Negative Space), and it would be invisible in the diff. A cost
+  the project deliberately accepts is named instead:
+  `--accepted-delta realistic-2d-450=0.03` relaxes that single workload and
+  prints `OK (accepted +3.0%)`, so the exception is written in the accepting
+  PR's `ci.yml` instead of silently widening the gate.
 - Callgrind is 20-50x slower than native, so the probe covers small populations
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
