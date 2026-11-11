@@ -72,8 +72,12 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
   founder census.
 - `MutationCount` is the full number of mutations carried by the cell, even when
   the `Mutations` column is filtered.
-- `Mutations` is a space-separated list of `(mutation_id,mutation_type)` pairs.
-  `mutation_id` is the cell in which that mutation was created: a newly acquired
+- `Mutations` is a space-separated list of
+  `(mutation_id,mutation_type,effect)` triples. `effect` is the *realized*
+  signed fitness effect of that mutation (the constant `effect` for constant
+  mutations, the sampled gamma value for gamma mutations) formatted with
+  `float` round-trip precision; it is not the configured sign. `mutation_id` is
+  the cell in which that mutation was created: a newly acquired
   mutation is stamped with the daughter's `CellID`, so it **can** equal the
   current cell ID, and an inherited mutation can equal the current `ParentID`.
   Do not treat `mutation_id` as a unique ancestor discriminator. With
@@ -129,13 +133,14 @@ It is GEXF 1.3 with directed edges from parent to child and node attributes
 
 ## Binary snapshot ABI (`CELXPOP1`)
 
-Current version is **v2**:
+Current version is **v3**:
 
 - 48-byte header: magic `CELXPOP1`, version, record size, tau, record count,
   mutation payload count, spatial dimensions, mutation record size, flags.
 - 36-byte cell record.
-- 5-byte mutation payload entry (`mutation_id`, `mutation_type`), addressed by
-  per-record offset/count.
+- 9-byte mutation payload entry (`mutation_id`, `mutation_type`, `effect`),
+  addressed by per-record offset/count. `effect` is the realized signed fitness
+  effect as a little-endian `float`.
 
 Payload flags distinguish driver-only (`0x1`) from full (`0x2`) payloads. The
 same records are materialized as CSV; CSV is the interchange format for
@@ -145,8 +150,8 @@ analysis and for the web backend.
 
 | Reader | Accepts |
 | --- | --- |
-| C++ (`PopulationSnapshotIO.hpp`) | v2 only |
-| Python (`CellEvoX/scripts/snapshot_io.py`) | v2 only; prefers CSV when both exist |
+| C++ (`PopulationSnapshotIO.hpp`) | v3 only |
+| Python (`CellEvoX/scripts/snapshot_io.py`) | v3 only; prefers CSV when both exist |
 | Web backend (`web/backend/results_parser.py`) | population CSV only |
 
 The contract is pinned by the canonical fixtures in

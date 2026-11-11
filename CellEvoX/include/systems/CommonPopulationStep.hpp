@@ -97,10 +97,33 @@ inline bool commonDaughterCellLess(const Cell& lhs, const Cell& rhs) {
     return lhs.mutations.size() < rhs.mutations.size();
   }
   if (!lhs.mutations.empty() && !rhs.mutations.empty()) {
-    return lhs.mutations.back().second < rhs.mutations.back().second;
+    return lhs.mutations.back().mutation_type < rhs.mutations.back().mutation_type;
   }
   return false;
 }
+
+namespace detail {
+
+// Realized signed fitness effect of one mutation event. Constant mutations use
+// the configured value and consume no RNG, so constant-only runs stay
+// bit-identical to previous releases. Gamma mutations draw from a dedicated
+// stream/substream (never streams 0/1/2) and clamp the magnitude to
+// `effect_limit`. `mutation_slot` reserves room for multiple mutations per
+// division without shifting existing draws.
+inline float realizedMutationEffect(const MutationType& mutation, uint64_t seed, uint64_t step,
+                                    uint64_t cell_id, uint32_t mutation_slot) {
+  if (mutation.effect_mode != MutationEffectMode::Gamma) {
+    return mutation.effect;
+  }
+  const uint64_t stream = CellEvoX::deterministic_rng::substream(
+      CellEvoX::deterministic_rng::kStreamMutationEffect, mutation_slot);
+  const double draw = CellEvoX::deterministic_rng::gamma01(
+      seed, step, cell_id, stream, mutation.gammaShape(), mutation.gammaScale());
+  const double magnitude = std::min(draw, static_cast<double>(mutation.effect_limit));
+  return static_cast<float>(mutation.directionSign() * magnitude);
+}
+
+}  // namespace detail
 
 // The base caller compiles out event lists; xyz requests them for its overlay.
 template <bool collect_event_result = true>
@@ -192,12 +215,15 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
               for (const auto& mut : available_mutation_types) {
                 prob_sum += mut.second.probability;
                 if (rand_val < prob_sum) {
-                  const double daughter_fitness = fitness * (1.0 + mut.second.effect);
+                  const float realized_effect =
+                      detail::realizedMutationEffect(mut.second, config.seed, rng_step, idx, 0);
+                  const double daughter_fitness = fitness * (1.0 + realized_effect);
                   if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
                     throw std::runtime_error("Mutation produced invalid daughter fitness");
                   }
                   Cell daughter_cell1 = Cell(cell, daughter_fitness);
-                  daughter_cell1.mutations.push_back({0, mut.second.type_id});
+                  daughter_cell1.mutations.push_back(
+                      {0, mut.second.type_id, realized_effect});
                   buffers.new_cells.push_back(std::move(daughter_cell1));
                   buffers.new_cells.emplace_back(cell, fitness);
                   break;
@@ -320,8 +346,8 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
         auto& new_cell = sorted_new_cells[i];
         new_cell.id = new_id;
         for (auto& mutation : new_cell.mutations) {
-          if (mutation.first == 0) {
-            mutation.first = new_id;
+          if (mutation.mutation_id == 0) {
+            mutation.mutation_id = new_id;
           }
         }
         if constexpr (collect_event_result) {

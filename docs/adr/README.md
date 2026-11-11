@@ -20,6 +20,7 @@ also `Proposed`. Acceptance dates are recorded in each ADR.
 | [0007](0007-build-portability.md) | Accepted | `-march=native` default and Python-embed build |
 | [0008](0008-performance-gate.md) | Accepted | Paired benchmark gate and phase profiling |
 | [0009](0009-interleaved-benchmark-rounds.md) | Proposed | Interleaved base/head rounds, median of round means |
+| [0010](0010-gamma-mutation-effect.md) | Accepted | Gamma-distributed mutation effects on a dedicated RNG stream |
 
 ## Template
 

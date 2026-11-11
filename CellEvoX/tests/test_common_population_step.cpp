@@ -2,6 +2,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <map>
 #include <utility>
 #include <vector>
@@ -122,13 +123,21 @@ TEST_CASE("CommonPopulationStep reuses slots and optionally returns the same eve
     SimulationConfig config;
     config.tau_step = 1.0;
     config.env_capacity = 1'000'000'000;
+    MutationType gamma_mutation{};
+    gamma_mutation.probability = 1.0f;
+    gamma_mutation.type_id = 7;
+    gamma_mutation.is_driver = true;
+    gamma_mutation.effect_mode = MutationEffectMode::Gamma;
+    gamma_mutation.effect_mean = 0.5f;
+    gamma_mutation.effect_std = 0.5f;
+    gamma_mutation.effect_limit = 0.5f;
     const std::map<uint8_t, MutationType> mutations = {
-        {7, MutationType{0.0f, 1.0f, 7, true}},
+        {7, gamma_mutation},
     };
     CellEvoX::systems::DensePopulation base(3), xyz(3);
     for (uint32_t id = 0; id < 3; ++id) {
         base.at(id).fitness = xyz.at(id).fitness = 1.0e20f;
-        base.at(id).mutations = xyz.at(id).mutations = {{100 + id, 7}};
+        base.at(id).mutations = xyz.at(id).mutations = {{100 + id, 7, 0.0f}};
     }
     size_t base_count = 3, xyz_count = 3;
     size_t base_deaths = 0, xyz_deaths = 0;
@@ -156,7 +165,7 @@ TEST_CASE("CommonPopulationStep reuses slots and optionally returns the same eve
             REQUIRE(base.at(birth.id).parent_id == birth.parent_id);
             REQUIRE(base.at(birth.id).mutations == xyz.at(birth.id).mutations);
             REQUIRE(base.at(birth.id).fitness == xyz.at(birth.id).fitness);
-            REQUIRE(base.at(birth.id).mutations.front().first >= 100);
+            REQUIRE(base.at(birth.id).mutations.front().mutation_id >= 100);
         }
     }
     Graveyard base_graveyard, xyz_graveyard;
@@ -169,4 +178,61 @@ TEST_CASE("CommonPopulationStep reuses slots and optionally returns the same eve
         REQUIRE(xyz_graveyard.find(accessor, id));
         REQUIRE(accessor->second == entry);
     }
+}
+
+TEST_CASE("CommonPopulationStep clamps gamma effects at the configured limit",
+          "[CommonPopulationStep][Gamma][Determinism]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    const auto direction =
+        GENERATE(MutationEffectDirection::Positive, MutationEffectDirection::Negative);
+    constexpr float kLimit = 0.5f;
+    constexpr uint32_t kCells = 32;
+
+    SimulationConfig config;
+    config.tau_step = 1.0;
+    config.env_capacity = 1'000'000'000;
+
+    MutationType gamma_mutation{};
+    gamma_mutation.probability = 1.0f;
+    gamma_mutation.type_id = 9;
+    gamma_mutation.effect_mode = MutationEffectMode::Gamma;
+    gamma_mutation.effect_mean = 0.5f;
+    gamma_mutation.effect_std = 0.5f;  // shape 1: P(draw > limit) ~ 0.37 per event
+    gamma_mutation.effect_direction = direction;
+    gamma_mutation.effect_limit = kLimit;
+    const std::map<uint8_t, MutationType> mutations = {{9, gamma_mutation}};
+
+    CellEvoX::systems::DensePopulation population(kCells);
+    for (uint32_t id = 0; id < kCells; ++id) {
+        population.at(id).fitness = 10.0f;
+    }
+    size_t actual_population = kCells;
+    size_t total_deaths = 0;
+
+    const auto events = CellEvoX::systems::applyCommonPopulationStep(
+        population, config, mutations, 1.0, actual_population, total_deaths, 4.0);
+
+    REQUIRE(events.births.size() == 2 * kCells);
+    const float sign = direction == MutationEffectDirection::Positive ? 1.0f : -1.0f;
+    size_t mutated = 0;
+    size_t clamped = 0;
+    for (const auto& birth : events.births) {
+        const auto& cell = population.at(birth.id);
+        if (cell.mutations.empty()) {
+            // Only one daughter of each division carries the new mutation.
+            REQUIRE(cell.fitness == 10.0f);
+            continue;
+        }
+        ++mutated;
+        REQUIRE(cell.mutations.size() == 1);
+        const float effect = cell.mutations.front().effect;
+        REQUIRE(effect * sign > 0.0f);
+        REQUIRE(std::abs(effect) <= kLimit);
+        if (std::abs(effect) == kLimit) ++clamped;
+        REQUIRE(cell.fitness == Catch::Approx(10.0f * (1.0 + effect)));
+        REQUIRE(cell.fitness > 0.0f);
+    }
+    REQUIRE(mutated == kCells);
+    REQUIRE(clamped > 0);
 }

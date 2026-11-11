@@ -114,6 +114,7 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
 struct BenchmarkMutationPayloadRecord {
     uint32_t mutation_id;
     uint8_t mutation_type;
+    float effect;
 };
 
 struct BenchmarkExtendedPopulationSnapshotRecord {
@@ -122,7 +123,7 @@ struct BenchmarkExtendedPopulationSnapshotRecord {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(BenchmarkMutationPayloadRecord) == 5);
+static_assert(sizeof(BenchmarkMutationPayloadRecord) == 9);
 static_assert(sizeof(BenchmarkExtendedPopulationSnapshotRecord) == 40);
 
 struct SyntheticSnapshotInput {
@@ -155,7 +156,8 @@ static SyntheticSnapshotInput makeSyntheticSnapshotInput(
         for (uint16_t j = 0; j < mutations_per_cell; ++j) {
             cell.mutations.push_back(
                 {static_cast<uint32_t>(1'000'000ull + i * mutations_per_cell + j),
-                 static_cast<uint8_t>(j % 8)});
+                 static_cast<uint8_t>(j % 8),
+                 0.0f});
         }
 
         input.cells.push_back(std::move(cell));
@@ -215,8 +217,8 @@ buildExtendedSnapshot(const SyntheticSnapshotInput& input) {
     for (size_t i = 0; i < input.cells.size(); ++i) {
         const auto& cell = input.cells[i];
         const uint32_t mutation_offset = static_cast<uint32_t>(mutation_payload.size());
-        for (const auto& [mutation_id, mutation_type] : cell.mutations) {
-            mutation_payload.push_back({mutation_id, mutation_type});
+        for (const auto& [mutation_id, mutation_type, effect] : cell.mutations) {
+            mutation_payload.push_back({mutation_id, mutation_type, effect});
         }
 
         snapshot.push_back({

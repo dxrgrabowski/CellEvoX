@@ -16,7 +16,8 @@ import numpy as np
 class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
-    MUTATION_RE = re.compile(r"\((\d+),(\d+)\)")
+    # Matches "(id,type)" and the v3 "(id,type,effect)" form.
+    MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)")
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root

@@ -16,15 +16,22 @@ import pandas as pd
 
 ANCESTOR_SIGNATURE = "ancestor"
 SNAPSHOT_MAGIC = b"CELXPOP1"
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 
 _POPULATION_CSV_RE = re.compile(r"population_generation_(\d+)\.csv$")
 _POPULATION_BIN_RE = re.compile(r"population_generation_(\d+)\.bin$")
-_MUTATION_RE = re.compile(r"\((\d+),(\d+)\)")
+# v3 adds an optional realized effect; the third group stays optional so older
+# two-field exports remain parseable.
+_MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,([-+0-9.eE]+))?\)")
 
 _HEADER_STRUCT = struct.Struct("<8sIIdIIBBB13x")
 _RECORD_STRUCT = struct.Struct("<IIffffHHIB3x")
-_DRIVER_MUTATION_STRUCT = struct.Struct("<IB")
+_DRIVER_MUTATION_STRUCT = struct.Struct("<IBf")
+
+
+def format_effect(effect: float) -> str:
+    """Match the C++ CSV writer (``std::setprecision(max_digits10)``)."""
+    return format(effect, ".9g")
 
 
 @dataclass(frozen=True)
@@ -100,12 +107,17 @@ def phylogeny_death_times(phylogeny: Optional[pd.DataFrame]) -> Dict[int, float]
     }
 
 
-def parse_mutations(mutations_str: object) -> List[Tuple[int, int]]:
+def parse_mutations(mutations_str: object) -> List[Tuple[int, int, float]]:
+    """Parse ``Mutations`` entries into ``(mutation_id, mutation_type, effect)``.
+
+    The effect is absent from pre-v3 payloads, in which case it defaults to 0.0.
+    """
     if mutations_str is None or mutations_str == "" or mutations_str == '""' or pd.isna(mutations_str):
         return []
-    mutations: List[Tuple[int, int]] = []
+    mutations: List[Tuple[int, int, float]] = []
     for match in _MUTATION_RE.finditer(str(mutations_str).strip('"')):
-        mutations.append((int(match.group(1)), int(match.group(2))))
+        effect = float(match.group(3)) if match.group(3) is not None else 0.0
+        mutations.append((int(match.group(1)), int(match.group(2)), effect))
     return mutations
 
 
@@ -116,9 +128,13 @@ def signature_to_driver_ids(signature: str) -> Tuple[int, ...]:
 
 
 def driver_signature_from_mutations(
-    mutations: Sequence[Tuple[int, int]], driver_type_ids: Set[int]
+    mutations: Sequence[Tuple[int, int, float]], driver_type_ids: Set[int]
 ) -> str:
-    driver_ids = [mutation_id for mutation_id, mutation_type in mutations if mutation_type in driver_type_ids]
+    driver_ids = [
+        mutation_id
+        for mutation_id, mutation_type, _effect in mutations
+        if mutation_type in driver_type_ids
+    ]
     return driver_signature_from_driver_ids(driver_ids)
 
 
@@ -456,12 +472,13 @@ def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int
     ) in records:
         mutation_slice = driver_mutations[driver_offset : driver_offset + driver_count] if has_payload else []
         mutations_str = " ".join(
-            f"({mutation_id},{mutation_type})" for mutation_id, mutation_type in mutation_slice
+            f"({mutation_id},{mutation_type},{format_effect(effect)})"
+            for mutation_id, mutation_type, effect in mutation_slice
         )
         if has_full_payload:
             signature = driver_signature_from_mutations(mutation_slice, driver_type_ids)
         else:
-            driver_ids = [mutation_id for mutation_id, _ in mutation_slice]
+            driver_ids = [mutation_id for mutation_id, _, _ in mutation_slice]
             signature = driver_signature_from_driver_ids(driver_ids)
         rows.append(
             {
