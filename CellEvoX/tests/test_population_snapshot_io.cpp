@@ -22,12 +22,6 @@ void writePod(std::ofstream& file, const T& value) {
     REQUIRE(file.good());
 }
 
-void fillSnapshotMagic(char (&magic)[8]) {
-    std::copy(CellEvoX::io::kPopulationSnapshotMagic.begin(),
-              CellEvoX::io::kPopulationSnapshotMagic.end(),
-              magic);
-}
-
 }  // namespace
 
 TEST_CASE("PopulationSnapshotIO reports any mutation payload kind", "[PopulationSnapshotIO]") {
@@ -80,94 +74,142 @@ TEST_CASE("PopulationSnapshotIO rejects truncated V2 snapshots", "[PopulationSna
         snapshot_path, loaded_header, records, mutations));
 }
 
-TEST_CASE("PopulationSnapshotIO reads legacy V1 headered snapshots", "[PopulationSnapshotIO][Legacy]") {
-    const auto snapshot_path = testTempPath("legacy_population_snapshot_v1.bin");
-    std::filesystem::create_directories(snapshot_path.parent_path());
+namespace {
 
-    CellEvoX::io::PopulationSnapshotFileHeaderV1 legacy_header{};
-    fillSnapshotMagic(legacy_header.magic);
-    legacy_header.version = 1;
-    legacy_header.record_size = sizeof(CellEvoX::io::PopulationSnapshotRecordV1);
-    legacy_header.tau = 4.25;
-    legacy_header.record_count = 1;
-    legacy_header.spatial_dimensions = 2;
-
-    CellEvoX::io::PopulationSnapshotRecordV1 legacy_record{};
-    legacy_record.id = 9;
-    legacy_record.parent_id = 4;
-    legacy_record.fitness = 1.5f;
-    legacy_record.x = 1.0f;
-    legacy_record.y = 2.0f;
-    legacy_record.z = 0.0f;
-    legacy_record.mutations_count = 7;
-    legacy_record.position_valid = 1;
-
-    {
-        std::ofstream file(snapshot_path, std::ios::binary);
-        REQUIRE(file.is_open());
-        writePod(file, legacy_header);
-        writePod(file, legacy_record);
-    }
-
-    CellEvoX::io::PopulationSnapshotFileHeader header{};
-    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
-    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
-    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
-
-    REQUIRE(header.version == CellEvoX::io::kPopulationSnapshotVersion);
-    REQUIRE(header.tau == Catch::Approx(4.25));
-    REQUIRE(header.record_count == 1);
-    REQUIRE(header.spatial_dimensions == 2);
-    REQUIRE_FALSE(CellEvoX::io::hasAnyMutationPayload(header));
-    REQUIRE(records.size() == 1);
-    REQUIRE(mutations.empty());
-    REQUIRE(records[0].id == 9);
-    REQUIRE(records[0].parent_id == 4);
-    REQUIRE(records[0].fitness == Catch::Approx(1.5f));
-    REQUIRE(records[0].x == Catch::Approx(1.0f));
-    REQUIRE(records[0].y == Catch::Approx(2.0f));
-    REQUIRE(records[0].mutations_count == 7);
-    REQUIRE(records[0].driver_mutation_count == 0);
-    REQUIRE(records[0].driver_mutation_offset == 0);
-    REQUIRE(records[0].position_valid == 1);
+std::filesystem::path fixturePath(std::string_view relative) {
+    return std::filesystem::path(CELLEVOX_SOURCE_DIR) / "tests" / "fixtures" / "mini_run" /
+           relative;
 }
 
-TEST_CASE("PopulationSnapshotIO reads raw legacy 3D snapshots", "[PopulationSnapshotIO][Legacy]") {
-    const auto snapshot_path = testTempPath("legacy_population_snapshot_raw_3d.bin");
-    std::filesystem::create_directories(snapshot_path.parent_path());
+std::streamoff fileSize(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    REQUIRE_FALSE(ec);
+    return static_cast<std::streamoff>(size);
+}
 
-    const std::vector<CellEvoX::io::LegacyPopulationSnapshotRecord3D> legacy_records = {
-        {5, 1, 1.25f, 10.0f, 11.0f, 12.0f, 2},
-        {6, 5, 0.75f, 13.0f, 14.0f, 15.0f, 3},
-    };
+}  // namespace
 
-    {
-        std::ofstream file(snapshot_path, std::ios::binary);
-        REQUIRE(file.is_open());
-        file.write(reinterpret_cast<const char*>(legacy_records.data()),
-                   static_cast<std::streamsize>(legacy_records.size() * sizeof(legacy_records[0])));
-        REQUIRE(file.good());
-    }
+TEST_CASE("PopulationSnapshotIO serialized sizes match the ABI contract", "[PopulationSnapshotIO]") {
+    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotFileHeader) == 48);
+    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotRecord) == 36);
+    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotDriverMutation) == 5);
+    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).record_size == 36);
+    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).mutation_record_size == 5);
+}
+
+TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[PopulationSnapshotIO]") {
+    const auto snapshot_path = fixturePath("population_data/population_generation_5.bin");
 
     CellEvoX::io::PopulationSnapshotFileHeader header{};
     std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
     std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
     REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
 
-    REQUIRE(header.version == CellEvoX::io::kPopulationSnapshotVersion);
-    REQUIRE(std::isnan(header.tau));
-    REQUIRE(header.record_count == legacy_records.size());
+    REQUIRE(std::equal(CellEvoX::io::kPopulationSnapshotMagic.begin(),
+                       CellEvoX::io::kPopulationSnapshotMagic.end(),
+                       header.magic));
+    REQUIRE(header.version == 2);
+    REQUIRE(header.record_size == 36);
+    REQUIRE(header.mutation_record_size == 5);
+    REQUIRE(header.tau == Catch::Approx(5.0));
+    REQUIRE(header.record_count == 3);
+    REQUIRE(header.driver_mutation_count == 4);
+    REQUIRE(header.spatial_dimensions == 0);
+    REQUIRE(header.flags == CellEvoX::io::kPopulationSnapshotFlagHasDriverMutationPayload);
+    REQUIRE(CellEvoX::io::hasDriverMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasFullMutationPayload(header));
+
+    REQUIRE(fileSize(snapshot_path) == 48 + 3 * 36 + 4 * 5);
+
+    REQUIRE(records.size() == 3);
+    REQUIRE(records[0].id == 0);
+    REQUIRE(records[0].parent_id == 0);
+    REQUIRE(records[0].fitness == Catch::Approx(1.0f));
+    REQUIRE(std::isnan(records[0].x));
+    REQUIRE(std::isnan(records[0].y));
+    REQUIRE(std::isnan(records[0].z));
+    REQUIRE(records[0].mutations_count == 1);
+    REQUIRE(records[0].driver_mutation_count == 1);
+    REQUIRE(records[0].driver_mutation_offset == 0);
+    REQUIRE(records[0].position_valid == 0);
+
+    REQUIRE(records[1].id == 1);
+    REQUIRE(records[1].parent_id == 0);
+    REQUIRE(records[1].mutations_count == 2);
+    REQUIRE(records[1].driver_mutation_count == 2);
+    REQUIRE(records[1].driver_mutation_offset == 1);
+
+    REQUIRE(records[2].id == 2);
+    REQUIRE(records[2].parent_id == 1);
+    REQUIRE(records[2].mutations_count == 1);
+    REQUIRE(records[2].driver_mutation_count == 1);
+    REQUIRE(records[2].driver_mutation_offset == 3);
+
+    REQUIRE(mutations.size() == 4);
+    REQUIRE(mutations[0].mutation_id == 0);
+    REQUIRE(mutations[0].mutation_type == 1);
+    REQUIRE(mutations[2].mutation_id == 1);
+    REQUIRE(mutations[2].mutation_type == 2);
+
+    REQUIRE(records[2].driver_mutation_offset + records[2].driver_mutation_count ==
+            mutations.size());
+}
+
+TEST_CASE("PopulationSnapshotIO reads the full-payload snapshot fixture", "[PopulationSnapshotIO]") {
+    const auto snapshot_path = fixturePath("population_data/population_generation_10.bin");
+
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
+
+    REQUIRE(header.version == 2);
+    REQUIRE(header.tau == Catch::Approx(10.0));
+    REQUIRE(header.record_count == 2);
+    REQUIRE(header.driver_mutation_count == 4);
     REQUIRE(header.spatial_dimensions == 3);
-    REQUIRE_FALSE(CellEvoX::io::hasAnyMutationPayload(header));
-    REQUIRE(mutations.empty());
+    REQUIRE(header.flags == CellEvoX::io::kPopulationSnapshotFlagHasFullMutationPayload);
+    REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
+    REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
+
+    REQUIRE(fileSize(snapshot_path) == 48 + 2 * 36 + 4 * 5);
+
     REQUIRE(records.size() == 2);
-    REQUIRE(records[0].id == 5);
-    REQUIRE(records[0].parent_id == 1);
-    REQUIRE(records[0].fitness == Catch::Approx(1.25f));
-    REQUIRE(records[0].x == Catch::Approx(10.0f));
+    REQUIRE(records[0].id == 7);
+    REQUIRE(records[0].parent_id == 3);
+    REQUIRE(records[0].fitness == Catch::Approx(1.5f));
+    REQUIRE(records[0].x == Catch::Approx(1.5f));
+    REQUIRE(records[0].y == Catch::Approx(2.25f));
+    REQUIRE(records[0].z == Catch::Approx(3.0f));
+    REQUIRE(records[0].mutations_count == 2);
+    REQUIRE(records[0].driver_mutation_count == 2);
+    REQUIRE(records[0].driver_mutation_offset == 0);
     REQUIRE(records[0].position_valid == 1);
-    REQUIRE(records[1].id == 6);
-    REQUIRE(records[1].mutations_count == 3);
+
+    REQUIRE(records[1].id == 8);
+    REQUIRE(records[1].parent_id == 7);
+    REQUIRE(records[1].mutations_count == 2);
+    REQUIRE(records[1].driver_mutation_count == 2);
+    REQUIRE(records[1].driver_mutation_offset == 2);
+
+    REQUIRE(mutations.size() == 4);
+    REQUIRE(mutations[3].mutation_id == 8);
+    REQUIRE(mutations[3].mutation_type == 4);
+}
+
+TEST_CASE("PopulationSnapshotIO rejects the invalid snapshot fixtures", "[PopulationSnapshotIO]") {
+    for (const std::string_view name : {"truncated_v2.bin", "unknown_version.bin"}) {
+        const auto snapshot_path = fixturePath(std::string("invalid/") + std::string(name));
+
+        CellEvoX::io::PopulationSnapshotFileHeader header{};
+        std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+        std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+        REQUIRE_FALSE(
+            CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
+        REQUIRE(records.empty());
+        REQUIRE(mutations.empty());
+    }
 }
 
 TEST_CASE("PopulationSnapshotIO rejects unknown snapshot sizes", "[PopulationSnapshotIO]") {

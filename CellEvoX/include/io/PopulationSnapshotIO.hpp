@@ -23,28 +23,6 @@ enum class MutationPayloadKind : uint8_t {
 };
 
 #pragma pack(push, 1)
-struct PopulationSnapshotFileHeaderV1 {
-  char magic[8];
-  uint32_t version;
-  uint32_t record_size;
-  double tau;
-  uint32_t record_count;
-  uint8_t spatial_dimensions;
-  uint8_t reserved[11];
-};
-
-struct PopulationSnapshotRecordV1 {
-  uint32_t id;
-  uint32_t parent_id;
-  float fitness;
-  float x;
-  float y;
-  float z;
-  uint16_t mutations_count;
-  uint8_t position_valid;
-  uint8_t reserved;
-};
-
 struct PopulationSnapshotFileHeader {
   char magic[8];
   uint32_t version;
@@ -76,30 +54,14 @@ struct PopulationSnapshotDriverMutation {
   uint32_t mutation_id;
   uint8_t mutation_type;
 };
-
-struct LegacyPopulationSnapshotRecord3D {
-  uint32_t id;
-  uint32_t parent_id;
-  float fitness;
-  float x;
-  float y;
-  float z;
-  uint8_t mutations_count;
-};
 #pragma pack(pop)
 
-static_assert(sizeof(PopulationSnapshotFileHeaderV1) == 40,
-              "PopulationSnapshotFileHeaderV1 must stay tightly packed");
-static_assert(sizeof(PopulationSnapshotRecordV1) == 28,
-              "PopulationSnapshotRecordV1 must stay tightly packed");
 static_assert(sizeof(PopulationSnapshotFileHeader) == 48,
               "PopulationSnapshotFileHeader must stay tightly packed");
 static_assert(sizeof(PopulationSnapshotRecord) == 36,
               "PopulationSnapshotRecord must stay tightly packed");
 static_assert(sizeof(PopulationSnapshotDriverMutation) == 5,
               "PopulationSnapshotDriverMutation must stay tightly packed");
-static_assert(sizeof(LegacyPopulationSnapshotRecord3D) == 25,
-              "LegacyPopulationSnapshotRecord3D must stay tightly packed");
 
 inline std::string populationSnapshotPath(const std::string& output_path, int generation) {
   return (std::filesystem::path(output_path) / "population_data" /
@@ -217,134 +179,51 @@ inline bool readPopulationSnapshot(const std::filesystem::path& path,
   }
   file.seekg(0, std::ios::beg);
 
-  if (size >= static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeader))) {
-    PopulationSnapshotFileHeader candidate{};
-    file.read(reinterpret_cast<char*>(&candidate), sizeof(candidate));
-    if (!file.good()) {
-      return false;
-    }
-
-    if (isPopulationSnapshotHeader(candidate.magic) &&
-        candidate.version == kPopulationSnapshotVersion) {
-      const auto expected_size =
-          static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeader)) +
-          static_cast<std::streamoff>(candidate.record_count) *
-              static_cast<std::streamoff>(candidate.record_size) +
-          static_cast<std::streamoff>(candidate.driver_mutation_count) *
-              static_cast<std::streamoff>(candidate.mutation_record_size);
-      if (candidate.record_size != sizeof(PopulationSnapshotRecord) ||
-          candidate.mutation_record_size != sizeof(PopulationSnapshotDriverMutation) ||
-          expected_size != size) {
-        return false;
-      }
-
-      header = candidate;
-      records.resize(candidate.record_count);
-      if (!records.empty()) {
-        file.read(reinterpret_cast<char*>(records.data()),
-                  static_cast<std::streamsize>(records.size() * sizeof(PopulationSnapshotRecord)));
-        if (!file.good()) {
-          return false;
-        }
-      }
-
-      driver_mutations.resize(candidate.driver_mutation_count);
-      if (!driver_mutations.empty()) {
-        file.read(reinterpret_cast<char*>(driver_mutations.data()),
-                  static_cast<std::streamsize>(driver_mutations.size() *
-                                               sizeof(PopulationSnapshotDriverMutation)));
-        if (!file.good()) {
-          return false;
-        }
-      }
-
-      return true;
-    }
-  }
-
-  if (size >= static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeaderV1))) {
-    file.clear();
-    file.seekg(0, std::ios::beg);
-
-    PopulationSnapshotFileHeaderV1 candidate{};
-    file.read(reinterpret_cast<char*>(&candidate), sizeof(candidate));
-    if (!file.good()) {
-      return false;
-    }
-
-    if (isPopulationSnapshotHeader(candidate.magic) && candidate.version == 1) {
-      const auto expected_size =
-          static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeaderV1)) +
-          static_cast<std::streamoff>(candidate.record_count) *
-              static_cast<std::streamoff>(candidate.record_size);
-      if (candidate.record_size != sizeof(PopulationSnapshotRecordV1) || expected_size != size) {
-        return false;
-      }
-
-      header = makePopulationSnapshotHeader(
-          candidate.tau, candidate.record_count, candidate.spatial_dimensions, 0);
-      records.resize(candidate.record_count);
-      if (candidate.record_count > 0) {
-        std::vector<PopulationSnapshotRecordV1> legacy_records(candidate.record_count);
-        file.read(reinterpret_cast<char*>(legacy_records.data()),
-                  static_cast<std::streamsize>(legacy_records.size() *
-                                               sizeof(PopulationSnapshotRecordV1)));
-        if (!file.good()) {
-          return false;
-        }
-
-        for (size_t i = 0; i < legacy_records.size(); ++i) {
-          records[i] = {legacy_records[i].id,
-                        legacy_records[i].parent_id,
-                        legacy_records[i].fitness,
-                        legacy_records[i].x,
-                        legacy_records[i].y,
-                        legacy_records[i].z,
-                        legacy_records[i].mutations_count,
-                        0,
-                        0,
-                        legacy_records[i].position_valid,
-                        {0, 0, 0}};
-        }
-      }
-      return true;
-    }
-  }
-
-  if (size % static_cast<std::streamoff>(sizeof(LegacyPopulationSnapshotRecord3D)) != 0) {
+  if (size < static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeader))) {
     return false;
   }
 
-  file.clear();
-  file.seekg(0, std::ios::beg);
+  PopulationSnapshotFileHeader candidate{};
+  file.read(reinterpret_cast<char*>(&candidate), sizeof(candidate));
+  if (!file.good()) {
+    return false;
+  }
 
-  std::vector<LegacyPopulationSnapshotRecord3D> legacy_records(
-      static_cast<size_t>(size / static_cast<std::streamoff>(sizeof(LegacyPopulationSnapshotRecord3D))));
-  if (!legacy_records.empty()) {
-    file.read(reinterpret_cast<char*>(legacy_records.data()), static_cast<std::streamsize>(size));
+  if (!isPopulationSnapshotHeader(candidate.magic) ||
+      candidate.version != kPopulationSnapshotVersion) {
+    return false;
+  }
+
+  const auto expected_size =
+      static_cast<std::streamoff>(sizeof(PopulationSnapshotFileHeader)) +
+      static_cast<std::streamoff>(candidate.record_count) *
+          static_cast<std::streamoff>(candidate.record_size) +
+      static_cast<std::streamoff>(candidate.driver_mutation_count) *
+          static_cast<std::streamoff>(candidate.mutation_record_size);
+  if (candidate.record_size != sizeof(PopulationSnapshotRecord) ||
+      candidate.mutation_record_size != sizeof(PopulationSnapshotDriverMutation) ||
+      expected_size != size) {
+    return false;
+  }
+
+  header = candidate;
+  records.resize(candidate.record_count);
+  if (!records.empty()) {
+    file.read(reinterpret_cast<char*>(records.data()),
+              static_cast<std::streamsize>(records.size() * sizeof(PopulationSnapshotRecord)));
     if (!file.good()) {
       return false;
     }
   }
 
-  header = makePopulationSnapshotHeader(std::numeric_limits<double>::quiet_NaN(),
-                                        static_cast<uint32_t>(legacy_records.size()),
-                                        3,
-                                        0);
-
-  records.reserve(legacy_records.size());
-  for (const auto& legacy : legacy_records) {
-    records.push_back({legacy.id,
-                       legacy.parent_id,
-                       legacy.fitness,
-                       legacy.x,
-                       legacy.y,
-                       legacy.z,
-                       legacy.mutations_count,
-                       0,
-                       0,
-                       1,
-                       {0, 0, 0}});
+  driver_mutations.resize(candidate.driver_mutation_count);
+  if (!driver_mutations.empty()) {
+    file.read(reinterpret_cast<char*>(driver_mutations.data()),
+              static_cast<std::streamsize>(driver_mutations.size() *
+                                           sizeof(PopulationSnapshotDriverMutation)));
+    if (!file.good()) {
+      return false;
+    }
   }
 
   return true;

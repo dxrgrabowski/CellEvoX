@@ -70,7 +70,7 @@ decision and Accepted ADR described under Precedence.
    in-repo reader, the tests, and the CSV export. A writer refactor that
    emits the same bytes needs no bump. Compatibility with older
    versions is **not** supported or guaranteed, so old runs need not stay
-   readable and the remaining v1/raw-3D snapshot readers are removable legacy.
+   readable and both readers accept the current version only.
 7. **`output-names`** — Run output names and CSV columns are a contract for the
    Python scripts, `results_parser.py`, and the frontend at the current commit.
    Treat renames as breaking and update every in-repo consumer in the same

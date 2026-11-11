@@ -236,6 +236,25 @@ jobs:
     - name: Build
       run: npm run build
 
+  snapshot-abi-python:
+    name: Snapshot ABI Python contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Dependencies
+      run: python3 -m pip install --quiet pandas
+
+    - name: Run Snapshot IO Contract Tests
+      run: python3 CellEvoX/scripts/test_snapshot_io.py -v
+
   backend-tests:
     name: Backend pytest
     runs-on: ubuntu-24.04
