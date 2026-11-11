@@ -22,9 +22,10 @@ editing one side cannot silently diverge from the other. That fixture does not
 exist yet (tracked as the P1 "one executable contract" item); until it lands,
 the contract is only as strong as the duplicated readers.
 ## Consequences
-- A writer change requires a version bump and synchronized updates across C++,
-  `snapshot_io.py`, tests, and the CSV export that the web backend reads. Old
-  runs do **not** have to stay readable.
+- A change to the serialized layout, encoding, or interpretation requires a
+  version bump and synchronized updates across C++, `snapshot_io.py`, tests, and
+  the CSV export that the web backend reads. A writer refactor that emits the
+  same bytes needs no bump. Old runs do **not** have to stay readable.
 - The C++ v1/raw-3D fallbacks may be deleted without an ADR, since no
   compatibility guarantee backs them.
 - Cadence and terminal-state rules are part of the same output contract; this
@@ -43,3 +44,7 @@ the contract is only as strong as the duplicated readers.
   guaranteed (recorded in the PR #45 review discussion, 2026-10-26). The
   `Proposed` status covers the missing fixture and enforcement, not the
   compatibility policy itself.
+- Owner decision: the bump is required by a change to the serialized layout,
+  encoding, or interpretation, not by any edit of the writer, so a writer
+  refactor that produces identical output needs none (owner clarification
+  during the PR #65 review, 2026-11-10).

@@ -151,10 +151,12 @@ analysis and for the web backend.
 
 Backward compatibility of run artifacts is **not guaranteed**: the project is
 early-stage, so keeping every historical layout readable would add code that is
-never used. What is required is coherence at a given commit — a writer change
-needs a version bump and matching updates in C++, `snapshot_io.py`, the tests,
-and the CSV export. Old runs do not have to stay readable; the Python reader
-deliberately fails loudly on unknown versions instead of guessing.
+never used. What is required is coherence at a given commit — a change to the
+serialized layout, encoding, or interpretation needs a version bump and matching
+updates in C++, `snapshot_io.py`, the tests, and the CSV export, while a writer
+refactor that emits the same bytes needs none. Old runs do not have to stay
+readable; the Python reader deliberately fails loudly on unknown versions instead
+of guessing.
 
 ## Snapshot cadence and terminal state
 
