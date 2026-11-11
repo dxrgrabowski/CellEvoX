@@ -1,5 +1,8 @@
 # ADR-0009: Interleaved benchmark rounds with median aggregation
 Status: Proposed · 2026-10-26
+Blocking role: superseded by ADR-0010 (2026-11-12). The interleaved schedule is
+retained for the advisory wall-clock report; it no longer decides whether the job
+passes.
 
 ## Context
 ADR-0008 measures base and head as two contiguous blocks on the same host. On a

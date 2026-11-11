@@ -10,6 +10,10 @@ Measurements are interleaved: every round runs base and head back to back, and
 the order flips every round (A/B, B/A, ...) so a slow patch of the shared runner
 hits both binaries instead of only the second one. Per benchmark, the round means
 are collapsed into a median with a bootstrap interval across rounds.
+
+With --advisory-timing the wall-clock verdicts are reported but do not fail the
+job; only the peak-RSS ceiling blocks. The blocking performance signal is the
+deterministic instruction-count gate in perf_ir_gate.py (ADR-0010).
 """
 
 import argparse
@@ -198,7 +202,13 @@ def needs_retry(results: Dict[str, Dict]) -> bool:
     return any(item.get("status") in {"NOISY CI", "UNSTABLE CI"} for item in results.values())
 
 
-def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool, threshold: float) -> bool:
+def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool, threshold: float,
+                advisory_timing: bool = False) -> bool:
+    if advisory_timing:
+        # Wall-clock timing is advisory: it is reported but only the peak-RSS
+        # ceiling blocks. The blocking performance signal is the instruction
+        # count gate (tests/benchmarks/perf_ir_gate.py).
+        return summary["memory"].get("status") == "REGRESSED"
     counts = summary["counts"]
     if counts["regressed"] or counts["missing"]:
         return True
@@ -208,8 +218,10 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         return any(inconclusive_regression(item, threshold) for item in results.values())
     return False
 
-def print_group_report(group: str, samples: int, rounds: int, results: Dict[str, Dict], summary: Dict) -> None:
-    print(f"\n=== Benchmark group: {group} ({rounds} interleaved rounds x {samples} samples per binary) ===")
+def print_group_report(group: str, samples: int, rounds: int, results: Dict[str, Dict], summary: Dict,
+                       advisory_timing: bool = False) -> None:
+    mode = " [timing verdicts are ADVISORY]" if advisory_timing else ""
+    print(f"\n=== Benchmark group: {group} ({rounds} interleaved rounds x {samples} samples per binary){mode} ===")
     print(f"{'Benchmark':<55} {'Base mean [CI]':>34} {'Head mean [CI]':>34} {'Change':>10}  Status")
     print("-" * 145)
     for name, item in results.items():
@@ -317,6 +329,10 @@ def main() -> int:
     parser.add_argument("--memory-threshold", type=float, default=0.10)
     parser.add_argument("--max-relative-ci", type=float, default=0.05)
     parser.add_argument("--fail-on-inconclusive", action="store_true")
+    parser.add_argument("--advisory-timing", action="store_true",
+                        help="Report wall-clock verdicts as advisory instead of blocking; only the "
+                             "peak-RSS ceiling can fail. The blocking performance signal is the "
+                             "instruction-count gate in perf_ir_gate.py")
     parser.add_argument("--benchmark-warmup-time", type=int, default=None)
     parser.add_argument("--benchmark-resamples", type=int, default=None)
     parser.add_argument("--benchmark-confidence-interval", type=float, default=None)
@@ -340,6 +356,7 @@ def main() -> int:
             "benchmark_resamples": args.benchmark_resamples,
             "benchmark_confidence_interval": args.benchmark_confidence_interval,
             "fail_on_inconclusive": args.fail_on_inconclusive,
+            "advisory_timing": args.advisory_timing,
         },
         "groups": {},
     }
@@ -348,13 +365,14 @@ def main() -> int:
     for group in groups:
         samples = args.initial_samples
         results, summary = run_group(args, group, samples)
-        print_group_report(group, samples, args.rounds, results, summary)
+        print_group_report(group, samples, args.rounds, results, summary, args.advisory_timing)
 
-        if args.retry_samples and args.retry_samples > samples and needs_retry(results):
+        if (args.retry_samples and args.retry_samples > samples and needs_retry(results)
+                and not args.advisory_timing):
             print(f"\nGroup '{group}' is inconclusive; retrying with {args.retry_samples} samples per round.")
             samples = args.retry_samples
             results, summary = run_group(args, group, samples)
-            print_group_report(group, samples, args.rounds, results, summary)
+            print_group_report(group, samples, args.rounds, results, summary, args.advisory_timing)
 
         final_report["groups"][group] = {
             "rounds": args.rounds,
@@ -362,7 +380,7 @@ def main() -> int:
             "results": results,
             "summary": summary,
         }
-        if has_failure(results, summary, args.fail_on_inconclusive, args.threshold):
+        if has_failure(results, summary, args.fail_on_inconclusive, args.threshold, args.advisory_timing):
             failed = True
 
     if args.report_json:
@@ -374,6 +392,9 @@ def main() -> int:
     if failed:
         print("\nCI benchmark gate failed.")
         return 1
+    if args.advisory_timing:
+        print("\nCI benchmark gate passed (timing verdicts were advisory).")
+        return 0
     print("\nCI benchmark gate passed.")
     return 0
 
