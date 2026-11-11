@@ -879,5 +879,9 @@ def test_review_workflow_finds_the_sticky_comment_by_bot_not_login():
     # the marker but never found again, and the next push would start a second
     # comment instead of rewriting this one.
     assert "const fallback = '### AI diff review\\n\\n' +" in workflow
+    # Both the report and the fallback go through one composed body, and that
+    # body is what the marker opens. A fallback is therefore found and rewritten
+    # like any other review, instead of piling up one comment per failed run.
+    assert "const body = `${marker}\\n${shown}\\n\\n${advisory}`;" in workflow
     assert "c.body?.includes(marker)" not in workflow
     assert "c.user?.login === 'github-actions[bot]'" not in workflow

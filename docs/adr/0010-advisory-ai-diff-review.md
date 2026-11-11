@@ -238,9 +238,9 @@ to a hosted model and posts the result as a single sticky PR comment.
   bot-identity lookup keyed on the marker plus the review heading opening the
   body. Run by the
   `review-tools` job in `.github/workflows/ci.yml` with no network access.
-- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, 2527
-  changed lines, a payload of ~136k characters (~34k tokens; the real run is
-  larger because the PR body is the intent), 118 tests in the inventory, the
+- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, 2829
+  changed lines, a payload of ~151k characters (~38k tokens; the real run is
+  larger because the PR body is the intent), 119 tests in the inventory, the
   infrastructure scope injected, and `diff-only` reported because both readable
   changed files (`tools/ai_review.py`, `tools/test_ai_review.py`) are above
   `MAX_BODY_CHARS`. The figures are rounded because the diff contains this ADR:
