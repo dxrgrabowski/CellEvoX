@@ -40,6 +40,9 @@ verdicts are advisory.
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
   `perf_ir_gate.py`; unknown names are rejected, not skipped.
+- The base side is the PR branch point, so the reported delta is everything
+  merged into `main` since the branch was created, not just this PR. Rebase
+  before investigating a failure on a long-lived branch.
 - The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, funded by running
   the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`.
 
