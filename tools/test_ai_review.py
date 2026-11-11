@@ -159,6 +159,9 @@ def test_verify_drops_a_finding_that_refutes_itself():
         {"file": "engine.cpp", "evidence": "+    return 2;",
          "why": "No finding: the fallback opens with the heading and the marker "
                 "is prepended, so the opening check matches."},
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "The guard is present and tested; the tool also deletes the "
+                "output at startup. No regression."},
         # A contrast marker after the refutation carries a live claim, so this
         # one is kept: the model refuted one part, not the finding.
         {"file": "engine.cpp", "evidence": "+    return 2;",
@@ -167,7 +170,7 @@ def test_verify_drops_a_finding_that_refutes_itself():
     kept, dropped = ai.verify(findings, parsed, [], [])
     assert [it["why"] for it in kept] == [
         "The default is consistent, but the loader still reads the old key."]
-    assert [it["_drop"] for it in dropped] == ["self-refuted", "self-refuted"]
+    assert [it["_drop"] for it in dropped] == ["self-refuted"] * 3
 
 
 def test_locate_prefers_a_changed_line_over_an_identical_context_line():

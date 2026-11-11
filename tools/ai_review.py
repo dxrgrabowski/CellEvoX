@@ -684,7 +684,8 @@ SELF_REFUTING_RE = re.compile(
     r"\b(?:this|that|it) is (?:fine|correct|consistent|expected|intended|"
     r"unchanged|equivalent)\b|"
     r"\b(?:is|are) consistent\b|\bbehav(?:e|es|ing) the same\b|"
-    r"\bno (?:behaviou?r(?:al)? change|change in behavio?ur|problem|issue)\b|"
+    r"\bno (?:behaviou?r(?:al)? change|change in behavio?ur|problem|issue|"
+    r"regression|bug|defect)\b|"
     r"\bnothing (?:changed|changes|wrong)\b", re.IGNORECASE)
 CONTRAST_RE = re.compile(r"\b(?:but|however|still|yet|except|although|though)\b",
                          re.IGNORECASE)
