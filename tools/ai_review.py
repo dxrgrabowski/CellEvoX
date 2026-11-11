@@ -680,6 +680,7 @@ HEDGED_RE = re.compile(
 # "the default is consistent, but the loader still reads the old key" survives.
 SELF_REFUTING_RE = re.compile(
     r"\bnot (?:a|an) (?:finding|issue|problem|regression|bug)\b|"
+    r"\bno findings?\b|"
     r"\b(?:this|that|it) is (?:fine|correct|consistent|expected|intended|"
     r"unchanged|equivalent)\b|"
     r"\b(?:is|are) consistent\b|\bbehav(?:e|es|ing) the same\b|"
