@@ -78,7 +78,10 @@ to a hosted model and posts the result as a single sticky PR comment.
   server errors are retried with backoff, and so are connection failures and
   read timeouts: those are transient, and letting them escape as a traceback
   would skip the backoff and leave the workflow quoting a stack trace instead of
-  a reason. The last attempt exits with a one-line reason either way.
+  a reason. A 200 whose body is not JSON (a proxy error page, a truncated
+  stream) is not retried: it is a reply of an unexpected shape and exits with a
+  one-line reason, like a missing `choices` or an empty answer. A retried error
+  exits with a one-line reason on the last attempt.
 - **Grounded findings.** The model must quote the changed line it is talking
   about. The line number is derived from that quote's position in the diff, never
   taken from the answer, and a finding whose quote is not in the diff is dropped
@@ -223,7 +226,8 @@ to a hosted model and posts the result as a single sticky PR comment.
   repeat run and a single unparseable run that write no comment and remove a
   stale one, the provider call
   path with `urlopen` stubbed — the Google key in a header rather than the URL,
-  a malformed reply and an empty Google answer reported as a one-line reason
+  a malformed reply (including a non-JSON 200 body) and an empty Google answer
+  reported as a one-line reason
   rather than a traceback, and a transient network error retried and then
   reported as a reason — and the
   workflow
@@ -241,11 +245,12 @@ to a hosted model and posts the result as a single sticky PR comment.
   `review-tools` job in `.github/workflows/ci.yml` with no network access.
 - Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, ~2.8k
   changed lines, a payload of ~152k characters (~38k tokens; the real run is
-  larger because the PR body is the intent), 119 tests in the inventory, the
+  larger because the PR body is the intent), ~120 tests in the inventory, the
   infrastructure scope injected, and `diff-only` reported because both readable
   changed files (`tools/ai_review.py`, `tools/test_ai_review.py`) are above
   `MAX_BODY_CHARS`. The figures are rounded because the diff contains this ADR:
-  every edit to it moves the measurement. The run needed no key and no network.
+  every edit to it moves the measurement, and a test added beside it moves the
+  inventory with it. The run needed no key and no network.
 - `tools/ai_review.py` (`build_context`, `verify`, `render_markdown`),
   `.github/workflows/ai-review.yml` (upsert script, fallback body) and
   `.github/workflows/robin.yml` (pinned action, advisory and single-shot inputs).

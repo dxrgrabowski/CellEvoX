@@ -459,6 +459,12 @@ def call_google(model: str, system: str, user: str, temperature: float,
             wait = min(60, 10 * 2 ** attempt)
             print(f"  [{exc.__class__.__name__}] retry in {wait}s", file=sys.stderr)
             time.sleep(wait)
+        except ValueError as exc:
+            # A 200 whose body is not JSON (a proxy error page, a truncated
+            # stream) is a reply of an unexpected shape like any other: name it
+            # instead of letting JSONDecodeError escape as a traceback the
+            # workflow would quote.
+            raise SystemExit(f"malformed reply: {exc}")
     candidates = data.get("candidates") if isinstance(data, dict) else None
     if not isinstance(candidates, list) or not candidates:
         raise SystemExit(f"no candidates in response: {str(data)[:300]}")
@@ -518,6 +524,9 @@ def call_openrouter(model: str, system: str, user: str, temperature: float,
             wait = min(60, 10 * 2 ** attempt)
             print(f"  [{exc.__class__.__name__}] retry in {wait}s", file=sys.stderr)
             time.sleep(wait)
+        except ValueError as exc:
+            # Same as the Google path: a body that is not JSON names itself.
+            raise SystemExit(f"malformed reply: {exc}")
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
         raise SystemExit(f"no choices in response: {str(data)[:300]}")

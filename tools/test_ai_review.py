@@ -717,6 +717,32 @@ def test_a_malformed_reply_is_a_reason_not_a_traceback(monkeypatch):
         assert expected in str(exc.value)
 
 
+def test_a_non_json_reply_is_a_reason_not_a_traceback(monkeypatch):
+    # A 200 whose body is not JSON (a proxy error page, a truncated stream) is
+    # caught by neither retry clause: without its own handler JSONDecodeError
+    # escapes as a traceback, which the workflow would then quote as the reason.
+    class _NotJson:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, *args):
+            return b"<html>502 Bad Gateway</html>"
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr(ai.urllib.request, "urlopen",
+                        lambda req, timeout: _NotJson())
+    with pytest.raises(SystemExit) as exc:
+        ai.call_openrouter("model", "system", "user", 0.0, 100, "off")
+    assert "malformed reply" in str(exc.value)
+    with pytest.raises(SystemExit) as exc:
+        ai.call_google("gemini-test", "system", "user", 0.0, 100)
+    assert "malformed reply" in str(exc.value)
+
+
 def test_an_empty_google_reply_names_its_finish_reason(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setattr(
