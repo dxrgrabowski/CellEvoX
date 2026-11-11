@@ -1,8 +1,5 @@
 # ADR-0008: Paired benchmark gate and phase profiling
-Status: Accepted · 2026-10-26
-Blocking role: superseded by ADR-0010 (2026-11-12). The paired wall-clock gate is
-still run and still enforces the 10% memory ceiling, but its timing verdicts are
-advisory; the blocking performance signal is now the instruction-count gate.
+Status: Superseded by ADR-0010 · 2026-11-12 (was Accepted 2026-10-26)
 
 ## Context
 Performance is dominated by memory layout and parallel phases. Absolute numbers
