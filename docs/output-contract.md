@@ -145,9 +145,15 @@ analysis and for the web backend.
 
 | Reader | Accepts |
 | --- | --- |
-| C++ (`PopulationSnapshotIO.hpp`) | v2, plus v1 and legacy raw 3D as removable fallbacks |
+| C++ (`PopulationSnapshotIO.hpp`) | v2 only |
 | Python (`CellEvoX/scripts/snapshot_io.py`) | v2 only; prefers CSV when both exist |
 | Web backend (`web/backend/results_parser.py`) | population CSV only |
+
+The contract is pinned by the canonical fixtures in
+`CellEvoX/tests/fixtures/mini_run/`, read by both
+`CellEvoX/tests/test_population_snapshot_io.cpp` and
+`CellEvoX/scripts/test_snapshot_io.py`; the Python test also cross-checks the
+binary reader against the CSV export of the same snapshots.
 
 Backward compatibility of run artifacts is **not guaranteed**: the project is
 early-stage, so keeping every historical layout readable would add code that is

@@ -419,6 +419,18 @@ def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int
         if mutation_record_size != _DRIVER_MUTATION_STRUCT.size:
             raise ValueError(f"Unexpected mutation record size {mutation_record_size} in {source.path}")
 
+        expected_size = (
+            _HEADER_STRUCT.size
+            + record_count * record_size
+            + driver_mutation_count * mutation_record_size
+        )
+        actual_size = source.path.stat().st_size
+        if actual_size != expected_size:
+            raise ValueError(
+                f"Truncated or oversized snapshot {source.path}: "
+                f"expected {expected_size} bytes, found {actual_size}"
+            )
+
         records = [_RECORD_STRUCT.unpack(handle.read(_RECORD_STRUCT.size)) for _ in range(record_count)]
         driver_mutations = [
             _DRIVER_MUTATION_STRUCT.unpack(handle.read(_DRIVER_MUTATION_STRUCT.size))
