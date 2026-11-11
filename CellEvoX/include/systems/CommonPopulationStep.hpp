@@ -189,24 +189,9 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
                 continue;
               }
 
-              double prob_sum = 0.0;
-              for (const auto& mut : available_mutation_types) {
-                prob_sum += mut.second.probability;
-                if (rand_val < prob_sum) {
-                  const float realized_effect =
-                      detail::realizedMutationEffect(mut.second, config.seed, rng_step, idx, 0);
-                  const double daughter_fitness = fitness * (1.0 + realized_effect);
-                  if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
-                    throw std::runtime_error("Mutation produced invalid daughter fitness");
-                  }
-                  Cell daughter_cell1 = Cell(cell, daughter_fitness);
-                  daughter_cell1.mutations.push_back(
-                      {0, mut.second.type_id, realized_effect});
-                  buffers.new_cells.push_back(std::move(daughter_cell1));
-                  buffers.new_cells.emplace_back(cell, fitness);
-                  break;
-                }
-              }
+              detail::appendMutatedDaughters(buffers.new_cells, cell, fitness, rand_val,
+                                             available_mutation_types, config.seed, rng_step,
+                                             idx);
             }
           });
     }

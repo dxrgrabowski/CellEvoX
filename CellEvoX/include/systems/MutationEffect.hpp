@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <vector>
 
 #include "ecs/Cell.hpp"
 
@@ -26,5 +28,16 @@ inline float realizedMutationEffect(const MutationType& mutation, uint64_t seed,
   }
   return sampleGammaMutationEffect(mutation, seed, step, cell_id, mutation_slot);
 }
+
+// Appends the two daughters of one birth event that carries a mutation to
+// `new_cells`: the mutated daughter (placeholder mutation id 0, rewritten by the
+// caller) followed by the unmutated daughter. Defined out of line on purpose:
+// the type roulette, effect sampling and daughter construction must not sit in
+// the per-cell event loop of `applyCommonPopulationStep`, where they change
+// register allocation and code size of the no-mutation fast path.
+void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, double fitness,
+                            double mutation_draw,
+                            const std::map<uint8_t, MutationType>& available_mutation_types,
+                            uint64_t seed, uint64_t rng_step, uint64_t cell_id);
 
 }  // namespace CellEvoX::systems::detail
