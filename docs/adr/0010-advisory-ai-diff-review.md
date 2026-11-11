@@ -200,7 +200,8 @@ to a hosted model and posts the result as a single sticky PR comment.
 - `tools/test_ai_review.py` — unit tests over diff parsing (including the
   `--- `/`+++ ` content-line case), quote verification and drop reporting, a
   finding that refutes itself dropped as `self-refuted` while a refutation
-  followed by a contrast keeps its live claim, pytest names in the inventory,
+  followed by a contrast keeps its live claim, and a "not itself a finding"
+  phrasing dropped even when a contrast follows it, pytest names in the inventory,
   the infrastructure scope for a `.github/`-only diff, a zero line cap still
   sending bodies, a body above `MAX_BODY_CHARS` making the review diff-only,
   a blocker downgraded to a warning in that mode,
@@ -238,8 +239,8 @@ to a hosted model and posts the result as a single sticky PR comment.
   bot-identity lookup keyed on the marker plus the review heading opening the
   body. Run by the
   `review-tools` job in `.github/workflows/ci.yml` with no network access.
-- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, 2829
-  changed lines, a payload of ~151k characters (~38k tokens; the real run is
+- Dry run on this branch (`--dry-run`, `origin/main...HEAD`): 8 files, ~2.8k
+  changed lines, a payload of ~152k characters (~38k tokens; the real run is
   larger because the PR body is the intent), 119 tests in the inventory, the
   infrastructure scope injected, and `diff-only` reported because both readable
   changed files (`tools/ai_review.py`, `tools/test_ai_review.py`) are above

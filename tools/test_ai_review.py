@@ -166,11 +166,18 @@ def test_verify_drops_a_finding_that_refutes_itself():
         # one is kept: the model refuted one part, not the finding.
         {"file": "engine.cpp", "evidence": "+    return 2;",
          "why": "The default is consistent, but the loader still reads the old key."},
+        # The phrasing from the live run on PR #64: the model names the report
+        # as out of policy, then restates the risk the guidance already
+        # accepted. The "but" is not a live claim, so this is still refuted.
+        {"file": "engine.cpp", "evidence": "+    return 2;",
+         "why": "This is the intentional decision recorded in the ADR, so per "
+                "policy it is not itself a finding — but the key is handed to "
+                "a third-party action whose update path is manual."},
     ]
     kept, dropped = ai.verify(findings, parsed, [], [])
     assert [it["why"] for it in kept] == [
         "The default is consistent, but the loader still reads the old key."]
-    assert [it["_drop"] for it in dropped] == ["self-refuted"] * 3
+    assert [it["_drop"] for it in dropped] == ["self-refuted"] * 4
 
 
 def test_locate_prefers_a_changed_line_over_an_identical_context_line():

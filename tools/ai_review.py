@@ -689,11 +689,20 @@ SELF_REFUTING_RE = re.compile(
     r"\bnothing (?:changed|changes|wrong)\b", re.IGNORECASE)
 CONTRAST_RE = re.compile(r"\b(?:but|however|still|yet|except|although|though)\b",
                          re.IGNORECASE)
+# Some phrasings name the report itself as out of scope, and a later "but"
+# cannot rescue them: the model was given a policy, said the item is not a
+# finding under it, then restated the accepted risk ("so per policy it is not
+# itself a finding — but the key is shared"). That is the guidance answering
+# itself, not a finding.
+DECISIVE_REFUTING_RE = re.compile(
+    r"\bnot itself (?:a|an) (?:finding|issue|problem)\b", re.IGNORECASE)
 
 
 def self_refuted(why: str) -> bool:
     """Whether the finding's own reasoning concludes there is no finding."""
     text = why or ""
+    if DECISIVE_REFUTING_RE.search(text):
+        return True
     last = None
     for m in SELF_REFUTING_RE.finditer(text):
         last = m
