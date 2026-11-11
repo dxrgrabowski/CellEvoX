@@ -93,6 +93,7 @@ set(HEADERS
     include/systems/SimulationEngine3DCapacity.hpp
     include/systems/DensePopulation.hpp
     include/systems/CommonPopulationStep.hpp
+    include/systems/MutationEffect.hpp
     include/ecs/Cell.hpp
     include/ecs/Run.hpp
     include/spatial/SpatialHashGrid.hpp
@@ -116,6 +117,7 @@ set(CORE_SOURCES
     src/core/application.cpp
     src/systems/SimulationEngine.cpp
     src/systems/SimulationEngine3DCapacity.cpp
+    src/systems/MutationEffect.cpp
     src/core/RunDataEngine.cpp
     src/ecs/Run.cpp
     src/spatial/SpatialHashGrid.cpp

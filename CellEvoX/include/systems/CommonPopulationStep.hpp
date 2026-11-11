@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "systems/DensePopulation.hpp"
+#include "systems/MutationEffect.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "utils/DeterministicRng.hpp"
 #include "utils/ParallelAlgorithms.hpp"
@@ -101,29 +102,6 @@ inline bool commonDaughterCellLess(const Cell& lhs, const Cell& rhs) {
   }
   return false;
 }
-
-namespace detail {
-
-// Realized signed fitness effect of one mutation event. Constant mutations use
-// the configured value and consume no RNG, so constant-only runs stay
-// bit-identical to previous releases. Gamma mutations draw from a dedicated
-// stream/substream (never streams 0/1/2) and clamp the magnitude to
-// `effect_limit`. `mutation_slot` reserves room for multiple mutations per
-// division without shifting existing draws.
-inline float realizedMutationEffect(const MutationType& mutation, uint64_t seed, uint64_t step,
-                                    uint64_t cell_id, uint32_t mutation_slot) {
-  if (mutation.effect_mode != MutationEffectMode::Gamma) {
-    return mutation.effect;
-  }
-  const uint64_t stream = CellEvoX::deterministic_rng::substream(
-      CellEvoX::deterministic_rng::kStreamMutationEffect, mutation_slot);
-  const double draw = CellEvoX::deterministic_rng::gamma01(
-      seed, step, cell_id, stream, mutation.gammaShape(), mutation.gammaScale());
-  const double magnitude = std::min(draw, static_cast<double>(mutation.effect_limit));
-  return static_cast<float>(mutation.directionSign() * magnitude);
-}
-
-}  // namespace detail
 
 // The base caller compiles out event lists; xyz requests them for its overlay.
 template <bool collect_event_result = true>

@@ -57,8 +57,9 @@ draws as before and stay bit-identical.
 ## Evidence
 - Sampler: `CellEvoX/include/utils/DeterministicRng.hpp` (`gamma01`, `normal01`,
   `substream`).
-- Application: `CellEvoX/include/systems/CommonPopulationStep.hpp`
-  (`realizedMutationEffect`), shared by both live modes.
+- Application: `CellEvoX/include/systems/MutationEffect.hpp` (`realizedMutationEffect`)
+  and `CellEvoX/src/systems/MutationEffect.cpp` (out-of-line gamma draw, so the
+  event loop's no-mutation fast path stays lean), shared by both live modes.
 - Config validation: `CellEvoX/include/utils/SimulationConfig.hpp`.
 - ABI sizes pinned by `static_assert`s in
   `CellEvoX/include/io/PopulationSnapshotIO.hpp`; cross-language fixtures in
