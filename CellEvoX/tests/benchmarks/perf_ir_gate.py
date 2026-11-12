@@ -175,6 +175,8 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
 
         # Exactly one line, like the summary: a second RESULT would mean the
         # probe ran more work than the single measurement this gate records.
+        # Only stdout is scanned because the probe's RESULT line is a stdout
+        # contract; diagnostics go to stderr.
         checksums = CHECKSUM_RE.findall(completed.stdout)
         if len(checksums) != 1:
             return {"error": f"expected exactly 1 RESULT checksum line, got {len(checksums)}"}
@@ -196,6 +198,7 @@ def measure_side(side: str, binary: Path, workload: str, args: argparse.Namespac
         "runs": counts,
         # Noise can only add instructions, so the minimum is the noise-free
         # estimate and (max - min) / min measures the added noise alone.
+        # min(counts) is positive: measure() rejects ir <= 0 on every run.
         "spread": (max(counts) - min(counts)) / min(counts),
         "checksums": sorted(checksums),
     }

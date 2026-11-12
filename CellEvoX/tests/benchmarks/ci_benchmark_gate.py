@@ -209,8 +209,9 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         # Wall-clock timing is advisory: it is reported but only the peak-RSS
         # ceiling blocks. The blocking performance signal is the instruction
         # count gate (tests/benchmarks/perf_ir_gate.py). A benchmark that
-        # disappeared, or an RSS measurement that is absent or unparsable,
-        # still blocks: lost coverage must not pass silently.
+        # disappeared, or an RSS measurement that is absent
+        # (including an empty run, where aggregate_memory reports UNKNOWN)
+        # or unparsable, still blocks: lost coverage must not pass silently.
         if summary["counts"]["missing"]:
             return True
         # A missing "memory" key is fail-closed as well: None != "OK".

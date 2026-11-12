@@ -172,7 +172,9 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // would lower the instruction count and could be reported as an improvement.
 // The engine writes one snapshot per `generational_popul_report` entry, so a
 // missing file means the run itself is broken rather than that the probe
-// assumed more than the report promises. The generation index is not hashed
+// assumed more than the report promises. Files the report does not reference
+// are out of scope: the report is the source of truth for which snapshots this
+// workload produced. The generation index is not hashed
 // separately: the report is built in a fixed order, which is part of the
 // contract this checksum relies on, and a reordering still moves the bytes
 // inside the hash. A snapshot ABI version bump changes these bytes on purpose,

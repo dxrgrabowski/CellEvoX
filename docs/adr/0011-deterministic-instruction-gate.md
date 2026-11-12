@@ -125,7 +125,9 @@ verdicts are advisory.
   smaller instruction count. Malformed numeric arguments now exit 2 instead of
   terminating on an uncaught exception.
 - Full gate: 56 s locally for six workloads x two sides x two runs; in CI
-  (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`.
+  (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`,
+  where the job total already includes the dependency install and the unit-test
+  step that runs before the builds.
 - Code: `CellEvoX/tests/perf_probe.{cpp,cmake}`,
   `CellEvoX/tests/benchmarks/perf_ir_gate.py`,
   `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` (`--advisory-timing`),

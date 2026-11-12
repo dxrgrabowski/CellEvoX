@@ -263,6 +263,12 @@ python3 CellEvoX/tests/benchmarks/perf_ir_gate.py \
 `--accepted-delta WORKLOAD=RATIO` is how a deliberately accepted cost is
 recorded; do not raise `--threshold`. Rationale: ADR-0011.
 
+The gate injects this PR's probe into the base checkout, so a red `Build Base`
+with a green `Build Head` usually means the PR changed an interface the probe
+uses (`SimulationEngine`, `CommonPopulationStep`, `PopulationSnapshotIO`,
+`Cell`, `Run`, `MutationType`). Rebase or land that interface change first, or
+update the probe: it is not a performance verdict.
+
 The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
 advisory: timings are reported, the 10% peak-RSS ceiling still blocks, and so
 does a group that loses its RSS reading (lost coverage is not a pass). It flips
@@ -283,8 +289,9 @@ python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
 ```
 
 Use the same flags locally, or the sample count will not match CI. Advisory mode
-never retries, so CI always uses `--initial-samples`; a local run that passes
-`--retry-samples` will sample more than CI does. Rationale: ADR-0009.
+never retries: `--retry-samples` is ignored when `--advisory-timing` is set, so
+the `--initial-samples` count is final both locally and in CI. Rationale:
+ADR-0009.
 
 The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time
 out; a timeout is job-level, so it skips both gates and the report upload. Rerun

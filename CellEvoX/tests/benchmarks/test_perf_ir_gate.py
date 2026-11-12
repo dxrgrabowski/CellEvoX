@@ -142,6 +142,17 @@ class MeasureSideTest(unittest.TestCase):
         self.assertEqual(2, raised.exception.code)
         self.assertIn("--runs must be at least 2", stderr.getvalue())
 
+    def test_parse_args_validates_accepted_delta(self):
+        # parse_args must route --accepted-delta through the same validator as
+        # a direct parse_accepted_deltas call; a ratio at the threshold is
+        # rejected before any measurement runs.
+        argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h",
+                "--accepted-delta", "realistic-2d-450=0.01"]
+        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            perf_ir_gate.parse_args()
+        self.assertIn("must exceed --threshold", stderr.getvalue())
+
 
 class CallgrindParsingTest(unittest.TestCase):
     def test_summary_line_is_parsed(self):
@@ -249,8 +260,9 @@ class AggregateMemoryTest(unittest.TestCase):
 class HasFailureTest(unittest.TestCase):
     """In advisory mode only lost coverage and peak RSS may block."""
 
-    def summary(self, missing=0, memory_status="OK"):
-        return {"counts": {"missing": missing}, "memory": {"status": memory_status}}
+    def summary(self, missing=0, memory_status="OK", regressed=0):
+        return {"counts": {"missing": missing, "regressed": regressed},
+                "memory": {"status": memory_status}}
 
     def test_advisory_mode_does_not_block_on_timing(self):
         results = {"bench": {"status": "REGRESSED"}}
@@ -268,6 +280,15 @@ class HasFailureTest(unittest.TestCase):
     def test_advisory_mode_blocks_on_unknown_rss(self):
         self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(memory_status="UNKNOWN"),
                                                        False, 0.02, advisory_timing=True))
+
+    def test_non_advisory_mode_blocks_on_a_counted_regression(self):
+        self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02))
+
+    def test_advisory_mode_does_not_block_on_a_counted_regression(self):
+        # --advisory-timing demotes the same counted regression that blocks
+        # the default mode; only lost coverage and RSS still block.
+        self.assertFalse(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02,
+                                                       advisory_timing=True))
 
 
 class ParseAcceptedDeltasTest(unittest.TestCase):
