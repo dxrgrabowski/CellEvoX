@@ -78,6 +78,19 @@ async def get_config_schema():
             "is_driver": {"type": "boolean"},
             "effect": {"type": "float", "min": -0.5, "max": 0.5, "step": 0.001},
             "probability": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_mode": {
+                "type": "enum",
+                "values": ["constant", "gamma"],
+                "default": "constant",
+            },
+            "effect_mean": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_std": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_direction": {
+                "type": "enum",
+                "values": ["positive", "negative"],
+                "default": "positive",
+            },
+            "effect_limit": {"type": "float", "min": 0.0001, "max": 0.9999, "step": 0.0001},
         }
     }
 

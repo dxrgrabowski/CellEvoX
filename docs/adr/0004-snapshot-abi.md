@@ -10,7 +10,7 @@ must still be *coherent* — every reader in the repository has to agree with th
 writer at any given commit.
 ## Decision
 There is one coherent snapshot contract per commit: the layout (currently
-`CELXPOP1` v2), its record sizes and flags, the reader matrix, and the cadence
+`CELXPOP1` v3), its record sizes and flags, the reader matrix, and the cadence
 are specified in [docs/output-contract.md](../output-contract.md) and must match
 every reader in the repository at that commit. Backward compatibility of run
 artifacts is **not** supported or guaranteed, so readers may reject unknown
@@ -26,7 +26,7 @@ Python tests, so editing one side cannot silently diverge from the other.
   the CSV export that the web backend reads. A writer refactor that emits the
   same bytes needs no bump. Old runs do **not** have to stay readable.
 - The C++ v1/raw-3D fallbacks were removed under this policy (#52); no
-  compatibility guarantee backs them, and both readers now accept v2 only.
+  compatibility guarantee backs them, and both readers now accept v3 only.
 - Cadence and terminal-state rules are part of the same output contract; this
   ADR does not restate them.
 
@@ -34,8 +34,9 @@ Python tests, so editing one side cannot silently diverge from the other.
 - ABI sizes are pinned by `static_assert`s in
   `CellEvoX/include/io/PopulationSnapshotIO.hpp`.
 - Canonical cross-language fixtures in `CellEvoX/tests/fixtures/mini_run/`:
-  a driver-only v2 snapshot, a full-payload v2 snapshot, their CSV export, and
-  truncated/unknown-version files for the negative path (#52).
+  a driver-only v3 snapshot, a full-payload v3 snapshot, their CSV export, and
+  truncated/unknown-version files for the negative path (#52, bumped to v3 by
+  [ADR-0012](0012-gamma-mutation-effect.md)).
 - The same fixture is parsed by `CellEvoX/tests/test_population_snapshot_io.cpp`
   and `CellEvoX/scripts/test_snapshot_io.py`; the Python test also cross-checks
   the binary reader against the CSV export. The reader matrix itself is listed

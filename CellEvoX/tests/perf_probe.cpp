@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -120,6 +119,20 @@ std::shared_ptr<SimulationConfig> makeRealistic2DConfig(const std::string& stats
   return config;
 }
 
+// The probe is copied into the comparison base, which may store a mutation as
+// std::pair while the head stores a named CellMutation. Hash the same
+// (id, type) payload in both layouts so base and head checksums stay comparable.
+template <typename Mutation>
+void mixMutation(Checksum& checksum, const Mutation& mutation) {
+  if constexpr (requires { mutation.mutation_id; }) {
+    checksum.u32(mutation.mutation_id);
+    checksum.u64(mutation.mutation_type);
+  } else {
+    checksum.u32(mutation.first);
+    checksum.u64(mutation.second);
+  }
+}
+
 void mixCell(Checksum& checksum, const Cell& cell) {
   checksum.u32(cell.id);
   checksum.u32(cell.parent_id);
@@ -127,8 +140,7 @@ void mixCell(Checksum& checksum, const Cell& cell) {
   checksum.f64(cell.death_time);
   checksum.u64(cell.mutations.size());
   for (const auto& mutation : cell.mutations) {
-    checksum.u32(mutation.first);
-    checksum.u64(mutation.second);
+    mixMutation(checksum, mutation);
   }
 }
 
@@ -181,45 +193,53 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // reference were not produced by this workload's snapshot path and are never
 // read back, so they cannot change the instruction count this checksum
 // witnesses; the report is the source of truth for which snapshots the workload
-// produced. The format is packed and value-initialized (see
-// PopulationSnapshotIO.hpp), so hashing raw bytes compares content rather than
-// padding. The generation index is not hashed
+// produced. The generation index is not hashed
 // separately: the report is built in a fixed order, which is part of the
-// contract this checksum relies on, and a reordering still moves the bytes
-// inside the hash. A snapshot ABI version bump changes these bytes on purpose,
-// so it reports SEMANTICS CHANGED until the probe and ADR-0011's Evidence are
-// updated together.
+// contract this checksum relies on, and a reordering still moves the record
+// order inside the hash.
+//
+// The file is parsed through the shared reader and its logical content is
+// hashed, not its raw bytes: an ABI version bump changes the record layout on
+// purpose (v3 adds the realized effect to each driver-mutation record), so raw
+// bytes would report SEMANTICS CHANGED for an otherwise identical run. Only
+// fields carried by every supported version are hashed, and the driver-mutation
+// payload is hashed as (id, type), which both v2 and v3 store.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
   checksum.u64(report.size());
   for (const auto& entry : report) {
     const std::string path = CellEvoX::io::populationSnapshotPath(output_path, entry.first);
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-      throw std::runtime_error("population snapshot missing: " + path);
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations;
+    if (!CellEvoX::io::readPopulationSnapshot(path, header, records, driver_mutations)) {
+      throw std::runtime_error("population snapshot missing or unreadable: " + path);
     }
-    const std::streamoff size = file.tellg();
-    if (size < 0) {
-      throw std::runtime_error("cannot size population snapshot: " + path);
+    // Version-independent header fields only: `version`, `record_size` and
+    // `mutation_record_size` describe the layout, not the simulation state.
+    checksum.f64(header.tau);
+    checksum.u32(header.record_count);
+    checksum.u32(header.driver_mutation_count);
+    checksum.u32(header.spatial_dimensions);
+    checksum.u32(header.flags);
+    checksum.u64(records.size());
+    for (const auto& record : records) {
+      checksum.u32(record.id);
+      checksum.u32(record.parent_id);
+      checksum.f32(record.fitness);
+      checksum.f32(record.x);
+      checksum.f32(record.y);
+      checksum.f32(record.z);
+      checksum.u32(record.mutations_count);
+      checksum.u32(record.driver_mutation_count);
+      checksum.u32(record.driver_mutation_offset);
+      checksum.u32(record.position_valid);
     }
-    file.seekg(0);
-    // Stream in fixed-size chunks: this runs inside the collected window, so a
-    // large or corrupt snapshot must not size an allocation from its length.
-    // Checksum::bytes accumulates byte-by-byte with no per-call framing, so
-    // chunking folds the same bytes as one read.
-    checksum.u64(static_cast<uint64_t>(size));
-    std::vector<char> buffer(64 * 1024);
-    std::streamoff remaining = size;
-    while (remaining > 0) {
-      const auto chunk = static_cast<std::streamsize>(
-          std::min<std::streamoff>(remaining, static_cast<std::streamoff>(buffer.size())));
-      file.read(buffer.data(), chunk);
-      if (file.gcount() != chunk) {
-        throw std::runtime_error("population snapshot unreadable: " + path);
-      }
-      checksum.bytes(buffer.data(), static_cast<size_t>(chunk));
-      remaining -= chunk;
+    checksum.u64(driver_mutations.size());
+    for (const auto& mutation : driver_mutations) {
+      checksum.u32(mutation.mutation_id);
+      checksum.u32(mutation.mutation_type);
     }
   }
 }

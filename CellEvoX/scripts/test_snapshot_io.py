@@ -33,7 +33,7 @@ FIXTURE_ROOT = os.path.join(
 # Mirror of the C++ static_assert values in include/io/PopulationSnapshotIO.hpp.
 HEADER_SIZE = 48
 RECORD_SIZE = 36
-MUTATION_RECORD_SIZE = 5
+MUTATION_RECORD_SIZE = 9
 
 FLAG_DRIVER_PAYLOAD = 0x1
 FLAG_FULL_PAYLOAD = 0x2
@@ -111,7 +111,7 @@ class DriverOnlySnapshotFixture(unittest.TestCase):
         self.assertEqual(data["MutationCount"].tolist(), [1, 2, 1])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(0,1)", "(0,1) (1,2)", "(0,1)"],
+            ["(0,1,0.5)", "(0,1,0.5) (1,2,0.25)", "(0,1,0.5)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [0, 0, 0])
         self.assertTrue(all(math.isnan(value) for value in data["X"]))
@@ -166,7 +166,7 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
         self.assertEqual(data["Fitness"].tolist(), [1.5, 0.875])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(3,1) (7,3)", "(3,1) (8,4)"],
+            ["(3,1,0.125) (7,3,0.25)", "(3,1,0.125) (8,4,-0.25)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [1, 1])
         self.assertEqual(data["X"].tolist(), [1.5, 4.0])
@@ -181,8 +181,8 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
 
 
 class InvalidSnapshotFixtures(unittest.TestCase):
-    def test_truncated_v2_is_rejected(self):
-        path = _invalid("truncated_v2.bin")
+    def test_truncated_v3_is_rejected(self):
+        path = _invalid("truncated_v3.bin")
         self.assertEqual(os.path.getsize(path), HEADER_SIZE)
         with self.assertRaises(ValueError):
             _load_bin_frame(5, path, set())

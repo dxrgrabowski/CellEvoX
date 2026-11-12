@@ -143,11 +143,22 @@ int extractGenerationFromFilename(const fs::path& path) {
   return -1;
 }
 
+std::string formatMutationEffect(float effect) {
+  std::ostringstream stream;
+  stream << std::setprecision(std::numeric_limits<float>::max_digits10) << effect;
+  return stream.str();
+}
+
+std::string formatMutationEntry(uint32_t mutation_id, uint8_t mutation_type, float effect) {
+  return "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + "," +
+         formatMutationEffect(effect) + ")";
+}
+
 std::string formatMutationsForCsv(const Cell& cell) {
   std::string mutations_str;
-  for (const auto& [mutation_id, mutation_type] : cell.mutations) {
+  for (const auto& mutation : cell.mutations) {
     mutations_str +=
-        "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
   }
 
   if (!mutations_str.empty()) {
@@ -165,12 +176,12 @@ bool isDriverMutationType(const std::map<uint8_t, MutationType>& mutation_types,
 std::string formatDriverMutationsForCsv(const Cell& cell,
                                         const std::map<uint8_t, MutationType>& mutation_types) {
   std::string mutations_str;
-  for (const auto& [mutation_id, mutation_type] : cell.mutations) {
-    if (!isDriverMutationType(mutation_types, mutation_type)) {
+  for (const auto& mutation : cell.mutations) {
+    if (!isDriverMutationType(mutation_types, mutation.mutation_type)) {
       continue;
     }
     mutations_str +=
-        "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + ") ";
+        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
   }
 
   if (!mutations_str.empty()) {
@@ -197,8 +208,7 @@ std::string formatDriverMutationsForCsv(
   for (size_t i = start; i < end; ++i) {
     const auto& mutation = driver_mutations[i];
     mutations_str +=
-        "(" + std::to_string(mutation.mutation_id) + "," + std::to_string(mutation.mutation_type) +
-        ") ";
+        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
   }
 
   if (!mutations_str.empty()) {
@@ -225,8 +235,7 @@ std::string formatSnapshotMutationsForCsv(
   for (size_t i = start; i < end; ++i) {
     const auto& mutation = mutation_payload[i];
     mutations_str +=
-        "(" + std::to_string(mutation.mutation_id) + "," + std::to_string(mutation.mutation_type) +
-        ") ";
+        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
   }
 
   if (!mutations_str.empty()) {
@@ -948,11 +957,11 @@ void RunDataEngine::plotMutationFrequency() {
         ++total_cells;
 
         for (const auto& mutation : cell.mutations) {
-          if (!full_vaf && !isDriverMutationType(run->mutation_id_to_type, mutation.second)) {
+          if (!full_vaf &&
+              !isDriverMutationType(run->mutation_id_to_type, mutation.mutation_type)) {
             continue;
           }
-          uint32_t mutation_id = mutation.first;
-          mutation_counts[mutation_id]++;
+          mutation_counts[mutation.mutation_id]++;
         }
       }
 

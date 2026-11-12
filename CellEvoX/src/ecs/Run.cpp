@@ -191,21 +191,22 @@ void Run::processRunInfo() {
 
   for (const auto& cell : cells) {
     total_mutations += cell.second.mutations.size();
-    for (const auto& mutation_id : cell.second.mutations) {
-      const auto mut_type_it = mutation_id_to_type.find(mutation_id.second);
+    for (const auto& mutation : cell.second.mutations) {
+      const auto mut_type_it = mutation_id_to_type.find(mutation.mutation_type);
       if (mut_type_it == mutation_id_to_type.end()) {
-        spdlog::warn("Unknown mutation type id {} in cell {}", mutation_id.second, cell.first);
+        spdlog::warn("Unknown mutation type id {} in cell {}", mutation.mutation_type, cell.first);
         continue;
       }
 
-      const auto& mut_type = mut_type_it->second;
-      if (mut_type.is_driver) {
+      if (mut_type_it->second.is_driver) {
         ++driver_mutations;
       }
 
-      if (mut_type.effect > 0) {
+      // Classification uses the realized effect of this occurrence: gamma
+      // mutations have no latent sign in their configuration.
+      if (mutation.effect > 0.0f) {
         ++positive_mutations;
-      } else if (mut_type.effect < 0) {
+      } else if (mutation.effect < 0.0f) {
         ++negative_mutations;
       } else {
         ++neutral_mutations;
@@ -220,7 +221,7 @@ void Run::processRunInfo() {
   } else {
     average_mutations =
         static_cast<float>(static_cast<double>(total_mutations) / living_cell_count);
-    total_mutations_memory = total_mutations * sizeof(std::pair<uint32_t, uint8_t>);
+    total_mutations_memory = total_mutations * sizeof(CellMutation);
     total_cell_memory_usage = living_cell_count * sizeof(Cell);
   }
 

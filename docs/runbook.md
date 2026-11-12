@@ -111,6 +111,38 @@ Required keys are `tau_step`, `initial_population`, `env_capacity`, `steps`,
 off, `1` warnings only, `2` (default) info. The legacy boolean `stochastic: true`
 is still accepted with a warning, while `log_level` is ignored.
 
+### Mutation effects
+
+Each entry in `mutations` accepts `effect_mode`. Omitting it means `constant`,
+which uses `effect` exactly as before. `gamma` samples one effect per mutation
+event instead:
+
+```json
+{
+  "id": 4,
+  "is_driver": true,
+  "probability": 0.0001,
+  "effect_mode": "gamma",
+  "effect_mean": 0.05,
+  "effect_std": 0.02,
+  "effect_direction": "positive",
+  "effect_limit": 0.2
+}
+```
+
+The shape and scale are `k = (mean/std)²` and `θ = std²/mean`; each sample
+`X ~ Gamma(k, θ)` is capped at `min(X, effect_limit)` and signed by
+`effect_direction` (`positive` raises fitness, `negative` lowers it). The child's
+fitness is `fitness * (1 + signed_effect)`. `effect_mean` and `effect_std` must be
+positive, and `effect_limit` must lie in `(0, 1)` and be at least `effect_mean`;
+otherwise the run is rejected at startup. Because the tail is clamped, the
+realized mean is at or below `effect_mean` — larger `effect_std`/`effect_mean`
+ratios make the downward bias stronger. The realized effect of every exported
+mutation is written to the `Mutations` column and the snapshot payload, so
+downstream classification uses the sampled sign, not `effect_direction`. With
+`full_mutation_payload: false` (the default) those outputs contain driver
+mutations only; passenger effects stay on the cells but are not exported.
+
 Run it with exports only:
 
 ```bash

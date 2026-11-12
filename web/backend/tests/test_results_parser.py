@@ -94,13 +94,13 @@ def test_missing_run_id_resolves_to_none(tmp_path):
 
 
 def test_population_files_are_grouped_by_generation(make_run, tmp_path):
-    make_run("run-a", populations={1: ["", "(1,0)"], 2: ["(2,0)"]})
+    make_run("run-a", populations={1: ["", "(1,0,0.05)"], 2: ["(2,0,-0.1)"]})
 
     data = ResultsParser(repo_root=tmp_path).get_population("run-a")
 
     assert sorted(data) == [1, 2]
     assert data[1][0]["Mutations"] is None
-    assert data[2][0]["Mutations"] == "(2,0)"
+    assert data[2][0]["Mutations"] == "(2,0,-0.1)"
 
 
 def test_node_modules_config_is_not_discovered(tmp_path):

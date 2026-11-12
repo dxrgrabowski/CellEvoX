@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "systems/DensePopulation.hpp"
+#include "systems/MutationEffect.hpp"
 #include "systems/SimulationEngine.hpp"
 #include "utils/DeterministicRng.hpp"
 #include "utils/ParallelAlgorithms.hpp"
@@ -97,7 +98,7 @@ inline bool commonDaughterCellLess(const Cell& lhs, const Cell& rhs) {
     return lhs.mutations.size() < rhs.mutations.size();
   }
   if (!lhs.mutations.empty() && !rhs.mutations.empty()) {
-    return lhs.mutations.back().second < rhs.mutations.back().second;
+    return lhs.mutations.back().mutation_type < rhs.mutations.back().mutation_type;
   }
   return false;
 }
@@ -188,21 +189,9 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
                 continue;
               }
 
-              double prob_sum = 0.0;
-              for (const auto& mut : available_mutation_types) {
-                prob_sum += mut.second.probability;
-                if (rand_val < prob_sum) {
-                  const double daughter_fitness = fitness * (1.0 + mut.second.effect);
-                  if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
-                    throw std::runtime_error("Mutation produced invalid daughter fitness");
-                  }
-                  Cell daughter_cell1 = Cell(cell, daughter_fitness);
-                  daughter_cell1.mutations.push_back({0, mut.second.type_id});
-                  buffers.new_cells.push_back(std::move(daughter_cell1));
-                  buffers.new_cells.emplace_back(cell, fitness);
-                  break;
-                }
-              }
+              detail::appendMutatedDaughters(buffers.new_cells, cell, fitness, rand_val,
+                                             available_mutation_types, config.seed, rng_step,
+                                             idx);
             }
           });
     }
@@ -320,8 +309,8 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
         auto& new_cell = sorted_new_cells[i];
         new_cell.id = new_id;
         for (auto& mutation : new_cell.mutations) {
-          if (mutation.first == 0) {
-            mutation.first = new_id;
+          if (mutation.mutation_id == 0) {
+            mutation.mutation_id = new_id;
           }
         }
         if constexpr (collect_event_result) {

@@ -18,6 +18,7 @@
 #include <tbb/global_control.h>
 #include "core/RunDataEngine.hpp"
 #include "io/PopulationSnapshotIO.hpp"
+#include "utils/DeterministicRng.hpp"
 #include "utils/SimulationConfig.hpp"
 #include "spatial/SpatialHashGrid.hpp"
 #include "systems/CommonPopulationStep.hpp"
@@ -35,6 +36,20 @@ std::filesystem::path testTempPath(std::string_view name) {
 
 std::string testTempString(std::string_view name) {
     return testTempPath(name).string();
+}
+
+MutationType gammaMutation(uint8_t type_id, float probability, bool is_driver,
+                           MutationEffectDirection direction) {
+    MutationType mutation{};
+    mutation.probability = probability;
+    mutation.type_id = type_id;
+    mutation.is_driver = is_driver;
+    mutation.effect_mode = MutationEffectMode::Gamma;
+    mutation.effect_mean = 0.05f;
+    mutation.effect_std = 0.02f;
+    mutation.effect_direction = direction;
+    mutation.effect_limit = 0.2f;
+    return mutation;
 }
 
 }  // namespace
@@ -72,6 +87,9 @@ TEST_CASE("SimulationConfig parses correctly from default JSON", "[SimulationCon
     REQUIRE(config.full_mutation_payload);
     REQUIRE(config.mutations.size() == 2);
     REQUIRE(config.mutations[1].is_driver == true);
+    // A missing effect_mode keeps the constant fitness effect.
+    REQUIRE(config.mutations[0].effect_mode == MutationEffectMode::Constant);
+    REQUIRE(config.mutations[1].effect == Catch::Approx(0.1f));
 }
 
 TEST_CASE("SimulationConfig rejects unsafe values", "[SimulationConfig][Correctness]") {
@@ -103,6 +121,83 @@ TEST_CASE("SimulationConfig rejects unsafe values", "[SimulationConfig][Correctn
 
     invalid = j;
     invalid["mutations"][0]["effect"] = -1.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+}
+
+namespace {
+
+nlohmann::json gammaMutationConfig() {
+    return {
+        {"simulation_mode", "stochastic"},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array({
+            {{"effect", 0.0}, {"probability", 0.1}, {"id", 1}, {"is_driver", false},
+             {"effect_mode", "gamma"}, {"effect_mean", 0.05}, {"effect_std", 0.02},
+             {"effect_direction", "negative"}, {"effect_limit", 0.2}}
+        })}
+    };
+}
+
+}  // namespace
+
+TEST_CASE("SimulationConfig parses gamma mutation effects", "[SimulationConfig][Gamma]") {
+    auto config = utils::fromJson(gammaMutationConfig());
+
+    REQUIRE(config.mutations.size() == 1);
+    const auto& mutation = config.mutations[0];
+    REQUIRE(mutation.effect_mode == MutationEffectMode::Gamma);
+    REQUIRE(mutation.effect_mean == Catch::Approx(0.05f));
+    REQUIRE(mutation.effect_std == Catch::Approx(0.02f));
+    REQUIRE(mutation.effect_limit == Catch::Approx(0.2f));
+    REQUIRE(mutation.effect_direction == MutationEffectDirection::Negative);
+    REQUIRE(mutation.directionSign() == Catch::Approx(-1.0));
+    REQUIRE(mutation.gammaShape() == Catch::Approx(6.25));
+    REQUIRE(mutation.gammaScale() == Catch::Approx(0.008));
+
+    auto positive = gammaMutationConfig();
+    positive["mutations"][0]["effect_direction"] = "positive";
+    REQUIRE(utils::fromJson(positive).mutations[0].directionSign() == Catch::Approx(1.0));
+}
+
+TEST_CASE("SimulationConfig rejects invalid gamma mutation effects",
+          "[SimulationConfig][Gamma][Correctness]") {
+    auto invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_mean"] = 0.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_mean"] = -0.05;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_std"] = 0.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_limit"] = 0.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_limit"] = 1.0;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    // The cap must not sit below the requested mean.
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_limit"] = 0.04;
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_direction"] = "up";
+    REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+
+    invalid = gammaMutationConfig();
+    invalid["mutations"][0]["effect_mode"] = "lognormal";
     REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
 }
 
@@ -268,14 +363,14 @@ TEST_CASE("SpatialHashGrid handles large rebuilds through the parallel sort path
 TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
     Cell parent(1);
     parent.fitness = 1.0;
-    parent.mutations.push_back({0, 1}); // Parent has a mutation
+    parent.mutations.push_back({0, 1, 0.0f}); // Parent has a mutation
 
     Cell child(parent, 1.25); // Create child from parent with higher fitness
     
     REQUIRE(child.parent_id == 1);
     REQUIRE(child.fitness == 1.25);
     REQUIRE(child.mutations.size() == 1);
-    REQUIRE(child.mutations[0].second == 1); // Child inherits mutation type
+    REQUIRE(child.mutations[0].mutation_type == 1); // Child inherits mutation type
     REQUIRE(child.id == 0); // ID hasn't been explicitly assigned yet
 }
 
@@ -349,7 +444,7 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
         REQUIRE(accessor->second.parent_id == parent_id);
         REQUIRE(accessor->second.fitness == Catch::Approx(1.0e20f));
         if (mutated) {
-            REQUIRE(accessor->second.mutations == std::vector<std::pair<uint32_t, uint8_t>>{{id, 7}});
+            REQUIRE(accessor->second.mutations == std::vector<CellMutation>{{id, 7, 0.0f}});
         } else {
             REQUIRE(accessor->second.mutations.empty());
         }
@@ -367,32 +462,39 @@ TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]")
     CellMap cells;
 
     Cell first(10);
-    first.mutations = {{100, 1}, {101, 2}};
+    first.mutations = {{100, 1, 0.10f}, {101, 2, -0.20f}};
     REQUIRE(cells.insert({10, std::move(first)}));
 
     Cell second(11);
-    second.mutations = {{102, 3}};
+    second.mutations = {{102, 3, 0.0f}};
     REQUIRE(cells.insert({11, std::move(second)}));
 
     Cell third(12);
-    third.mutations = {{103, 4}};
+    third.mutations = {{103, 4, 0.05f}};
     REQUIRE(cells.insert({12, std::move(third)}));
+
+    // A gamma mutation type configured as beneficial that realized a negative
+    // draw: classification must follow the realized effect, not the config.
+    Cell fourth(13);
+    fourth.mutations = {{104, 5, -0.15f}};
+    REQUIRE(cells.insert({13, std::move(fourth)}));
 
     std::map<uint8_t, MutationType> mutation_types;
     mutation_types[1] = {0.10f, 0.0f, 1, true};
     mutation_types[2] = {-0.20f, 0.0f, 2, false};
     mutation_types[3] = {0.00f, 0.0f, 3, true};
     mutation_types[4] = {0.05f, 0.0f, 4, false};
+    mutation_types[5] = gammaMutation(5, 0.0f, false, MutationEffectDirection::Positive);
 
     Graveyard graveyard;
     ecs::Run run(std::move(cells), std::move(mutation_types), std::move(graveyard), {}, {}, 0, 1.0);
 
-    REQUIRE(run.total_mutations == 4);
+    REQUIRE(run.total_mutations == 5);
     REQUIRE(run.driver_mutations == 2);
     REQUIRE(run.positive_mutations == 2);
-    REQUIRE(run.negative_mutations == 1);
+    REQUIRE(run.negative_mutations == 2);
     REQUIRE(run.neutral_mutations == 1);
-    REQUIRE(run.average_mutations == Catch::Approx(4.0 / 3.0));
+    REQUIRE(run.average_mutations == Catch::Approx(5.0 / 4.0));
 }
 
 TEST_CASE("Run handles empty populations without invalid averages", "[Run][Correctness]") {
@@ -589,6 +691,42 @@ TEST_CASE("Last periodic population snapshot matches phylogenetic tree living le
     std::filesystem::remove_all(output_path);
 }
 
+TEST_CASE("Deterministic gamma sampler matches its requested moments", "[Determinism][Gamma]") {
+    using namespace CellEvoX::deterministic_rng;
+    constexpr uint32_t sample_count = 20000;
+
+    auto moments = [](double shape, double scale) {
+        double sum = 0.0;
+        double sum_sq = 0.0;
+        for (uint32_t i = 0; i < sample_count; ++i) {
+            const double sample = gamma01(2026, 7, 1000 + i, kStreamMutationEffect, shape, scale);
+            REQUIRE(sample > 0.0);
+            sum += sample;
+            sum_sq += sample * sample;
+        }
+        const double mean = sum / sample_count;
+        return std::pair<double, double>{mean, sum_sq / sample_count - mean * mean};
+    };
+
+    // shape = (mu/sigma)^2 = 6.25, scale = sigma^2/mu = 0.008 for mu=0.05, sigma=0.02.
+    const auto [mean, variance] = moments(6.25, 0.008);
+    REQUIRE(mean == Catch::Approx(0.05).epsilon(0.03));
+    REQUIRE(variance == Catch::Approx(0.0004).epsilon(0.10));
+
+    // shape < 1 exercises the U^(1/shape) boost path.
+    const auto [small_shape_mean, small_shape_variance] = moments(0.5, 1.0);
+    REQUIRE(small_shape_mean == Catch::Approx(0.5).epsilon(0.03));
+    REQUIRE(small_shape_variance == Catch::Approx(0.5).epsilon(0.10));
+
+    // Counter-based draws: same key repeats, another substream slot differs.
+    const uint64_t slot0 = substream(kStreamMutationEffect, 0);
+    const uint64_t slot1 = substream(kStreamMutationEffect, 1);
+    REQUIRE(gamma01(2026, 7, 42, slot0, 6.25, 0.008) ==
+            gamma01(2026, 7, 42, slot0, 6.25, 0.008));
+    REQUIRE(gamma01(2026, 7, 42, slot0, 6.25, 0.008) !=
+            gamma01(2026, 7, 42, slot1, 6.25, 0.008));
+}
+
 TEST_CASE("Simulation Determinism", "[Determinism]") {
     auto config1 = std::make_shared<SimulationConfig>();
     config1->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
@@ -643,6 +781,10 @@ TEST_CASE("SimulationEngine stochastic population step is deterministic across w
         config->verbosity = 0;
         config->mutations.push_back({0.05f, 0.02f, 1, true});
         config->mutations.push_back({-0.02f, 0.01f, 2, false});
+        config->mutations.push_back(
+            gammaMutation(3, 0.02f, false, MutationEffectDirection::Positive));
+        config->mutations.push_back(
+            gammaMutation(4, 0.01f, true, MutationEffectDirection::Negative));
         return config;
     };
 
@@ -678,6 +820,18 @@ TEST_CASE("SimulationEngine stochastic population step is deterministic across w
         REQUIRE(accessor->second.fitness == cell.fitness);
         REQUIRE(accessor->second.mutations == cell.mutations);
     }
+
+    bool saw_gamma_effect = false;
+    for (const auto& [cell_id, cell] : single_thread_run.cells) {
+        for (const auto& mutation : cell.mutations) {
+            if (mutation.mutation_type != 3 && mutation.mutation_type != 4) continue;
+            saw_gamma_effect = true;
+            const float sign = mutation.mutation_type == 3 ? 1.0f : -1.0f;
+            REQUIRE(mutation.effect * sign > 0.0f);
+            REQUIRE(std::abs(mutation.effect) <= 0.2f);
+        }
+    }
+    REQUIRE(saw_gamma_effect);
 
     REQUIRE(single_thread_run.cells_graveyard.size() == four_thread_run.cells_graveyard.size());
     for (const auto& [cell_id, graveyard_entry] : single_thread_run.cells_graveyard) {
@@ -724,9 +878,9 @@ TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnap
         {2, 1, 1.1f, 4.0f, 5.0f, 6.0f, 2, 2, 1, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations = {
-        {101, 1},
-        {202, 1},
-        {303, 2}
+        {101, 1, 0.3f},
+        {202, 1, -0.25f},
+        {303, 2, 0.0f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -750,8 +904,11 @@ TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnap
     REQUIRE(loaded_records[1].driver_mutation_count == 2);
     REQUIRE(loaded_records[1].driver_mutation_offset == 1);
     REQUIRE(loaded_driver_mutations[0].mutation_id == 101);
+    REQUIRE(loaded_driver_mutations[0].effect == Catch::Approx(0.3f));
     REQUIRE(loaded_driver_mutations[1].mutation_id == 202);
+    REQUIRE(loaded_driver_mutations[1].effect == Catch::Approx(-0.25f));
     REQUIRE(loaded_driver_mutations[2].mutation_type == 2);
+    REQUIRE(loaded_driver_mutations[2].effect == 0.0f);
 }
 
 TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[PopulationSnapshotIO]") {
@@ -762,8 +919,8 @@ TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[Populat
         {1, 0, 1.0f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1},
-        {202, 3}
+        {101, 1, 0.5f},
+        {202, 3, -0.25f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -784,7 +941,9 @@ TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[Populat
     REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
     REQUIRE(loaded_records.size() == 1);
     REQUIRE(loaded_mutations.size() == 2);
+    REQUIRE(loaded_mutations[0].effect == Catch::Approx(0.5f));
     REQUIRE(loaded_mutations[1].mutation_id == 202);
+    REQUIRE(loaded_mutations[1].effect == Catch::Approx(-0.25f));
 }
 
 TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "[RunDataEngine][PopulationSnapshotIO]") {
@@ -797,8 +956,8 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
         {7, 3, 1.25f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1},
-        {202, 3}
+        {101, 1, 0.5f},
+        {202, 3, -0.25f}
     };
     const auto snapshot_path = population_dir / "population_generation_5.bin";
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -822,7 +981,7 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
     std::string row_line;
     REQUIRE(std::getline(file, header_line));
     REQUIRE(std::getline(file, row_line));
-    REQUIRE(row_line.find("\"(101,1) (202,3)\"") != std::string::npos);
+    REQUIRE(row_line.find("\"(101,1,0.5) (202,3,-0.25)\"") != std::string::npos);
 }
 
 TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV snapshots", "[RunDataEngine]") {
@@ -866,11 +1025,12 @@ TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV sna
 
     const auto driver_only_csv =
         export_csv(make_config(testTempString("test_run_data_engine_driver_only_ram_csv"), false));
-    REQUIRE(driver_only_csv.find(",2)") == std::string::npos);
+    // Mutation entries are "(id,type,effect)"; the configured effect here is 0.
+    REQUIRE(driver_only_csv.find(",2,0)") == std::string::npos);
 
     const auto full_payload_csv =
         export_csv(make_config(testTempString("test_run_data_engine_full_ram_csv"), true));
-    REQUIRE(full_payload_csv.find(",2)") != std::string::npos);
+    REQUIRE(full_payload_csv.find(",2,0)") != std::string::npos);
 }
 
 TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D", "[SimulationEngine][PopulationSnapshotIO]") {
