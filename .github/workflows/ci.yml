@@ -96,6 +96,7 @@ jobs:
         git -C base_repo checkout --detach FETCH_HEAD
 
     - name: Build Base (Exact Comparison Commit)
+      id: build_base
       run: |
         # The instruction gate compares the same probe in both trees. The probe is
         # new in this PR, so inject it into the base checkout instead of requiring
@@ -111,6 +112,7 @@ jobs:
         cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
     - name: Build Head (Current PR)
+      id: build_head
       run: |
         cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON
         cmake --build head_build --target CellEvoX CellEvoXTests CellEvoXPerfProbe -j$(nproc)
@@ -142,8 +144,10 @@ jobs:
 
     - name: Paired Performance Gate (advisory timing)
       # Run even when the instruction gate failed: the advisory report is the
-      # evidence for a failure investigation, and it is uploaded below.
-      if: always()
+      # evidence for a failure investigation, and it is uploaded below. Skip it
+      # when a build failed, where the binaries do not exist and the step would
+      # only add a second, confusing error.
+      if: always() && steps.build_base.outcome == 'success' && steps.build_head.outcome == 'success'
       env:
         BENCHMARK_GROUPS: ${{ inputs.benchmark_groups || 'quick' }}
       run: |

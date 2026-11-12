@@ -54,7 +54,10 @@ verdicts are advisory.
 - The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, funded by running
   the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`. That
   ceiling was measured with a warm ccache; a cold cache rebuilds three targets
-  for two trees and can approach it, which is the trade-off issue #70 accepts.
+  for two trees and can approach it. A cold-cache attempt that times out fails
+  for infrastructure reasons, not with a verdict; the ccache key restores from
+  `main`, so later runs start warm. The hard 10-minute ceiling is issue #70's
+  constraint and this is its accepted trade-off.
 
 ## Evidence
 - Same binary as base and head: `+0.00%` everywhere, and both repeats of each

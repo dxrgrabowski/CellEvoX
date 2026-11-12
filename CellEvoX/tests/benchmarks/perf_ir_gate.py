@@ -26,10 +26,10 @@ Everything that is not a measured, deterministic, semantically identical
 comparison fails the gate. There is no skip path.
 
 A workload named in ``--accepted-delta WORKLOAD=RATIO`` may grow by that ratio
-instead of ``--threshold``, and its row is printed as ``OK (accepted +N%)``. A
-ratio at or below ``--threshold`` cannot tighten the workload and so has no
-effect. This is for a cost the project has decided to pay in the current PR, not
-for widening the gate: it is scoped to one workload and visible in the CI
+instead of ``--threshold``, and its row is printed as ``OK (accepted +N%)``. The
+ratio must exceed ``--threshold``: an exception can only relax a workload, never
+tighten it. This is for a cost the project has decided to pay in the current PR,
+not for widening the gate: it is scoped to one workload and visible in the CI
 invocation, so the reviewer sees it.
 
 Instruction collection is limited to the probe's ``main`` with
@@ -88,11 +88,12 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
-    args.accepted_delta = parse_accepted_deltas(args.accepted_delta, parser)
+    args.accepted_delta = parse_accepted_deltas(args.accepted_delta, parser, args.threshold)
     return args
 
 
-def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser) -> Dict[str, float]:
+def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser,
+                          threshold: float) -> Dict[str, float]:
     accepted: Dict[str, float] = {}
     for entry in entries:
         name, _, ratio = entry.partition("=")
@@ -105,6 +106,9 @@ def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser) -
             parser.error(f"--accepted-delta: unknown workload {name!r}")
         if not 0 < value <= 0.5:
             parser.error(f"--accepted-delta: {name} ratio must be in (0, 0.5], got {value}")
+        if value <= threshold:
+            parser.error(f"--accepted-delta: {name} ratio {value} must exceed --threshold "
+                         f"{threshold}; an exception can only relax a workload")
         if name in accepted:
             parser.error(f"--accepted-delta: {name} given more than once")
         accepted[name] = value

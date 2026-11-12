@@ -177,6 +177,9 @@ void mixSnapshotFiles(Checksum& checksum,
       throw std::runtime_error("population snapshot missing: " + path);
     }
     const std::streamoff size = file.tellg();
+    if (size < 0) {
+      throw std::runtime_error("cannot size population snapshot: " + path);
+    }
     file.seekg(0);
     std::vector<char> bytes(static_cast<size_t>(size));
     file.read(bytes.data(), size);
