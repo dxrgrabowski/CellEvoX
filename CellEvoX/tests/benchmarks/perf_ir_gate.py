@@ -154,7 +154,13 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
     except OSError as exc:
         return {"error": f"callgrind output not readable: {exc}"}
 
-    ir = sum(int(value) for value in SUMMARY_RE.findall(text))
+    summaries = SUMMARY_RE.findall(text)
+    if len(summaries) != 1:
+        # Collection shape is part of what Ir means: a second summary means a
+        # helper thread or an extra toggle, so summing would compare different
+        # work rather than report a change.
+        return {"error": f"expected exactly 1 callgrind summary, got {len(summaries)}"}
+    ir = int(summaries[0])
     if ir <= 0:
         return {"error": "no instructions collected (probe 'main' not toggled?)"}
 
@@ -204,8 +210,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["detail"] = f"base=0x{base['checksums'][0]} head=0x{head['checksums'][0]}"
         return entry
     delta = (head["ir"] - base["ir"]) / base["ir"]
-    # An accepted delta can only relax a workload, never tighten it below the
-    # global threshold it is an exception to.
+    # Defensive: parse_accepted_deltas already rejects a ratio at or below the
+    # threshold, but the max keeps a future parser change from tightening a
+    # workload below the global threshold it is an exception to.
     allowed = max(args.threshold, args.accepted_delta.get(workload, args.threshold))
     entry["delta"] = delta
     entry["allowed"] = allowed

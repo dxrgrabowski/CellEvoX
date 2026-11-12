@@ -75,7 +75,10 @@ std::filesystem::path probeOutputPath(const std::string& stats_dir, std::string_
   return std::filesystem::path(stats_dir) / std::string(name);
 }
 
-// Mirrors makeConfig() in tests/bench_simulation.cpp.
+// Mirrors makeConfig() in tests/bench_simulation.cpp. The `tau_step = 0.005`
+// value is the benchmark's hardcoded constant (AGENTS.md tech debt); when that
+// debt is fixed the probe baseline moves with it, which is expected rather than
+// a regression.
 std::shared_ptr<SimulationConfig> makeConfig(const std::string& stats_dir,
                                              size_t population,
                                              size_t env_capacity,
@@ -335,6 +338,10 @@ void printWorkloads() {
 // std::stoull/std::stoul throw on malformed or out-of-range input; route that
 // to the usage error instead of an uncaught exception.
 uint64_t parseUnsigned(std::string_view option, const std::string& text) {
+  if (!text.empty() && text[0] == '-') {
+    // std::stoull accepts a minus sign and wraps it into a huge value.
+    usageError(std::string(option) + " expects an unsigned integer, got '" + text + "'");
+  }
   try {
     size_t consumed = 0;
     const unsigned long long value = std::stoull(text, &consumed);
