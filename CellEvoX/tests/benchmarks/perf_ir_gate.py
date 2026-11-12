@@ -200,7 +200,11 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
         # contract; diagnostics go to stderr.
         checksums = CHECKSUM_RE.findall(completed.stdout)
         if len(checksums) != 1:
-            return {"error": f"expected exactly 1 RESULT checksum line, got {len(checksums)}"}
+            # Name the whole contract: a line with two tokens fails the lookahead
+            # and counts as zero matches, so "got 0" alone would read as a missing
+            # line when the real cause is an ambiguous one.
+            return {"error": "expected exactly 1 RESULT checksum line carrying exactly one "
+                             f"checksum=0x token, found {len(checksums)}"}
 
         return {"ir": ir, "checksum": checksums[0]}
     finally:

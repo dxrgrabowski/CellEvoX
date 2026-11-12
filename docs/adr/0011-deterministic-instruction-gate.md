@@ -43,10 +43,10 @@ verdicts are advisory.
 - A regression now has a reproducible signature; no retry decides the job.
 - Blind spot: the same work done slower (locality, branch misses) passes. The
   advisory report is what surfaces that; neither signal alone is a verdict.
-- `--threshold 0.02` is headroom over a measured floor of 0.0000% on the
-  development host (only the base/head ratio is compared, so the absolute `Ir`
-  of another host does not change that floor), not tolerance
-  for a known cost. Raising it to admit a known cost is forbidden by
+- `--threshold 0.02` is headroom over the floor measured on the development
+  host with identical binaries (0.0000%), not tolerance for a known cost (only
+  the base/head ratio is compared, so the absolute `Ir` of another host does not
+  change that floor). Raising it to admit a known cost is forbidden by
   `AGENTS.md` (Negative Space), and it would be invisible in the diff. A cost
   the project deliberately accepts is named instead:
   `--accepted-delta realistic-2d-450=0.035` relaxes that single workload and

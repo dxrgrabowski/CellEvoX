@@ -297,6 +297,8 @@ uint64_t runCommonStepWorkload(const std::string& stats_dir, size_t population) 
   checksum.u64(actual_population);
   checksum.u64(total_deaths);
   checksum.u64(cells.cells.size());
+  // Vector order is part of the contract: reordering `cells` or `alive_cell_ids`
+  // changes the checksum and is reported as SEMANTICS CHANGED, not as noise.
   for (const Cell& cell : cells.cells) {
     mixCell(checksum, cell);
   }

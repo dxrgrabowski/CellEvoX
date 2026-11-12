@@ -224,10 +224,11 @@ class MeasureTest(unittest.TestCase):
 
     def test_duplicate_checksum_tokens_are_an_error(self):
         # One RESULT line carries exactly one checksum; a second token means the
-        # output shape changed, so the gate must not guess which one counts.
+        # output shape changed, so the gate must not guess which one counts. The
+        # error names the whole contract so it cannot be misread as a missing line.
         result = self.run_measure(self.writing_run(
             "summary: 5\n", stdout="RESULT checksum=0x1 checksum=0x2\n"))
-        self.assertIn("got 0", result["error"])
+        self.assertIn("carrying exactly one checksum=0x token, found 0", result["error"])
 
     def test_non_zero_exit_reports_both_streams(self):
         def fake(cmd, **kwargs):
@@ -302,6 +303,12 @@ class HasFailureTest(unittest.TestCase):
     def test_advisory_mode_blocks_on_unknown_rss(self):
         self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(memory_status="UNKNOWN"),
                                                        False, 0.02, advisory_timing=True))
+
+    def test_advisory_mode_blocks_when_memory_key_is_absent(self):
+        # Fail closed on a malformed summary instead of raising KeyError.
+        summary = {"counts": {"missing": 0, "regressed": 0}}
+        self.assertTrue(ci_benchmark_gate.has_failure({}, summary, False, 0.02,
+                                                      advisory_timing=True))
 
     def test_non_advisory_mode_blocks_on_a_counted_regression(self):
         self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02))
