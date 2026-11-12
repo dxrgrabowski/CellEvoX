@@ -7,6 +7,7 @@ mark the ADR `Superseded by ADR-XXXX` instead of deleting it.
 Every ADR needs its `Evidence` section filled in before it moves from `Proposed`
 to `Accepted`. ADR-0003 was accepted on 2026-11-04; ADR-0004 on 2026-11-11
 (#52); ADR-0011 on 2026-11-12. Acceptance dates are recorded in each ADR.
+ADR-0010 is still `Proposed`; the table below is the source of truth for status.
 
 | ADR | Status | Decision |
 | --- | --- | --- |

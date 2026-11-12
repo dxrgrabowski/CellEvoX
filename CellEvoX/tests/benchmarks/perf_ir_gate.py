@@ -147,7 +147,8 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
 
     if completed.returncode != 0:
         tail = (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]
-        return {"error": f"exit {completed.returncode}: {' / '.join(tail)}"}
+        detail = " / ".join(tail) if tail else "(no output)"
+        return {"error": f"exit {completed.returncode}: {detail}"}
 
     try:
         text = out_file.read_text()
@@ -207,7 +208,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         return entry
     if base["checksums"] != head["checksums"]:
         entry["status"] = "SEMANTICS CHANGED"
-        entry["detail"] = f"base=0x{base['checksums'][0]} head=0x{head['checksums'][0]}"
+        # Report the lists themselves; indexing [0] would crash rather than
+        # explain if a future guard change ever let an empty side through.
+        entry["detail"] = f"base={base['checksums']} head={head['checksums']}"
         return entry
     delta = (head["ir"] - base["ir"]) / base["ir"]
     # Defensive: parse_accepted_deltas already rejects a ratio at or below the

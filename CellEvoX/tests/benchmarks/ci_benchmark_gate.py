@@ -295,6 +295,9 @@ def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
     memory_delta = 0.0
     base_rss = 0
     head_rss = 0
+    # Aggregate with the precedence REGRESSED > UNKNOWN > OK, independent of
+    # group order: a REGRESSED group wins below, and UNKNOWN only fills an
+    # aggregate that no group has already marked REGRESSED.
     for memory in memory_summaries:
         if memory.get("status") == "REGRESSED":
             memory_status = "REGRESSED"

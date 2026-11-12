@@ -47,6 +47,11 @@ verdicts are advisory.
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
   `perf_ir_gate.py`; unknown names are rejected, not skipped.
+- Baseline-moving events land as one coordinated change: a snapshot ABI version
+  bump alters the bytes the probe hashes (so it reports `SEMANTICS CHANGED`, not
+  a regression), and fixing the `tau_step = 0.005` tech debt moves the `Ir` floor.
+  Either PR must update this Evidence table and, if a workload is deliberately
+  allowed to move, name it in `--accepted-delta` rather than widen `--threshold`.
 - The base side is `github.event.pull_request.base.sha` (the base branch tip,
   fetched at depth 1), not the merge base. On a branch that is behind `main`
   the comparison therefore includes `main`'s newer commits as well, so rebase

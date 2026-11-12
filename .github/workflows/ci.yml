@@ -24,6 +24,9 @@ jobs:
     runs-on: ubuntu-24.04
     # Hard ceiling for the whole job. The wall-clock gate below is advisory, so
     # the deterministic instruction gate is the only blocking performance signal.
+    # The ceiling was measured with a warm ccache; ADR-0011 records that a
+    # cold-cache timeout is an accepted, rerunnable infrastructure failure:
+    # rerun the job, do not treat it as a verdict.
     timeout-minutes: 10
 
     steps:

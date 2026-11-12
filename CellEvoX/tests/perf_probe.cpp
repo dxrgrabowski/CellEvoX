@@ -406,17 +406,25 @@ int main(int argc, char** argv) {
   // passes a fresh path, but --stats-dir may point at a folder holding other
   // files. Removing only the probe's own output keeps repeat runs reproducible.
   const std::filesystem::path run_stats_dir = std::filesystem::path(stats_dir) / "perf_probe";
-  std::error_code error;
-  std::filesystem::remove_all(run_stats_dir, error);
-  std::filesystem::create_directories(run_stats_dir, error);
-  if (error) {
+  // Two separate codes: sharing one would let a failed remove_all be masked by
+  // a successful create_directories, leaving stale files inside the measured
+  // window.
+  std::error_code remove_error;
+  std::error_code create_error;
+  std::filesystem::remove_all(run_stats_dir, remove_error);
+  std::filesystem::create_directories(run_stats_dir, create_error);
+  if (remove_error || create_error) {
     std::cerr << "error: cannot prepare stats dir '" << run_stats_dir.string() << "': "
-              << error.message() << "\n";
+              << (remove_error ? remove_error : create_error).message() << "\n";
     return 2;
   }
 
   Checksum checksum;
   try {
+    // The checksum is the fold of each iteration's own checksum, so the value
+    // is only comparable between runs with the same --iterations. The gate
+    // always passes 1; the RESULT line echoes iterations to make any other
+    // value visible in the artifact.
     for (uint64_t i = 0; i < iterations; ++i) {
       checksum.u64(runWorkloadIteration(workload, run_stats_dir.string(), seed));
     }
