@@ -266,9 +266,10 @@ def aggregate_memory(memory_summaries: List[Dict]) -> Dict:
         memory_status = "UNKNOWN"
     else:
         memory_status = "OK"
-    # Report the numbers of the group the verdict comes from, so a REGRESSED
-    # aggregate never shows an OK group's RSS. UNKNOWN groups carry no readings,
-    # so they fall back to the largest measured |delta|.
+    # Report the numbers of the largest measured |delta| among groups whose
+    # status is the aggregate verdict, so a REGRESSED aggregate never shows an
+    # OK group's RSS. UNKNOWN groups carry no readings, so they fall back to the
+    # largest measured |delta|.
     measured = [memory for memory in memory_summaries
                 if memory.get("status") != "UNKNOWN"
                 and (memory_status == "UNKNOWN" or memory.get("status") == memory_status)]

@@ -172,7 +172,10 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // would lower the instruction count and could be reported as an improvement.
 // The engine writes one snapshot per `generational_popul_report` entry, so a
 // missing file means the run itself is broken rather than that the probe
-// assumed more than the report promises.
+// assumed more than the report promises. The generation index is not hashed
+// separately: the report is built in a fixed order, which is part of the
+// contract this checksum relies on, and a reordering still moves the bytes
+// inside the hash.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
@@ -298,8 +301,14 @@ uint64_t runWorkloadIteration(std::string_view workload,
   if (workload == "stochastic-step-mutations") {
     std::vector<MutationType> mutations;
     for (uint8_t i = 0; i < 8; ++i) {
-      // Fields in order: effect, probability, type_id, is_driver.
-      mutations.push_back({0.05f * static_cast<float>(i + 1), 0.05f, i, (i % 2 == 0)});
+      // Designated initializers: a reordered field in MutationType is a compile
+      // error instead of a silently different workload.
+      mutations.push_back({
+          .effect = 0.05f * static_cast<float>(i + 1),
+          .probability = 0.05f,
+          .type_id = i,
+          .is_driver = (i % 2 == 0),
+      });
     }
     return runStepsWorkload(makeConfig(stats_dir, 100000, 10000000, seed, mutations), 1);
   }

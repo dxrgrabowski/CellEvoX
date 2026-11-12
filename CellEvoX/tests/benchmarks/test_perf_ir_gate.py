@@ -12,6 +12,7 @@ Run directly (no pytest dependency required):
 """
 
 import argparse
+import io
 import os
 import subprocess
 import sys
@@ -116,8 +117,13 @@ class MeasureSideTest(unittest.TestCase):
 
     def test_parse_args_rejects_single_run(self):
         argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h", "--runs", "1"]
-        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit):
+        # argparse also exits for a bad argument, so assert on the message to
+        # prove the --runs guard is what fired.
+        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as raised, \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
             perf_ir_gate.parse_args()
+        self.assertEqual(2, raised.exception.code)
+        self.assertIn("--runs must be at least 2", stderr.getvalue())
 
 
 class CallgrindParsingTest(unittest.TestCase):
@@ -181,7 +187,7 @@ class MeasureTest(unittest.TestCase):
         result = self.run_measure(self.writing_run("summary: 5\n"))
         self.assertIn("RESULT checksum", result["error"])
 
-    def test_unreadable_output_is_an_error(self):
+    def test_missing_output_is_an_error(self):
         def fake(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 0, stdout="RESULT checksum=0x1\n", stderr="")
         self.assertIn("not readable", self.run_measure(fake)["error"])

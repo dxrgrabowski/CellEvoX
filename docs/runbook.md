@@ -267,7 +267,9 @@ The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
 advisory: timings are reported, the 10% peak-RSS ceiling still blocks. It runs 3
 interleaved rounds x 3 samples, flips base/head order every round, and judges a
 benchmark on the median of the round means, so a single noisy round widens the
-interval instead of moving the result. Rationale: ADR-0009.
+interval instead of moving the result. Advisory mode never retries, so it always
+uses `--initial-samples` and a local `--retry-samples` run samples more than CI
+does. Rationale: ADR-0009.
 
 The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time
 out; a timeout is job-level, so it skips both gates and the report upload. Rerun

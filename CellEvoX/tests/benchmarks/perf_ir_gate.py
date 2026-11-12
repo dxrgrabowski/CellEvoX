@@ -236,8 +236,11 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
     else:
         entry["status"] = "OK"
         if workload in args.accepted_delta and delta > args.threshold:
-            # Keep the measured delta separate from the allowed ceiling so the
-            # report shows what was actually paid, not just the exception.
+            # The marker only appears when the exception was actually used: a
+            # workload that stays under --threshold prints a plain OK even if it
+            # has an accepted ceiling. Keep the measured delta separate from the
+            # allowed ceiling so the report shows what was actually paid, not
+            # just the exception.
             entry["accepted"] = {"delta": delta, "allowed": allowed}
     return entry
 

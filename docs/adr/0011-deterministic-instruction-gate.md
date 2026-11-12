@@ -46,7 +46,7 @@ verdicts are advisory.
   for a known cost. Raising it to admit a known cost is forbidden by
   `AGENTS.md` (Negative Space), and it would be invisible in the diff. A cost
   the project deliberately accepts is named instead:
-  `--accepted-delta realistic-2d-450=0.03` relaxes that single workload and
+  `--accepted-delta realistic-2d-450=0.035` relaxes that single workload and
   prints `OK (accepted +3.0% <= +3.5%)`, so the exception is written in the
   accepting PR's `ci.yml` instead of silently widening the gate. The exception
   does not expire: it stays in `ci.yml` after merge, so the accepting PR must
@@ -65,7 +65,9 @@ verdicts are advisory.
   the comparison therefore includes `main`'s newer commits as well, so rebase
   before investigating a failure on a long-lived branch.
 - The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, funded by running
-  the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`. That
+  the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`. Advisory
+  mode never retries, so `3 x 3` is also the final sample count: nothing is
+  re-measured to narrow a noisy interval. That
   ceiling was measured with a warm ccache; a cold cache rebuilds three targets
   for two trees and can approach it. The ccache key restores from `main`, so
   later runs start warm. A cold-cache timeout is an accepted, rerunnable
