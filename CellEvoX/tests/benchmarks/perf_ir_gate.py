@@ -260,9 +260,10 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["detail"] = f"base={base['checksums']} head={head['checksums']}"
         return entry
     delta = (head["ir"] - base["ir"]) / base["ir"]
-    # Defensive: parse_accepted_deltas already rejects a ratio at or below the
-    # threshold, but the max keeps a future parser change from tightening a
-    # workload below the global threshold it is an exception to.
+    # Belt and braces: parse_accepted_deltas already rejects a ratio at or below
+    # the threshold, so the max cannot fire today. It is kept so that a future
+    # parser change cannot silently tighten a workload below the global
+    # threshold it is meant to be an exception to.
     allowed = max(args.threshold, args.accepted_delta.get(workload, args.threshold))
     # Whether the named exception is what keeps this delta from blocking:
     # above the global threshold but inside the workload's accepted ceiling.

@@ -138,9 +138,19 @@ verdicts are advisory.
   each, against a 300 s per-run timeout: only a workload that regressed by about
   two orders of magnitude could hit the timeout, and that fails closed as
   `MISSING`, not as a pass.
-- No cold-cache build time was measured. The 10-minute ceiling is anchored to the
-  warm-cache job total above, and a cold-cache timeout is the accepted,
-  rerunnable infrastructure failure described in Consequences, not a verdict.
+- Warm-cache `bench-regression-check` job totals after the gate stabilised:
+  2m27s (`43227172092`), 2m58s (`43227868263`) and 4m07s (`43228818829`),
+  including the dependency install, the unit tests and both trees' builds. The
+  worst observed run therefore leaves roughly six minutes of the 10-minute
+  ceiling unused, which is the visible headroom for a slow runner.
+- No cold-cache build time was measured. That is a known gap, not a measured
+  number: the ceiling is anchored to the warm-cache totals above, and a
+  cold-cache timeout is the accepted, rerunnable infrastructure failure described
+  in Consequences, not a verdict.
+- A `MISSING` verdict whose detail is a snapshot read/write error (disk full,
+  permission, a partially written file) is the same class of rerunnable
+  infrastructure failure: the probe exits 2 rather than reporting a smaller
+  count, so rerun the job instead of reading it as a performance regression.
 - Code: `CellEvoX/tests/perf_probe.{cpp,cmake}`,
   `CellEvoX/tests/benchmarks/perf_ir_gate.py`,
   `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` (`--advisory-timing`),

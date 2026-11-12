@@ -5,6 +5,10 @@
 //
 //   RESULT workload=<name> iterations=<N> checksum=<hex>
 //
+// That line must carry exactly one `checksum=` substring: the gate rejects a
+// line with two as ambiguous instead of guessing which token counts, so a new
+// field must not spell `checksum=` anywhere else on it.
+//
 // The workload setups mirror the "[perf-core]" Catch2 benchmarks in
 // tests/bench_simulation.cpp. Iteration counts are explicit: nothing here is
 // calibrated from wall-clock time, so retired-instruction totals stay

@@ -9,6 +9,11 @@ No Valgrind or compiled probe is needed.
 
 Run directly (no pytest dependency required):
     python3 CellEvoX/tests/benchmarks/test_perf_ir_gate.py
+
+That direct invocation is the supported path and is what CI uses. Both gate
+modules must stay stdlib-only because CI imports them before it installs
+dependencies, so a third-party import would fail as an ImportError here rather
+than as a test failure. pytest collection is best-effort only.
 """
 
 import argparse
@@ -278,6 +283,15 @@ class AggregateMemoryTest(unittest.TestCase):
         self.assertEqual("REGRESSED", result["status"])
         self.assertAlmostEqual(0.11, result["delta"])
         self.assertEqual(1110, result["current_max_rss_kb"])
+
+    def test_unchanged_rss_still_reports_the_real_numbers(self):
+        # A single group with delta 0.0 is the only measured candidate, so the
+        # aggregate must report its baseline/current values rather than zeros.
+        result = ci_benchmark_gate.aggregate_memory([self.summary("OK", 0.0, 1000, 1000)])
+        self.assertEqual("OK", result["status"])
+        self.assertAlmostEqual(0.0, result["delta"])
+        self.assertEqual(1000, result["baseline_max_rss_kb"])
+        self.assertEqual(1000, result["current_max_rss_kb"])
 
 
 class HasFailureTest(unittest.TestCase):
