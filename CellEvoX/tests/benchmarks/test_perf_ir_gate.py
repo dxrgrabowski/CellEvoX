@@ -99,6 +99,16 @@ class EvaluateTest(unittest.TestCase):
         self.assertEqual("OK", entry["status"])
         self.assertNotIn("accepted", entry)
 
+    def test_delta_just_above_allowed_is_regressed(self):
+        entry = perf_ir_gate.evaluate("w", side(1000), side(1031), args(accepted_delta={"w": 0.03}))
+        self.assertEqual("REGRESSED", entry["status"])
+
+    def test_improvement_past_threshold_is_improved_despite_an_accepted_delta(self):
+        # The improvement side is judged against --threshold, not the accepted
+        # ratio: the exception is headroom for a regression, not a wider band.
+        entry = perf_ir_gate.evaluate("w", side(100), side(97), args(accepted_delta={"w": 0.035}))
+        self.assertEqual("IMPROVED", entry["status"])
+
 
 class MeasureSideTest(unittest.TestCase):
     def test_picks_minimum_and_reports_spread(self):
@@ -283,6 +293,10 @@ class ParseAcceptedDeltasTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             perf_ir_gate.parse_accepted_deltas(["realistic-2d-450=0.03", "realistic-2d-450=0.04"],
                                                self.parser, 0.02)
+
+    def test_rejects_entry_without_a_ratio(self):
+        with self.assertRaises(SystemExit):
+            perf_ir_gate.parse_accepted_deltas(["realistic-2d-450"], self.parser, 0.02)
 
 
 if __name__ == "__main__":

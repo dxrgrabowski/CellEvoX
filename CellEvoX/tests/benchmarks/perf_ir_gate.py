@@ -61,7 +61,7 @@ WORKLOADS = [
     "realistic-2d-450",
 ]
 
-CHECKSUM_RE = re.compile(r"RESULT .*checksum=0x([0-9a-fA-F]+)")
+CHECKSUM_RE = re.compile(r"^RESULT .*checksum=0x([0-9a-fA-F]+)$", re.MULTILINE)
 SUMMARY_RE = re.compile(r"^summary:\s*(\d+)\s*$", re.MULTILINE)
 
 
@@ -173,11 +173,13 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
         if ir <= 0:
             return {"error": "no instructions collected (probe 'main' not toggled?)"}
 
-        match = CHECKSUM_RE.search(completed.stdout)
-        if not match:
-            return {"error": "probe did not print a RESULT checksum line"}
+        # Exactly one line, like the summary: a second RESULT would mean the
+        # probe ran more work than the single measurement this gate records.
+        checksums = CHECKSUM_RE.findall(completed.stdout)
+        if len(checksums) != 1:
+            return {"error": f"expected exactly 1 RESULT checksum line, got {len(checksums)}"}
 
-        return {"ir": ir, "checksum": match.group(1)}
+        return {"ir": ir, "checksum": checksums[0]}
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
 

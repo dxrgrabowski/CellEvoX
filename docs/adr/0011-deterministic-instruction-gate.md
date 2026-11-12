@@ -65,11 +65,12 @@ verdicts are advisory.
   fetched at depth 1), not the merge base. On a branch that is behind `main`
   the comparison therefore includes `main`'s newer commits as well, so rebase
   before investigating a failure on a long-lived branch.
-- The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, funded by running
-  the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`. Advisory
-  mode never retries, so `3 x 3` is also the final sample count: nothing is
-  re-measured to narrow a noisy interval. That
-  ceiling was measured with a warm ccache; a cold cache rebuilds three targets
+- The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, and the advisory
+  schedule runs at `3 rounds x 3 samples` instead of `7 x 5`. That reduction is
+  necessary but not sufficient: the 10-minute ceiling also depends on a warm
+  ccache. Advisory mode never retries, so `3 x 3` is also the final sample count:
+  nothing is re-measured to narrow a noisy interval. A warm-cache
+  run fits well inside the ceiling; a cold cache rebuilds three targets
   for two trees and can approach it. The ccache key restores from `main`, so
   later runs start warm. A cold-cache timeout is an accepted, rerunnable
   infrastructure failure, not a verdict and not a bug to investigate. Because the

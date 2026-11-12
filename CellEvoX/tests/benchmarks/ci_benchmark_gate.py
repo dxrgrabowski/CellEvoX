@@ -213,6 +213,7 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         # still blocks: lost coverage must not pass silently.
         if summary["counts"]["missing"]:
             return True
+        # A missing "memory" key is fail-closed as well: None != "OK".
         return summary["memory"].get("status") != "OK"
     counts = summary["counts"]
     if counts["regressed"] or counts["missing"]:

@@ -109,11 +109,16 @@ jobs:
         # The instruction gate compares the same probe in both trees. The probe is
         # new in this PR, so inject it into the base checkout instead of requiring
         # the base commit to already contain it (ADR-0011).
+        # Overwrite any probe files the base checkout already carries: both
+        # sides must measure the same probe source, so the head probe wins.
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
         # Append after the existing content instead of anchoring on a target
         # line: the probe needs CORE_SOURCES defined, and nothing in the include
-        # depends on where the other targets are declared.
-        echo 'include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' >> base_repo/CellEvoX/CMakeLists.txt
+        # depends on where the other targets are declared. Guard the append so
+        # the step stays idempotent once the probe itself lands on main.
+        if ! grep -q 'tests/perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt; then
+          echo 'include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' >> base_repo/CellEvoX/CMakeLists.txt
+        fi
         cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
         cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
