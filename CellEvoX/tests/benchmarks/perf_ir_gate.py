@@ -225,7 +225,7 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["status"] = "IMPROVED"
     else:
         entry["status"] = "OK"
-        if delta > args.threshold:
+        if workload in args.accepted_delta and delta > args.threshold:
             entry["accepted"] = allowed
     return entry
 
