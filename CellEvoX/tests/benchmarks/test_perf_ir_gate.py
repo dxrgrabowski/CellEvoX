@@ -235,6 +235,13 @@ class MeasureTest(unittest.TestCase):
             "summary: 5\n", stdout="RESULT checksum=0x1 checksum=0x2\n"))
         self.assertIn("carrying exactly one checksum=0x token, found 0", result["error"])
 
+    def test_two_result_lines_are_an_error(self):
+        # Two single-token RESULT lines mean the probe ran more work than the one
+        # measurement this gate records; the gate must not accept the first.
+        result = self.run_measure(self.writing_run(
+            "summary: 5\n", stdout="RESULT checksum=0x1\nRESULT checksum=0x2\n"))
+        self.assertIn("carrying exactly one checksum=0x token, found 2", result["error"])
+
     def test_non_zero_exit_reports_both_streams(self):
         def fake(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 2, stdout="probe error\n",
@@ -242,6 +249,17 @@ class MeasureTest(unittest.TestCase):
         error = self.run_measure(fake)["error"]
         self.assertIn("loader warning", error)
         self.assertIn("probe error", error)
+
+    def test_long_stderr_does_not_truncate_the_stdout_error(self):
+        # Each stream is tailed on its own, so four stderr lines cannot push the
+        # probe's one-line stdout error out of the detail.
+        def fake(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 2, stdout="probe error\n",
+                stderr="warn 1\nwarn 2\nwarn 3\nwarn 4\n")
+        error = self.run_measure(fake)["error"]
+        self.assertIn("probe error", error)
+        self.assertNotIn("warn 1", error)
 
     def test_missing_output_is_an_error(self):
         def fake(cmd, **kwargs):
@@ -321,6 +339,14 @@ class HasFailureTest(unittest.TestCase):
     def test_advisory_mode_blocks_when_memory_key_is_absent(self):
         # Fail closed on a malformed summary instead of raising KeyError.
         summary = {"counts": {"missing": 0, "regressed": 0}}
+        self.assertTrue(ci_benchmark_gate.has_failure({}, summary, False, 0.02,
+                                                      advisory_timing=True))
+
+    def test_advisory_mode_blocks_when_no_group_produced_a_reading(self):
+        # aggregate_memory([]) is UNKNOWN, so a run that produced no groups at
+        # all must block instead of passing on an empty summary.
+        summary = self.summary()
+        summary["memory"] = ci_benchmark_gate.aggregate_memory([])
         self.assertTrue(ci_benchmark_gate.has_failure({}, summary, False, 0.02,
                                                       advisory_timing=True))
 

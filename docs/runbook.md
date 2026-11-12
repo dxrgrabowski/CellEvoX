@@ -273,10 +273,11 @@ evidence, and a missing verdict is not a pass.
 
 The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
 advisory: timings are reported, the 10% peak-RSS ceiling still blocks, and so
-does a group that loses its RSS reading (lost coverage is not a pass). It flips
-base/head order every round and judges a benchmark on the median of the round
-means, so a single noisy round widens the interval instead of moving the result.
-CI invokes it as:
+does a group that loses its RSS reading (lost coverage is not a pass). An
+`UNKNOWN` reading, including a run that produced no groups at all, is a rerun,
+not a verdict. The gate flips base/head order every round and judges a benchmark
+on the median of the round means, so a single noisy round widens the interval
+instead of moving the result. CI invokes it as:
 
 ```bash
 python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \

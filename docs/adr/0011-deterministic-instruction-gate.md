@@ -64,9 +64,12 @@ verdicts are advisory.
   in this Evidence table rather than as a build error.
 - Baseline-moving events land as one coordinated change: a snapshot ABI version
   bump alters the bytes the probe hashes (so it reports `SEMANTICS CHANGED`, not
-  a regression), and fixing the `tau_step = 0.005` tech debt moves the `Ir` floor.
-  Either PR must update this Evidence table and, if a workload is deliberately
-  allowed to move, name it in `--accepted-delta` rather than widen `--threshold`.
+  a regression), and fixing the `tau_step = 0.005` tech debt (AGENTS.md:
+  "Hardcoded `0.005` tau in `Application`'s analysis path instead of
+  `config.tau_step`") moves the `Ir` floor. The probe's own `makeConfig` copy
+  must move in the same change, or it keeps measuring the old `tau`. Either PR
+  must update this Evidence table and, if a workload is deliberately allowed to
+  move, name it in `--accepted-delta` rather than widen `--threshold`.
 - The base side is `github.event.pull_request.base.sha` (the base branch tip,
   fetched at depth 1), not the merge base. On a branch that is behind `main`
   the comparison therefore includes `main`'s newer commits as well, so rebase
@@ -82,10 +85,11 @@ verdicts are advisory.
   infrastructure failure, not a verdict and not a bug to investigate. Because the
   timeout is job-level it skips both gates and the report upload, so a timed-out
   run is never a pass: rerun it instead of reading the absence of a verdict as
-  success. The hard 10-minute ceiling is issue #70's constraint and this is its
-  accepted trade-off. If two cold-cache timeouts occur within a month, the
-  follow-up is to split the advisory wall-clock gate into its own job so the
-  blocking instruction gate is not starved by the timing schedule.
+  success. The hard 10-minute ceiling is issue #70's constraint, so it is
+  provisional: it is justified by warm-cache totals only, and a cold-cache
+  timeout is the trigger for the split-job follow-up. If two cold-cache
+  timeouts occur within a month, split the advisory wall-clock gate into its own
+  job so the blocking instruction gate is not starved by the timing schedule.
 
 ## Evidence
 - Same binary as base and head: `+0.00%` everywhere, and both repeats of each

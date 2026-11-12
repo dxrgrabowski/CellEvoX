@@ -80,9 +80,10 @@ std::filesystem::path probeOutputPath(const std::string& stats_dir, std::string_
 }
 
 // Mirrors makeConfig() in tests/bench_simulation.cpp. The `tau_step = 0.005`
-// value is the benchmark's hardcoded constant (AGENTS.md tech debt); when that
-// debt is fixed the probe baseline moves with it, which is expected rather than
-// a regression.
+// value is the benchmark's hardcoded constant, i.e. the AGENTS.md tech debt
+// "Hardcoded `0.005` tau in Application's analysis path instead of
+// config.tau_step"; when that debt is fixed the probe baseline moves with it,
+// which is expected rather than a regression. Both sites must move together.
 std::shared_ptr<SimulationConfig> makeConfig(const std::string& stats_dir,
                                              size_t population,
                                              size_t env_capacity,

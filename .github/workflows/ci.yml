@@ -117,6 +117,7 @@ jobs:
         # Overwrite any probe files the base checkout already carries: both
         # sides must measure the same probe source, so the head probe wins.
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
+        echo "Base probe source: head/CellEvoX/tests/perf_probe.cpp (injected; both sides measure the same instrument)"
         # Append after the existing content instead of anchoring on a target
         # line: the probe needs CORE_SOURCES defined, and nothing in the include
         # depends on where the other targets are declared. Guard the append so
@@ -130,6 +131,7 @@ jobs:
     - name: Build Head (Current PR)
       id: build_head
       run: |
+        echo "Head probe source: head/CellEvoX/tests/perf_probe.cpp (this PR's tree)"
         cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
         cmake --build head_build --target CellEvoX CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 

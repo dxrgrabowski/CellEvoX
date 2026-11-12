@@ -170,11 +170,12 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
 
         if completed.returncode != 0:
             # Cap each line: the report is an uploaded artifact, and a compiler
-            # or loader can emit a single very long line.
-            # Keep both streams: a loader warning on stderr must not hide the
-            # probe's error on stdout, and vice versa.
-            raw = "\n".join(part for part in (completed.stderr, completed.stdout) if part)
-            tail = [line[:200] for line in raw.strip().splitlines()[-3:]]
+            # or loader can emit a single very long line. Tail each stream
+            # separately so a long stderr cannot push the probe's own error out
+            # of the detail.
+            tail = []
+            for stream in (completed.stderr, completed.stdout):
+                tail.extend(line[:200] for line in stream.strip().splitlines()[-2:])
             detail = " / ".join(tail) if tail else "(no output)"
             return {"error": f"exit {completed.returncode}: {detail}"}
 
