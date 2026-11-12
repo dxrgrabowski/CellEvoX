@@ -75,6 +75,12 @@ CHECKSUM_RE = re.compile(r"^RESULT (?!.*checksum=.*checksum=).*checksum=0x([0-9a
                          re.MULTILINE)
 SUMMARY_RE = re.compile(r"^summary:\s*(\d+)\s*$", re.MULTILINE)
 
+# The verdicts that block. Defined once so a typo in a display branch cannot
+# silently turn a blocking result into a pass.
+BLOCKING_STATUSES = frozenset({"REGRESSED", "MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"})
+# Rows with no usable Ir: reported without base/head numbers.
+NO_COUNT_STATUSES = frozenset({"MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"})
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Deterministic instruction-count (Ir) gate")
@@ -288,7 +294,7 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
     print("-" * 82)
     for entry in results:
         status = entry["status"]
-        if status in {"MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"}:
+        if status in NO_COUNT_STATUSES:
             print(f"  {entry['workload']:<26} {'--':>15} {'--':>15} {'--':>9}  {status}")
             if entry.get("detail"):
                 print(f"  {'':<26} {entry['detail']}")
@@ -301,8 +307,7 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
         print(f"  {entry['workload']:<26} {entry['base']['ir']:>15,} {entry['head']['ir']:>15,} "
               f"{entry['delta']:+9.2%}  {status_text}")
     print("-" * 82)
-    failures = [entry for entry in results if entry["status"] in
-                {"REGRESSED", "MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"}]
+    failures = [entry for entry in results if entry["status"] in BLOCKING_STATUSES]
     print(f"Summary: {len(results) - len(failures)} passed | {len(failures)} failed")
 
 
@@ -354,8 +359,7 @@ def main() -> int:
                 "results": results,
             }, handle, indent=2)
 
-    failed = any(entry["status"] in {"REGRESSED", "MISSING", "NON-DETERMINISTIC", "SEMANTICS CHANGED"}
-                 for entry in results)
+    failed = any(entry["status"] in BLOCKING_STATUSES for entry in results)
     if failed:
         print("\nDeterministic instruction gate failed.")
         return 1

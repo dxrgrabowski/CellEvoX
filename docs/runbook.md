@@ -291,7 +291,7 @@ python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
 ```
 
 Use the same flags locally, or the sample count will not match CI. Advisory mode
-never retries: `--retry-samples` is ignored when `--advisory-timing` is set, so
+never retries: `--retry-samples` has no effect when `--advisory-timing` is set, so
 the `--initial-samples` count is final both locally and in CI. Rationale:
 ADR-0011.
 

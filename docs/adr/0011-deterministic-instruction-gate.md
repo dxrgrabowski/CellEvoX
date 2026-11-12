@@ -100,8 +100,9 @@ verdicts are advisory.
   | `common-step-baseline` | 42,678,646 |
   | `realistic-2d-450` | 290,202,150 |
 
-  Absolute counts are host- and Valgrind-specific (a CI run read ~300M for the
-  same workload); only the base/head ratio and the repeat spread mean anything.
+  Absolute counts are host- and Valgrind-specific references only; do not
+  compare them across hosts (a CI run read ~300M for the same workload). Only
+  the base/head ratio and the repeat spread mean anything.
 - Two nondeterminism sources had to be removed first: pre-`main` dynamic-loader
   work varied up to 3.7% between processes (a `callgrind_annotate` diff confined
   it to `ld-linux`, with `main` byte-identical), and reusing the probe's stats
