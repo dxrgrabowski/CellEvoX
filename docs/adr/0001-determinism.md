@@ -9,7 +9,7 @@ Every draw is a pure hash of `(seed, step, cell_id, stream)`, where the stream
 identifies the decision (death, birth, mutation; the spatial layer has its own
 seeded stream). Mutation effects sampled from a gamma distribution use stream
 `3`, subdivided per mutation slot, so they never shift the death/birth/mutation
-draws ([ADR-0010](0010-gamma-mutation-effect.md)).
+draws ([ADR-0012](0012-gamma-mutation-effect.md)).
 ## Consequences
 - Never add a shared mutable RNG to the event step.
 - Stream ids, step derivation, and id assignment order are contract.

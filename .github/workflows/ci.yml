@@ -22,13 +22,26 @@ concurrency:
 jobs:
   bench-regression-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # Hard ceiling for the whole job. The wall-clock gate below is advisory, so
+    # the deterministic instruction gate is the only blocking performance signal.
+    # The ceiling was measured with a warm ccache; ADR-0011 records that a
+    # cold-cache timeout is an accepted, rerunnable infrastructure failure:
+    # rerun the job, do not treat it as a verdict.
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Head (Current PR or New Main Commit)
       uses: actions/checkout@v4
       with:
         path: head
+
+    # The verdict logic is the only blocking performance signal, so its unit
+    # tests run before the expensive builds and fail fast. This step deliberately
+    # runs before "Install Dependencies", so it uses the runner's system python3:
+    # this file and the gate modules it imports must stay stdlib-only, or move
+    # the step after the install.
+    - name: Test Instruction Gate Verdict Logic
+      run: python3 head/CellEvoX/tests/benchmarks/test_perf_ir_gate.py
 
     # The Ubuntu mirror occasionally throttles to a few kB/s, which used to
     # stretch this step from ~30 s to 15-38 min. Cache the .deb archives so a
@@ -46,7 +59,7 @@ jobs:
         APT_ARCHIVES: ${{ github.workspace }}/.apt-cache
       run: |
         set -euo pipefail
-        PACKAGES="build-essential cmake libspdlog-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache"
+        PACKAGES="build-essential cmake libspdlog-dev libtbb-dev libeigen3-dev nlohmann-json3-dev python3-dev python3-numpy python3-matplotlib ccache valgrind"
         sudo apt-get update
         mkdir -p "$APT_ARCHIVES/partial"
         sudo apt-get install -y --download-only -o Dir::Cache::archives="$APT_ARCHIVES" $PACKAGES
@@ -94,14 +107,39 @@ jobs:
         git -C base_repo checkout --detach FETCH_HEAD
 
     - name: Build Base (Exact Comparison Commit)
+      id: build_base
       run: |
-        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
-        cmake --build base_build --target CellEvoXTests -j$(nproc)
+        # The instruction gate compares the same probe in both trees. The probe is
+        # new in this PR, so inject it into the base checkout instead of requiring
+        # the base commit to already contain it (ADR-0011). A red Build Base with
+        # a green Build Head is usually a changed probe interface, not a verdict;
+        # see the diagnosis paragraph in docs/runbook.md.
+        # Overwrite any probe files the base checkout already carries: both
+        # sides must measure the same probe source, so the head probe wins. The
+        # copy covers the target definition (perf_probe.cmake) as well as the
+        # probe, so both sides build the same target from the same sources and
+        # options. When the base tree already includes that file the guard below
+        # keeps its include line, and the copied file is what it includes; a base
+        # tree that declared the target inline instead fails Build Base with a
+        # duplicate target rather than silently measuring a different probe.
+        cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
+        echo "Base probe source: head/CellEvoX/tests/perf_probe.cpp (injected; both sides measure the same instrument)"
+        # Append after the existing content instead of anchoring on a target
+        # line: the probe needs CORE_SOURCES defined, and nothing in the include
+        # depends on where the other targets are declared. Guard the append so
+        # the step stays idempotent once the probe itself lands on main.
+        if ! grep -q 'tests/perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt; then
+          echo 'include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' >> base_repo/CellEvoX/CMakeLists.txt
+        fi
+        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
+        cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
     - name: Build Head (Current PR)
+      id: build_head
       run: |
-        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON
-        cmake --build head_build --target CellEvoX CellEvoXTests -j$(nproc)
+        echo "Head probe source: head/CellEvoX/tests/perf_probe.cpp (this PR's tree)"
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
+        cmake --build head_build --target CellEvoX CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
     - name: Run Unit Tests (CTest)
       working-directory: head_build
@@ -115,7 +153,28 @@ jobs:
         path: ${{ runner.temp }}/ctest.xml
         if-no-files-found: ignore
 
-    - name: Paired Performance Gate
+    # Blocking performance signal (ADR-0011). Retired instruction counts are
+    # reproducible run-to-run, unlike wall-clock timings on shared runners, so a
+    # regression here is a real change in work performed. To admit a cost this
+    # PR deliberately accepts, add --accepted-delta WORKLOAD=RATIO here (one
+    # workload, visible in review); do not raise --threshold.
+    - name: Deterministic Instruction Gate
+      # Skip when a build failed: the probe binaries do not exist and the step
+      # would only add a second, confusing error.
+      if: steps.build_base.outcome == 'success' && steps.build_head.outcome == 'success'
+      run: |
+        mkdir -p benchmark_reports
+        python3 head/CellEvoX/tests/benchmarks/perf_ir_gate.py \
+          --base-binary base_build/bin/CellEvoXPerfProbe \
+          --head-binary head_build/bin/CellEvoXPerfProbe \
+          --report-json benchmark_reports/perf-ir-gate.json
+
+    - name: Paired Performance Gate (advisory timing)
+      # Run even when the instruction gate failed: the advisory report is the
+      # evidence for a failure investigation, and it is uploaded below. Skip it
+      # when a build failed, where the binaries do not exist and the step would
+      # only add a second, confusing error.
+      if: always() && steps.build_base.outcome == 'success' && steps.build_head.outcome == 'success'
       env:
         BENCHMARK_GROUPS: ${{ inputs.benchmark_groups || 'quick' }}
       run: |
@@ -124,13 +183,12 @@ jobs:
           --base-binary base_build/bin/CellEvoXTests \
           --head-binary head_build/bin/CellEvoXTests \
           --groups "$BENCHMARK_GROUPS" \
-          --rounds 7 \
-          --initial-samples 5 \
-          --retry-samples 10 \
+          --rounds 3 \
+          --initial-samples 3 \
           --threshold 0.05 \
           --memory-threshold 0.10 \
           --max-relative-ci 0.05 \
-          --fail-on-inconclusive \
+          --advisory-timing \
           --benchmark-warmup-time 200 \
           --benchmark-resamples 20000 \
           --benchmark-confidence-interval 0.95 \
@@ -280,3 +338,24 @@ jobs:
 
     - name: Run Tests
       run: python3 -m pytest -q tests
+
+  review-tools:
+    name: Review tooling tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install pytest
+      run: python3 -m pip install --quiet pytest
+
+    # The review tool is stdlib-only; the tests stub the model response, so
+    # this job never needs OPENROUTER_API_KEY and never touches the network.
+    - name: Run Tests
+      run: python3 -m pytest -q tools/test_ai_review.py

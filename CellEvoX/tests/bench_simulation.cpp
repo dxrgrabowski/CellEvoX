@@ -30,6 +30,8 @@ std::string benchmarkTempString(std::string_view name) {
 }  // namespace
 
 // Helper: minimal overhead config.
+// Mirrored by makeConfig in tests/perf_probe.cpp, which the instruction gate
+// measures; keep the two definitions in sync.
 static std::shared_ptr<SimulationConfig> makeConfig(
     size_t population,
     size_t env_capacity,

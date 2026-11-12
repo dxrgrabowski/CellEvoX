@@ -36,7 +36,7 @@ Python tests, so editing one side cannot silently diverge from the other.
 - Canonical cross-language fixtures in `CellEvoX/tests/fixtures/mini_run/`:
   a driver-only v3 snapshot, a full-payload v3 snapshot, their CSV export, and
   truncated/unknown-version files for the negative path (#52, bumped to v3 by
-  [ADR-0010](0010-gamma-mutation-effect.md)).
+  [ADR-0012](0012-gamma-mutation-effect.md)).
 - The same fixture is parsed by `CellEvoX/tests/test_population_snapshot_io.cpp`
   and `CellEvoX/scripts/test_snapshot_io.py`; the Python test also cross-checks
   the binary reader against the CSV export. The reader matrix itself is listed
