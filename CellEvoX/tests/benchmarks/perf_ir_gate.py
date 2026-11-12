@@ -127,52 +127,59 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
     # cost is inside the measured window.
     shutil.rmtree(run_dir, ignore_errors=True)
     run_dir.mkdir(parents=True)
-    cmd = [
-        args.valgrind,
-        "--tool=callgrind",
-        "--collect-atstart=no",
-        "--toggle-collect=main",
-        f"--callgrind-out-file={out_file}",
-        str(binary),
-        "--workload", workload,
-        "--iterations", "1",
-        "--stats-dir", str(run_dir / "stats"),
-    ]
+    # The stats directory is only needed while parsing, so remove it on every
+    # path: a full gate leaves 24 of them behind, and a reused runner would
+    # accumulate them across jobs.
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
-    except subprocess.TimeoutExpired:
-        return {"error": f"timeout after {args.timeout}s"}
-    except OSError as exc:
-        return {"error": f"cannot execute: {exc}"}
+        cmd = [
+            args.valgrind,
+            "--tool=callgrind",
+            "--collect-atstart=no",
+            "--toggle-collect=main",
+            f"--callgrind-out-file={out_file}",
+            str(binary),
+            "--workload", workload,
+            "--iterations", "1",
+            "--stats-dir", str(run_dir / "stats"),
+        ]
+        try:
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
+        except subprocess.TimeoutExpired:
+            return {"error": f"timeout after {args.timeout}s"}
+        except OSError as exc:
+            return {"error": f"cannot execute: {exc}"}
 
-    if completed.returncode != 0:
-        # Cap each line: the report is an uploaded artifact, and a compiler or
-        # loader can emit a single very long line.
-        tail = [line[:200] for line in
-                (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]]
-        detail = " / ".join(tail) if tail else "(no output)"
-        return {"error": f"exit {completed.returncode}: {detail}"}
+        if completed.returncode != 0:
+            # Cap each line: the report is an uploaded artifact, and a compiler
+            # or loader can emit a single very long line.
+            tail = [line[:200] for line in
+                    (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]]
+            detail = " / ".join(tail) if tail else "(no output)"
+            return {"error": f"exit {completed.returncode}: {detail}"}
 
-    try:
-        text = out_file.read_text()
-    except OSError as exc:
-        return {"error": f"callgrind output not readable: {exc}"}
+        try:
+            text = out_file.read_text()
+        except OSError as exc:
+            return {"error": f"callgrind output not readable: {exc}"}
 
-    summaries = SUMMARY_RE.findall(text)
-    if len(summaries) != 1:
-        # Collection shape is part of what Ir means: a second summary means a
-        # helper thread or an extra toggle, so summing would compare different
-        # work rather than report a change.
-        return {"error": f"expected exactly 1 callgrind summary, got {len(summaries)}"}
-    ir = int(summaries[0])
-    if ir <= 0:
-        return {"error": "no instructions collected (probe 'main' not toggled?)"}
+        summaries = SUMMARY_RE.findall(text)
+        if len(summaries) != 1:
+            # Collection shape is part of what Ir means: a second summary means a
+            # helper thread or an extra toggle, so summing would compare different
+            # work rather than report a change.
+            return {"error": f"expected exactly 1 callgrind summary, got {len(summaries)} "
+                             f"(Valgrind format change?)"}
+        ir = int(summaries[0])
+        if ir <= 0:
+            return {"error": "no instructions collected (probe 'main' not toggled?)"}
 
-    match = CHECKSUM_RE.search(completed.stdout)
-    if not match:
-        return {"error": "probe did not print a RESULT checksum line"}
+        match = CHECKSUM_RE.search(completed.stdout)
+        if not match:
+            return {"error": "probe did not print a RESULT checksum line"}
 
-    return {"ir": ir, "checksum": match.group(1)}
+        return {"ir": ir, "checksum": match.group(1)}
+    finally:
+        shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def measure_side(side: str, binary: Path, workload: str, args: argparse.Namespace) -> Dict:

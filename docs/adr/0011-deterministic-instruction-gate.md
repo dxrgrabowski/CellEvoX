@@ -26,6 +26,14 @@ verdicts are advisory.
 - The probe builds with `-O3` and without `-march=native`
   (`CellEvoX/tests/perf_probe.cmake`). `Ir` is only comparable within one
   compiler and Valgrind pair, so base and head are built in the same job.
+- The base side is measured with the head probe: CI copies
+  `perf_probe.{cpp,cmake}` into the base checkout and appends the include, since
+  the probe is new in this PR. The head probe must therefore compile against the
+  base tree's headers. A PR that changes an interface the probe uses keeps the
+  base tree compilable with the head probe, or lands the interface change first;
+  otherwise `Build Base` fails red and the job produces no verdict. That is
+  loud, not a silent pass, and it is the reason the build steps have no
+  `continue-on-error`.
 - The wall-clock gate still runs, with `--advisory-timing`: its verdicts are
   reported but no longer fail the job. The 10% peak-RSS ceiling from ADR-0008
   still blocks.
@@ -39,10 +47,10 @@ verdicts are advisory.
   `AGENTS.md` (Negative Space), and it would be invisible in the diff. A cost
   the project deliberately accepts is named instead:
   `--accepted-delta realistic-2d-450=0.03` relaxes that single workload and
-  prints `OK (accepted +3.0%)`, so the exception is written in the accepting
-  PR's `ci.yml` instead of silently widening the gate. The exception does not
-  expire: it stays in `ci.yml` after merge, so the accepting PR must also record
-  the follow-up that removes it, or later PRs inherit the headroom.
+  prints `OK (accepted +3.0% <= +3.5%)`, so the exception is written in the
+  accepting PR's `ci.yml` instead of silently widening the gate. The exception
+  does not expire: it stays in `ci.yml` after merge, so the accepting PR must
+  also record the follow-up that removes it, or later PRs inherit the headroom.
 - Callgrind is 20-50x slower than native, so the probe covers small populations
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
@@ -90,10 +98,11 @@ verdicts are advisory.
   directory moved counts by 0.4-3.6%.
 - Verdict logic, checked by feeding fabricated counts to `evaluate()`: `+3%` →
   `REGRESSED`, `+1%` → `OK`, `-3%` → `IMPROVED`, `+3%` with that workload's
-  `--accepted-delta realistic-2d-450=0.035` → `OK (accepted +3.5%)`, with
-  `=0.025` → `REGRESSED`, and an exception naming another workload does not
+  `--accepted-delta realistic-2d-450=0.035` → `OK (accepted +3.0% <= +3.5%)`,
+  with `=0.025` → `REGRESSED`, and an exception naming another workload does not
   apply; a differing checksum → `SEMANTICS CHANGED`, a 3% repeat spread →
-  `NON-DETERMINISTIC`.
+  `NON-DETERMINISTIC`. The same counts are pinned as unit tests in
+  `tests/benchmarks/test_perf_ir_gate.py`, which CI runs before the builds.
 - Advisory timing and RSS, checked through
   `ci_benchmark_gate.has_failure(..., advisory_timing=True)`: timing
   `REGRESSED`/`UNSTABLE` does not block, RSS `REGRESSED` does; RSS `+15%` is

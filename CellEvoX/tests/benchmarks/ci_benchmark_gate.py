@@ -250,6 +250,35 @@ def print_group_report(group: str, samples: int, rounds: int, results: Dict[str,
           f"{counts['regressed']} regressed | {counts['new']} new | {counts['missing']} missing")
 
 
+def aggregate_memory(memory_summaries: List[Dict]) -> Dict:
+    """Collapse per-group RSS summaries into one, with REGRESSED > UNKNOWN > OK."""
+    memory_status = "OK"
+    memory_delta = 0.0
+    base_rss = 0
+    head_rss = 0
+    # Precedence is independent of group order: a REGRESSED group wins below,
+    # and UNKNOWN only fills an aggregate that no group has already marked
+    # REGRESSED.
+    for memory in memory_summaries:
+        if memory.get("status") == "REGRESSED":
+            memory_status = "REGRESSED"
+        elif memory.get("status") != "OK" and memory_status == "OK":
+            # A group without a usable RSS reading is UNKNOWN; keep that visible
+            # instead of collapsing it into OK.
+            memory_status = "UNKNOWN"
+        # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
+        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
+            memory_delta = memory["delta"]
+            base_rss = memory["baseline_max_rss_kb"]
+            head_rss = memory["current_max_rss_kb"]
+    return {
+        "status": memory_status if memory_summaries else "UNKNOWN",
+        "delta": memory_delta,
+        "baseline_max_rss_kb": base_rss,
+        "current_max_rss_kb": head_rss,
+    }
+
+
 def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
     group_dir = Path(args.out_dir) / f"{group}_{samples}"
     group_dir.mkdir(parents=True, exist_ok=True)
@@ -291,34 +320,9 @@ def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
             combined_counts[key] += value
         memory_summaries.append(summary["memory"])
 
-    memory_status = "OK"
-    memory_delta = 0.0
-    base_rss = 0
-    head_rss = 0
-    # Aggregate with the precedence REGRESSED > UNKNOWN > OK, independent of
-    # group order: a REGRESSED group wins below, and UNKNOWN only fills an
-    # aggregate that no group has already marked REGRESSED.
-    for memory in memory_summaries:
-        if memory.get("status") == "REGRESSED":
-            memory_status = "REGRESSED"
-        elif memory.get("status") != "OK" and memory_status == "OK":
-            # A group without a usable RSS reading is UNKNOWN; keep that visible
-            # instead of collapsing it into OK.
-            memory_status = "UNKNOWN"
-        # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
-        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
-            memory_delta = memory["delta"]
-            base_rss = memory["baseline_max_rss_kb"]
-            head_rss = memory["current_max_rss_kb"]
-
     summary = {
         "counts": combined_counts,
-        "memory": {
-            "status": memory_status if memory_summaries else "UNKNOWN",
-            "delta": memory_delta,
-            "baseline_max_rss_kb": base_rss,
-            "current_max_rss_kb": head_rss,
-        },
+        "memory": aggregate_memory(memory_summaries),
     }
     return combined_results, summary
 

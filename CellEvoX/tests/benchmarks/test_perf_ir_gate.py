@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Verdict-logic tests for perf_ir_gate.py.
+"""Verdict-logic tests for the CI performance gates.
 
 The instruction gate is the only blocking performance signal, so its verdict
-logic is pinned here with fabricated measurements rather than left to the ADR's
-prose. No Valgrind or compiled probe is needed.
+logic and measurement parsing are pinned here with fabricated measurements
+rather than left to the ADR's prose. The advisory gate's RSS aggregation is
+pinned too, because peak RSS is the one wall-clock-era signal that still blocks.
+No Valgrind or compiled probe is needed.
 
 Run directly (no pytest dependency required):
     python3 CellEvoX/tests/benchmarks/test_perf_ir_gate.py
@@ -11,7 +13,9 @@ Run directly (no pytest dependency required):
 
 import argparse
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -20,6 +24,7 @@ from pathlib import Path
 # collecting this file from the repository root.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import ci_benchmark_gate
 import perf_ir_gate
 
 
@@ -112,6 +117,93 @@ class CallgrindParsingTest(unittest.TestCase):
 
     def test_summary_must_start_the_line(self):
         self.assertEqual([], perf_ir_gate.SUMMARY_RE.findall("totals: summary: 9\n"))
+
+
+class MeasureTest(unittest.TestCase):
+    """The blocking verdict depends on every measure() failure path returning an error."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.args = argparse.Namespace(work_dir=self.temp.name, valgrind="valgrind", timeout=5)
+        # measure() derives the directory from the workload, side, run index and PID.
+        self.out_file = Path(self.temp.name) / f"w-base-1-{os.getpid()}" / "callgrind.out"
+
+    def run_measure(self, fake_run):
+        with mock.patch.object(perf_ir_gate.subprocess, "run", side_effect=fake_run):
+            return perf_ir_gate.measure("base", Path("probe"), "w", 1, self.args)
+
+    def writing_run(self, text, returncode=0, stdout=""):
+        def fake(cmd, **kwargs):
+            self.out_file.write_text(text)
+            return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr="")
+        return fake
+
+    def test_parses_ir_and_checksum_and_removes_work_dir(self):
+        result = self.run_measure(self.writing_run(
+            "events: Ir\nsummary: 1234\n",
+            stdout="RESULT workload=w iterations=1 checksum=0xAb\n"))
+        self.assertEqual({"ir": 1234, "checksum": "Ab"}, result)
+        self.assertFalse(self.out_file.parent.exists())
+
+    def test_timeout_is_an_error(self):
+        def fake(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, 5)
+        self.assertEqual({"error": "timeout after 5s"}, self.run_measure(fake))
+
+    def test_non_zero_exit_is_an_error_with_output_tail(self):
+        result = self.run_measure(self.writing_run("", returncode=2, stdout="boom\n"))
+        self.assertEqual("exit 2: boom", result["error"])
+
+    def test_missing_summary_is_an_error(self):
+        result = self.run_measure(self.writing_run("events: Ir\n"))
+        self.assertIn("got 0", result["error"])
+
+    def test_multiple_summaries_are_an_error(self):
+        result = self.run_measure(self.writing_run("summary: 1\nsummary: 2\n"))
+        self.assertIn("got 2", result["error"])
+
+    def test_zero_instructions_is_an_error(self):
+        result = self.run_measure(self.writing_run("summary: 0\n", stdout="RESULT checksum=0x1\n"))
+        self.assertIn("no instructions", result["error"])
+
+    def test_missing_checksum_line_is_an_error(self):
+        result = self.run_measure(self.writing_run("summary: 5\n"))
+        self.assertIn("RESULT checksum", result["error"])
+
+    def test_unreadable_output_is_an_error(self):
+        def fake(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout="RESULT checksum=0x1\n", stderr="")
+        self.assertIn("not readable", self.run_measure(fake)["error"])
+
+
+class AggregateMemoryTest(unittest.TestCase):
+    """Peak RSS still blocks, so its REGRESSED > UNKNOWN > OK precedence is pinned."""
+
+    def summary(self, status, delta=0.0, base=1000, head=1000):
+        if status == "UNKNOWN":
+            return {"status": "UNKNOWN"}
+        return {"status": status, "delta": delta,
+                "baseline_max_rss_kb": base, "current_max_rss_kb": head}
+
+    def test_no_groups_is_unknown(self):
+        self.assertEqual("UNKNOWN", ci_benchmark_gate.aggregate_memory([])["status"])
+
+    def test_regressed_wins_over_ok_and_unknown_in_any_order(self):
+        for summaries in ([self.summary("OK"), self.summary("REGRESSED", 0.15)],
+                          [self.summary("REGRESSED", 0.15), self.summary("OK")],
+                          [self.summary("UNKNOWN"), self.summary("REGRESSED", 0.15)]):
+            self.assertEqual("REGRESSED", ci_benchmark_gate.aggregate_memory(summaries)["status"])
+
+    def test_unknown_fills_an_ok_aggregate(self):
+        result = ci_benchmark_gate.aggregate_memory([self.summary("OK"), self.summary("UNKNOWN")])
+        self.assertEqual("UNKNOWN", result["status"])
+
+    def test_reports_the_largest_delta_and_its_rss(self):
+        result = ci_benchmark_gate.aggregate_memory(
+            [self.summary("OK", 0.02, 1000, 1020), self.summary("OK", -0.05, 1000, 950)])
+        self.assertAlmostEqual(-0.05, result["delta"])
+        self.assertEqual(950, result["current_max_rss_kb"])
 
 
 class ParseAcceptedDeltasTest(unittest.TestCase):

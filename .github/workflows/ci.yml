@@ -114,13 +114,13 @@ jobs:
         # line: the probe needs CORE_SOURCES defined, and nothing in the include
         # depends on where the other targets are declared.
         echo 'include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' >> base_repo/CellEvoX/CMakeLists.txt
-        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
+        cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
         cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
     - name: Build Head (Current PR)
       id: build_head
       run: |
-        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON
+        cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
         cmake --build head_build --target CellEvoX CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
     - name: Run Unit Tests (CTest)

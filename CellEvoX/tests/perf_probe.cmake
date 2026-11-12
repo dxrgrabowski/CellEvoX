@@ -7,6 +7,14 @@
 # adds -march=native when CELLEVOX_NATIVE_OPTIMIZATIONS is ON. Callgrind may
 # reject native-only opcodes, and retired-instruction totals are only
 # comparable within one compiler/valgrind pair, so the probe stays portable.
+#
+# The probe is a CI measurement target, not part of a normal build: it compiles
+# CORE_SOURCES a second time and links the Python libraries. Only the
+# instruction gate needs it, so it is opt-in.
+option(CELLEVOX_BUILD_PERF_PROBE "Build the deterministic instruction-count probe (ADR-0011)" OFF)
+if(NOT CELLEVOX_BUILD_PERF_PROBE)
+    return()
+endif()
 
 add_executable(CellEvoXPerfProbe
     ${CORE_SOURCES}
