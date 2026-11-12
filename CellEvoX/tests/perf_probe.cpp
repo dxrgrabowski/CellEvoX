@@ -120,6 +120,20 @@ std::shared_ptr<SimulationConfig> makeRealistic2DConfig(const std::string& stats
   return config;
 }
 
+// The probe is copied into the comparison base, which may store a mutation as
+// std::pair while the head stores a named CellMutation. Hash the same
+// (id, type) payload in both layouts so base and head checksums stay comparable.
+template <typename Mutation>
+void mixMutation(Checksum& checksum, const Mutation& mutation) {
+  if constexpr (requires { mutation.mutation_id; }) {
+    checksum.u32(mutation.mutation_id);
+    checksum.u64(mutation.mutation_type);
+  } else {
+    checksum.u32(mutation.first);
+    checksum.u64(mutation.second);
+  }
+}
+
 void mixCell(Checksum& checksum, const Cell& cell) {
   checksum.u32(cell.id);
   checksum.u32(cell.parent_id);
@@ -127,8 +141,7 @@ void mixCell(Checksum& checksum, const Cell& cell) {
   checksum.f64(cell.death_time);
   checksum.u64(cell.mutations.size());
   for (const auto& mutation : cell.mutations) {
-    checksum.u32(mutation.mutation_id);
-    checksum.u64(mutation.mutation_type);
+    mixMutation(checksum, mutation);
   }
 }
 
