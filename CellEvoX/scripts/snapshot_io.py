@@ -21,8 +21,12 @@ SNAPSHOT_VERSION = 3
 _POPULATION_CSV_RE = re.compile(r"population_generation_(\d+)\.csv$")
 _POPULATION_BIN_RE = re.compile(r"population_generation_(\d+)\.bin$")
 # v3 adds an optional realized effect; the third group stays optional so older
-# two-field exports remain parseable.
-_MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,([-+0-9.eE]+))?\)")
+# two-field exports remain parseable. The effect group is a full float pattern
+# rather than a character class so a malformed entry such as "(1,2,-)" is
+# skipped instead of matching and failing `float(...)`.
+_MUTATION_RE = re.compile(
+    r"\((\d+),(\d+)(?:,([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))?\)"
+)
 
 _HEADER_STRUCT = struct.Struct("<8sIIdIIBBB13x")
 _RECORD_STRUCT = struct.Struct("<IIffffHHIB3x")

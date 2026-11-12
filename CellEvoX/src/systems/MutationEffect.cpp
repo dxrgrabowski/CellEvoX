@@ -27,8 +27,10 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
   for (const auto& mut : available_mutation_types) {
     prob_sum += mut.second.probability;
     if (mutation_draw < prob_sum) {
+      // Slot 0 is the only slot in use: one mutation per division. The
+      // substream convention reserves slot 1+ for a future second mutation.
       const float realized_effect =
-          realizedMutationEffect(mut.second, seed, rng_step, cell_id, 0);
+          realizedMutationEffect(mut.second, seed, rng_step, cell_id, /*mutation_slot=*/0);
       const double daughter_fitness = fitness * (1.0 + realized_effect);
       if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
         throw std::runtime_error("Mutation produced invalid daughter fitness");

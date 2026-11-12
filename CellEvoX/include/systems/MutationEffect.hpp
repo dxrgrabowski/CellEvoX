@@ -9,9 +9,11 @@
 namespace CellEvoX::systems::detail {
 
 // Gamma draw for one mutation event. Defined out of line on purpose: the
-// sampler setup (shape/scale computation, substream selection, clamp) must not
+// sampler body (shape/scale computation, substream selection, clamp) must not
 // be inlined into the per-cell event loop of `applyCommonPopulationStep`, where
-// it would slow down the constant/no-mutation fast path through code bloat.
+// it would slow down the constant/no-mutation fast path through code bloat. The
+// mode dispatch itself stays in the inline `realizedMutationEffect` wrapper
+// below, so a constant mutation is one branch plus a field read.
 float sampleGammaMutationEffect(const MutationType& mutation, uint64_t seed, uint64_t step,
                                 uint64_t cell_id, uint32_t mutation_slot);
 
