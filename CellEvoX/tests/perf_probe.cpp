@@ -384,6 +384,12 @@ int main(int argc, char** argv) {
       threads = parseUint32("--threads", argv[++i]);
     } else if (argument == "--stats-dir" && has_value) {
       stats_dir = argv[++i];
+    } else if (argument == "--workload" || argument == "--iterations" ||
+               argument == "--seed" || argument == "--threads" ||
+               argument == "--stats-dir") {
+      // A known flag with no following argument would otherwise fall through to
+      // "unrecognised argument", which hides the actual mistake.
+      usageError(std::string(argument) + " requires a value");
     } else {
       usageError("unrecognised argument: " + std::string(argument));
     }

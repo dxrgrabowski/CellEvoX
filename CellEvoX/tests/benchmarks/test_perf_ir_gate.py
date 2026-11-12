@@ -88,6 +88,16 @@ class EvaluateTest(unittest.TestCase):
         entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"other": 0.05}))
         self.assertEqual("REGRESSED", entry["status"])
 
+    def test_delta_equal_to_allowed_is_accepted(self):
+        entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"w": 0.03}))
+        self.assertEqual("OK", entry["status"])
+        self.assertIn("accepted", entry)
+
+    def test_delta_equal_to_threshold_is_ok_without_marker(self):
+        entry = perf_ir_gate.evaluate("w", side(100), side(102), args())
+        self.assertEqual("OK", entry["status"])
+        self.assertNotIn("accepted", entry)
+
 
 class MeasureSideTest(unittest.TestCase):
     def test_picks_minimum_and_reports_spread(self):
@@ -204,6 +214,37 @@ class AggregateMemoryTest(unittest.TestCase):
             [self.summary("OK", 0.02, 1000, 1020), self.summary("OK", -0.05, 1000, 950)])
         self.assertAlmostEqual(-0.05, result["delta"])
         self.assertEqual(950, result["current_max_rss_kb"])
+
+    def test_reports_numbers_from_the_group_that_set_the_verdict(self):
+        result = ci_benchmark_gate.aggregate_memory(
+            [self.summary("OK", -0.20, 1000, 800), self.summary("REGRESSED", 0.11, 1000, 1110)])
+        self.assertEqual("REGRESSED", result["status"])
+        self.assertAlmostEqual(0.11, result["delta"])
+        self.assertEqual(1110, result["current_max_rss_kb"])
+
+
+class HasFailureTest(unittest.TestCase):
+    """In advisory mode only lost coverage and peak RSS may block."""
+
+    def summary(self, missing=0, memory_status="OK"):
+        return {"counts": {"missing": missing}, "memory": {"status": memory_status}}
+
+    def test_advisory_mode_does_not_block_on_timing(self):
+        results = {"bench": {"status": "REGRESSED"}}
+        self.assertFalse(ci_benchmark_gate.has_failure(results, self.summary(), False, 0.02,
+                                                       advisory_timing=True))
+
+    def test_advisory_mode_blocks_on_rss_regression(self):
+        self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(memory_status="REGRESSED"),
+                                                       False, 0.02, advisory_timing=True))
+
+    def test_advisory_mode_blocks_on_missing_benchmark(self):
+        self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(missing=1),
+                                                       False, 0.02, advisory_timing=True))
+
+    def test_advisory_mode_blocks_on_unknown_rss(self):
+        self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(memory_status="UNKNOWN"),
+                                                       False, 0.02, advisory_timing=True))
 
 
 class ParseAcceptedDeltasTest(unittest.TestCase):

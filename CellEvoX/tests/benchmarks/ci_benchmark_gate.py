@@ -252,30 +252,35 @@ def print_group_report(group: str, samples: int, rounds: int, results: Dict[str,
 
 def aggregate_memory(memory_summaries: List[Dict]) -> Dict:
     """Collapse per-group RSS summaries into one, with REGRESSED > UNKNOWN > OK."""
-    memory_status = "OK"
-    memory_delta = 0.0
-    base_rss = 0
-    head_rss = 0
-    # Precedence is independent of group order: a REGRESSED group wins below,
-    # and UNKNOWN only fills an aggregate that no group has already marked
-    # REGRESSED.
-    for memory in memory_summaries:
-        if memory.get("status") == "REGRESSED":
-            memory_status = "REGRESSED"
-        elif memory.get("status") != "OK" and memory_status == "OK":
-            # A group without a usable RSS reading is UNKNOWN; keep that visible
-            # instead of collapsing it into OK.
-            memory_status = "UNKNOWN"
-        # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
-        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
-            memory_delta = memory["delta"]
-            base_rss = memory["baseline_max_rss_kb"]
-            head_rss = memory["current_max_rss_kb"]
+    if not memory_summaries:
+        return {"status": "UNKNOWN", "delta": 0.0,
+                "baseline_max_rss_kb": 0, "current_max_rss_kb": 0}
+    statuses = [memory.get("status") for memory in memory_summaries]
+    # Precedence is independent of group order: a REGRESSED group wins, and
+    # UNKNOWN only fills an aggregate that no group has already marked REGRESSED.
+    if "REGRESSED" in statuses:
+        memory_status = "REGRESSED"
+    elif any(status != "OK" for status in statuses):
+        # A group without a usable RSS reading is UNKNOWN; keep that visible
+        # instead of collapsing it into OK.
+        memory_status = "UNKNOWN"
+    else:
+        memory_status = "OK"
+    # Report the numbers of the group the verdict comes from, so a REGRESSED
+    # aggregate never shows an OK group's RSS. UNKNOWN groups carry no readings,
+    # so they fall back to the largest measured |delta|.
+    measured = [memory for memory in memory_summaries
+                if memory.get("status") != "UNKNOWN"
+                and (memory_status == "UNKNOWN" or memory.get("status") == memory_status)]
+    if not measured:
+        return {"status": memory_status, "delta": 0.0,
+                "baseline_max_rss_kb": 0, "current_max_rss_kb": 0}
+    chosen = max(measured, key=lambda memory: abs(memory.get("delta", 0.0)))
     return {
-        "status": memory_status if memory_summaries else "UNKNOWN",
-        "delta": memory_delta,
-        "baseline_max_rss_kb": base_rss,
-        "current_max_rss_kb": head_rss,
+        "status": memory_status,
+        "delta": chosen["delta"],
+        "baseline_max_rss_kb": chosen["baseline_max_rss_kb"],
+        "current_max_rss_kb": chosen["current_max_rss_kb"],
     }
 
 
