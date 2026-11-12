@@ -174,7 +174,9 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // missing file means the run itself is broken rather than that the probe
 // assumed more than the report promises. Files the report does not reference
 // are out of scope: the report is the source of truth for which snapshots this
-// workload produced. The generation index is not hashed
+// workload produced. The format is packed and value-initialized (see
+// PopulationSnapshotIO.hpp), so hashing raw bytes compares content rather than
+// padding. The generation index is not hashed
 // separately: the report is built in a fixed order, which is part of the
 // contract this checksum relies on, and a reordering still moves the bytes
 // inside the hash. A snapshot ABI version bump changes these bytes on purpose,
@@ -425,6 +427,8 @@ int main(int argc, char** argv) {
   // Own a subdirectory instead of clearing the caller's directory: the gate
   // passes a fresh path, but --stats-dir may point at a folder holding other
   // files. Removing only the probe's own output keeps repeat runs reproducible.
+  // `<--stats-dir>/perf_probe` is therefore probe-owned: nothing else belongs
+  // there, because every run deletes it.
   const std::filesystem::path run_stats_dir = std::filesystem::path(stats_dir) / "perf_probe";
   // Two separate codes: sharing one would let a failed remove_all be masked by
   // a successful create_directories, leaving stale files inside the measured

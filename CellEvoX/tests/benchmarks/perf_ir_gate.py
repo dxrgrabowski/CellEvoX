@@ -40,6 +40,11 @@ vary between processes) and would otherwise dominate the noise floor.
 Each side is measured ``--runs`` times (default 2) and the minimum is used.
 Measurement noise can only add instructions, so the minimum is the best
 estimate of the deterministic workload cost.
+
+A NON-DETERMINISTIC verdict means the workload itself is defective, not that
+``--max-spread`` is too tight: identical work must cost identical instructions.
+Raise the spread only for a measured, documented reason; otherwise fix the
+workload rather than the check that caught it.
 """
 
 import argparse
@@ -61,7 +66,10 @@ WORKLOADS = [
     "realistic-2d-450",
 ]
 
-CHECKSUM_RE = re.compile(r"^RESULT .*checksum=0x([0-9a-fA-F]+)$", re.MULTILINE)
+# The lookahead rejects a line carrying a second checksum: the RESULT line has
+# exactly one, and guessing which token counts would compare the wrong runs.
+CHECKSUM_RE = re.compile(r"^RESULT (?!.*checksum=.*checksum=).*checksum=0x([0-9a-fA-F]+)$",
+                         re.MULTILINE)
 SUMMARY_RE = re.compile(r"^summary:\s*(\d+)\s*$", re.MULTILINE)
 
 
@@ -152,8 +160,10 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
         if completed.returncode != 0:
             # Cap each line: the report is an uploaded artifact, and a compiler
             # or loader can emit a single very long line.
-            tail = [line[:200] for line in
-                    (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]]
+            # Keep both streams: a loader warning on stderr must not hide the
+            # probe's error on stdout, and vice versa.
+            raw = "\n".join(part for part in (completed.stderr, completed.stdout) if part)
+            tail = [line[:200] for line in raw.strip().splitlines()[-3:]]
             detail = " / ".join(tail) if tail else "(no output)"
             return {"error": f"exit {completed.returncode}: {detail}"}
 
@@ -234,6 +244,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
     # threshold, but the max keeps a future parser change from tightening a
     # workload below the global threshold it is an exception to.
     allowed = max(args.threshold, args.accepted_delta.get(workload, args.threshold))
+    # Whether the named exception is what keeps this delta from blocking:
+    # above the global threshold but inside the workload's accepted ceiling.
+    used_exception = workload in args.accepted_delta and delta > args.threshold
     entry["delta"] = delta
     entry["allowed"] = allowed
     if delta > allowed:
@@ -245,7 +258,7 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["status"] = "IMPROVED"
     else:
         entry["status"] = "OK"
-        if workload in args.accepted_delta and delta > args.threshold:
+        if used_exception:
             # The marker only appears when the exception was actually used: a
             # workload that stays under --threshold prints a plain OK even if it
             # has an accepted ceiling. Keep the measured delta separate from the
@@ -291,6 +304,13 @@ def main() -> int:
     unknown = [item for item in workloads if item not in WORKLOADS]
     if unknown:
         raise SystemExit(f"Unknown workload(s): {', '.join(unknown)}. Known: {', '.join(WORKLOADS)}")
+    # An exception for a workload this run does not measure would be printed in
+    # the header and recorded in the JSON while never applying, which reads as
+    # an active exception in the artifact.
+    unselected = sorted(set(args.accepted_delta) - set(workloads))
+    if unselected:
+        raise SystemExit(f"--accepted-delta names workloads not selected by --workloads: "
+                         f"{', '.join(unselected)}")
 
     base_binary = Path(args.base_binary)
     head_binary = Path(args.head_binary)

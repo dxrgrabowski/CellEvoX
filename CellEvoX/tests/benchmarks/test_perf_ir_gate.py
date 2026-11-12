@@ -215,6 +215,21 @@ class MeasureTest(unittest.TestCase):
         result = self.run_measure(self.writing_run("summary: 5\n"))
         self.assertIn("RESULT checksum", result["error"])
 
+    def test_duplicate_checksum_tokens_are_an_error(self):
+        # One RESULT line carries exactly one checksum; a second token means the
+        # output shape changed, so the gate must not guess which one counts.
+        result = self.run_measure(self.writing_run(
+            "summary: 5\n", stdout="RESULT checksum=0x1 checksum=0x2\n"))
+        self.assertIn("got 0", result["error"])
+
+    def test_non_zero_exit_reports_both_streams(self):
+        def fake(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 2, stdout="probe error\n",
+                                               stderr="loader warning\n")
+        error = self.run_measure(fake)["error"]
+        self.assertIn("loader warning", error)
+        self.assertIn("probe error", error)
+
     def test_missing_output_is_an_error(self):
         def fake(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 0, stdout="RESULT checksum=0x1\n", stderr="")
@@ -289,6 +304,30 @@ class HasFailureTest(unittest.TestCase):
         # the default mode; only lost coverage and RSS still block.
         self.assertFalse(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02,
                                                        advisory_timing=True))
+
+
+class MainTest(unittest.TestCase):
+    """main() must fail closed before it measures anything."""
+
+    def run_main(self, *extra):
+        argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h", *extra]
+        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as raised:
+            perf_ir_gate.main()
+        return raised.exception
+
+    def test_empty_workload_list_is_an_error(self):
+        # An empty --workloads would measure nothing and then report a pass.
+        self.assertIn("No workloads selected", str(self.run_main("--workloads", "")))
+
+    def test_unknown_workload_is_an_error(self):
+        self.assertIn("Unknown workload", str(self.run_main("--workloads", "not-a-workload")))
+
+    def test_accepted_delta_for_an_unselected_workload_is_an_error(self):
+        # The exception would be printed and recorded as active while never
+        # applying, which misreads as headroom in the artifact.
+        error = self.run_main("--workloads", "run-5-steps",
+                              "--accepted-delta", "realistic-2d-450=0.035")
+        self.assertIn("realistic-2d-450", str(error))
 
 
 class ParseAcceptedDeltasTest(unittest.TestCase):

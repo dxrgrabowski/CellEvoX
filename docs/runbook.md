@@ -267,7 +267,9 @@ The gate injects this PR's probe into the base checkout, so a red `Build Base`
 with a green `Build Head` usually means the PR changed an interface the probe
 uses (`SimulationEngine`, `CommonPopulationStep`, `PopulationSnapshotIO`,
 `Cell`, `Run`, `MutationType`). Rebase or land that interface change first, or
-update the probe: it is not a performance verdict.
+update the probe: it is not a performance verdict. A failed build also means the
+gate step is skipped, so no `perf-ir-gate.json` exists: a red build is the
+evidence, and a missing verdict is not a pass.
 
 The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
 advisory: timings are reported, the 10% peak-RSS ceiling still blocks, and so
@@ -291,7 +293,7 @@ python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
 Use the same flags locally, or the sample count will not match CI. Advisory mode
 never retries: `--retry-samples` is ignored when `--advisory-timing` is set, so
 the `--initial-samples` count is final both locally and in CI. Rationale:
-ADR-0009.
+ADR-0011.
 
 The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time
 out; a timeout is job-level, so it skips both gates and the report upload. Rerun
