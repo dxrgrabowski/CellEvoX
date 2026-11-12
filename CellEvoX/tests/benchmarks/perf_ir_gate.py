@@ -66,8 +66,11 @@ WORKLOADS = [
     "realistic-2d-450",
 ]
 
-# The lookahead rejects a line carrying a second checksum: the RESULT line has
-# exactly one, and guessing which token counts would compare the wrong runs.
+# The contract is one RESULT line with exactly one checksum token. The lookahead
+# scans to the end of that same line (`.` does not cross the newline, and `$`
+# with MULTILINE ends it), so it rejects a line carrying a second `checksum=`;
+# guessing which token counts would compare the wrong runs. A checksum on another
+# line is not part of the RESULT contract and is not a second token.
 CHECKSUM_RE = re.compile(r"^RESULT (?!.*checksum=.*checksum=).*checksum=0x([0-9a-fA-F]+)$",
                          re.MULTILINE)
 SUMMARY_RE = re.compile(r"^summary:\s*(\d+)\s*$", re.MULTILINE)
@@ -126,8 +129,10 @@ def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser,
 
 def measure(side: str, binary: Path, workload: str, run_index: int, args: argparse.Namespace) -> Dict:
     """Run one Callgrind measurement and return {ir, checksum} or {error}."""
-    # Include the PID so two concurrent gate invocations on one host do not
-    # delete and recreate each other's measurement directory.
+    # Include the PID so two concurrently running gate invocations on one host
+    # (distinct PIDs in the same namespace, as CI gives each job its own /tmp)
+    # do not delete and recreate each other's measurement directory. Sequential
+    # invocations reuse the path safely because it is removed below.
     run_dir = Path(args.work_dir) / f"{workload}-{side}-{run_index}-{os.getpid()}"
     out_file = run_dir / "callgrind.out"
     # Start every measurement from a nonexistent stats directory: the probe's
@@ -197,10 +202,15 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
 
 
 def measure_side(side: str, binary: Path, workload: str, args: argparse.Namespace) -> Dict:
-    runs = [measure(side, binary, workload, index, args) for index in range(1, args.runs + 1)]
-    errors = [run["error"] for run in runs if "error" in run]
-    if errors:
-        return {"error": "; ".join(errors)}
+    runs = []
+    for index in range(1, args.runs + 1):
+        run = measure(side, binary, workload, index, args)
+        # Short-circuit: a failed run cannot contribute to the repeat-spread
+        # determinism check, and re-running the remaining repeats would spend the
+        # per-run timeout again, pushing a failing gate towards the job ceiling.
+        if "error" in run:
+            return {"error": run["error"]}
+        runs.append(run)
     counts = [run["ir"] for run in runs]
     checksums = {run["checksum"] for run in runs}
     return {

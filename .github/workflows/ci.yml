@@ -36,7 +36,10 @@ jobs:
         path: head
 
     # The verdict logic is the only blocking performance signal, so its unit
-    # tests run before the expensive builds and fail fast.
+    # tests run before the expensive builds and fail fast. This step deliberately
+    # runs before "Install Dependencies", so it uses the runner's system python3:
+    # this file and the gate modules it imports must stay stdlib-only, or move
+    # the step after the install.
     - name: Test Instruction Gate Verdict Logic
       run: python3 head/CellEvoX/tests/benchmarks/test_perf_ir_gate.py
 

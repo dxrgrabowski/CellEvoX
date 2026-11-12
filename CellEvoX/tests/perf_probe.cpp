@@ -197,14 +197,23 @@ void mixSnapshotFiles(Checksum& checksum,
       throw std::runtime_error("cannot size population snapshot: " + path);
     }
     file.seekg(0);
-    std::vector<char> bytes(static_cast<size_t>(size));
-    const auto byte_count = static_cast<std::streamsize>(size);
-    file.read(bytes.data(), byte_count);
-    if (!file) {
-      throw std::runtime_error("population snapshot unreadable: " + path);
+    // Stream in fixed-size chunks: this runs inside the collected window, so a
+    // large or corrupt snapshot must not size an allocation from its length.
+    // Checksum::bytes accumulates byte-by-byte with no per-call framing, so
+    // chunking folds the same bytes as one read.
+    checksum.u64(static_cast<uint64_t>(size));
+    std::vector<char> buffer(64 * 1024);
+    std::streamoff remaining = size;
+    while (remaining > 0) {
+      const auto chunk = static_cast<std::streamsize>(
+          std::min<std::streamoff>(remaining, static_cast<std::streamoff>(buffer.size())));
+      file.read(buffer.data(), chunk);
+      if (file.gcount() != chunk) {
+        throw std::runtime_error("population snapshot unreadable: " + path);
+      }
+      checksum.bytes(buffer.data(), static_cast<size_t>(chunk));
+      remaining -= chunk;
     }
-    checksum.u64(bytes.size());
-    checksum.bytes(bytes.data(), bytes.size());
   }
 }
 

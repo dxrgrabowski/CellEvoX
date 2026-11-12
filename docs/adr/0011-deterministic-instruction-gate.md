@@ -58,6 +58,10 @@ verdicts are advisory.
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
   `perf_ir_gate.py`; unknown names are rejected, not skipped.
+- The probe's workload configs intentionally duplicate
+  `tests/bench_simulation.cpp`: both sites carry a cross-reference comment, so a
+  change to one is visible from the other. Drift shows up as a moved `Ir` floor
+  in this Evidence table rather than as a build error.
 - Baseline-moving events land as one coordinated change: a snapshot ABI version
   bump alters the bytes the probe hashes (so it reports `SEMANTICS CHANGED`, not
   a regression), and fixing the `tau_step = 0.005` tech debt moves the `Ir` floor.
@@ -129,7 +133,13 @@ verdicts are advisory.
 - Full gate: 56 s locally for six workloads x two sides x two runs; in CI
   (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`,
   where the job total already includes the dependency install and the unit-test
-  step that runs before the builds.
+  step that runs before the builds. That is 24 Callgrind runs at roughly 1.5 s
+  each, against a 300 s per-run timeout: only a workload that regressed by about
+  two orders of magnitude could hit the timeout, and that fails closed as
+  `MISSING`, not as a pass.
+- No cold-cache build time was measured. The 10-minute ceiling is anchored to the
+  warm-cache job total above, and a cold-cache timeout is the accepted,
+  rerunnable infrastructure failure described in Consequences, not a verdict.
 - Code: `CellEvoX/tests/perf_probe.{cpp,cmake}`,
   `CellEvoX/tests/benchmarks/perf_ir_gate.py`,
   `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` (`--advisory-timing`),

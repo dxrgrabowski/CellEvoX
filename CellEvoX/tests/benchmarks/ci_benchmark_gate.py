@@ -416,10 +416,8 @@ def main() -> int:
     if failed:
         print("\nCI benchmark gate failed.")
         return 1
-    if args.advisory_timing:
-        print("\nCI benchmark gate passed (timing verdicts were advisory).")
-        return 0
-    print("\nCI benchmark gate passed.")
+    suffix = " (timing verdicts were advisory)" if args.advisory_timing else ""
+    print(f"\nCI benchmark gate passed{suffix}.")
     return 0
 
 

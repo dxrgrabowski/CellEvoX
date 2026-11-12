@@ -117,13 +117,20 @@ class MeasureSideTest(unittest.TestCase):
             result = perf_ir_gate.measure_side("base", Path("probe"), "w", args())
         self.assertEqual(100, result["ir"])
         self.assertEqual([102, 100], result["runs"])
-        self.assertAlmostEqual(0.02, result["spread"])
+        # Pin the relation itself, not just a literal: the spread must be
+        # derived from the recorded runs, so changing either one without the
+        # other fails this test.
+        self.assertAlmostEqual((max(result["runs"]) - min(result["runs"])) / min(result["runs"]),
+                               result["spread"])
 
-    def test_joins_run_errors(self):
+    def test_stops_at_the_first_error(self):
+        # Short-circuiting keeps a failing gate fast: the remaining reset
+        # repeats would each spend the per-run timeout again.
         runs = [{"error": "exit 2"}, {"error": "timeout after 1s"}]
-        with mock.patch.object(perf_ir_gate, "measure", side_effect=runs):
+        with mock.patch.object(perf_ir_gate, "measure", side_effect=runs) as measurement:
             result = perf_ir_gate.measure_side("base", Path("probe"), "w", args())
-        self.assertEqual("exit 2; timeout after 1s", result["error"])
+        self.assertEqual("exit 2", result["error"])
+        self.assertEqual(1, measurement.call_count)
 
     def test_parse_args_returns_accepted_deltas(self):
         argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h",
