@@ -398,6 +398,22 @@ class HasFailureTest(unittest.TestCase):
         self.assertFalse(ci_benchmark_gate.has_failure(results, self.summary(regressed=1), False,
                                                        0.02, advisory_timing=True))
 
+    def test_advisory_mode_blocks_when_counts_key_is_absent(self):
+        # Fail closed on a malformed summary instead of raising KeyError; both
+        # results and RSS are readable, so only the missing counts can block.
+        self.assertTrue(ci_benchmark_gate.has_failure({"bench": {"status": "OK"}},
+                                                      {"memory": {"status": "OK"}},
+                                                      False, 0.02, advisory_timing=True))
+
+
+class PrintReportTest(unittest.TestCase):
+    def test_summary_names_improved_workloads(self):
+        # IMPROVED does not block, but the one-line summary must not hide it.
+        entry = perf_ir_gate.evaluate("w", side(100), side(97), args())
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            perf_ir_gate.print_report([entry], args())
+        self.assertIn("Summary: 1 passed (1 improved) | 0 failed", out.getvalue())
+
 
 class MainTest(unittest.TestCase):
     """main() must fail closed before it measures anything."""

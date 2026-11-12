@@ -315,7 +315,11 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
               f"{entry['delta']:+9.2%}  {status_text}")
     print("-" * 82)
     failures = [entry for entry in results if entry["status"] in BLOCKING_STATUSES]
-    print(f"Summary: {len(results) - len(failures)} passed | {len(failures)} failed")
+    # IMPROVED does not block, so it belongs in "passed"; naming the count keeps
+    # a head-side speedup visible in the one-line summary too.
+    improved = sum(1 for entry in results if entry["status"] == "IMPROVED")
+    print(f"Summary: {len(results) - len(failures)} passed ({improved} improved) | "
+          f"{len(failures)} failed")
 
 
 def main() -> int:

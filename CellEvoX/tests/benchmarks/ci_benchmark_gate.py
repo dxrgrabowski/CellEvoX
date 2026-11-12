@@ -212,7 +212,10 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         # disappeared, or an RSS measurement that is absent
         # (including an empty run, where aggregate_memory reports UNKNOWN)
         # or unparsable, still blocks: lost coverage must not pass silently.
-        if summary["counts"]["missing"]:
+        # Read counts defensively, like "memory" below: a summary that lost the
+        # key is malformed, and unknown coverage must block, not raise KeyError.
+        counts = summary.get("counts")
+        if counts is None or counts.get("missing"):
             return True
         # A group with no benchmark result at all is lost coverage even when both
         # binaries ran and their RSS parsed: nothing was compared, so nothing was

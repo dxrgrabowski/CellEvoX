@@ -48,9 +48,9 @@ verdicts are advisory.
   the base/head ratio is compared, so the absolute `Ir` of another host does not
   change that floor). Raising it to admit a known cost is forbidden by
   `AGENTS.md` (Negative Space), and it would be invisible in the diff. A cost
-  the project deliberately accepts is named instead:
-  `--accepted-delta realistic-2d-450=0.035` relaxes that single workload and
-  prints `OK (accepted +3.0% <= +3.5%)`, so the exception is written in the
+  the project deliberately accepts is named instead (for example
+  `--accepted-delta realistic-2d-450=0.035`), which relaxes that single workload
+  and prints `OK (accepted +3.0% <= +3.5%)`, so the exception is written in the
   accepting PR's `ci.yml` instead of silently widening the gate. The exception
   does not expire: it stays in `ci.yml` after merge, so the accepting PR must
   also record the follow-up that removes it, or later PRs inherit the headroom.
@@ -117,11 +117,14 @@ verdicts are advisory.
   it to `ld-linux`, with `main` byte-identical), and reusing the probe's stats
   directory moved counts by 0.4-3.6%.
 - Verdict logic, checked by feeding fabricated counts to `evaluate()`: `+3%` →
-  `REGRESSED`, `+1%` → `OK`, `-3%` → `IMPROVED`, `+3%` with that workload's
-  `--accepted-delta realistic-2d-450=0.035` → `OK (accepted +3.0% <= +3.5%)`,
-  with `=0.025` → `REGRESSED`, and an exception naming another workload does not
-  apply; a differing checksum → `SEMANTICS CHANGED`, a 3% repeat spread →
-  `NON-DETERMINISTIC`. The same counts are pinned as unit tests in
+  `REGRESSED`, `+1%` → `OK`, `-3%` → `IMPROVED`, `+3%` with
+  `accepted_delta={"realistic-2d-450": 0.035}` → `OK (accepted +3.0% <= +3.5%)`,
+  with `{"realistic-2d-450": 0.025}` → `REGRESSED`, and an exception naming
+  another workload does not apply; a differing checksum → `SEMANTICS CHANGED`, a
+  3% repeat spread → `NON-DETERMINISTIC`. These are synthetic inputs to the
+  verdict function, not a flag CI passes: the CI invocation carries no
+  `--accepted-delta`, so its report records `accepted_delta: {}` (below). The
+  same counts are pinned as unit tests in
   `tests/benchmarks/test_perf_ir_gate.py`, which CI runs before the builds.
 - Advisory timing and RSS, checked through
   `ci_benchmark_gate.has_failure(..., advisory_timing=True)`: timing
