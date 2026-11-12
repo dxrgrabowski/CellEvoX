@@ -131,7 +131,7 @@ event instead:
 ```
 
 The shape and scale are `k = (mean/std)²` and `θ = std²/mean`; each sample
-`X ~ Gamma(k, θ)` is clamped to `[0, effect_limit]` and signed by
+`X ~ Gamma(k, θ)` is capped at `min(X, effect_limit)` and signed by
 `effect_direction` (`positive` raises fitness, `negative` lowers it). The child's
 fitness is `fitness * (1 + signed_effect)`. `effect_mean` and `effect_std` must be
 positive, and `effect_limit` must lie in `(0, 1)` and be at least `effect_mean`;
