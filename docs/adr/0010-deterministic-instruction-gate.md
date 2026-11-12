@@ -70,8 +70,23 @@ verdicts are advisory.
   work varied up to 3.7% between processes (a `callgrind_annotate` diff confined
   it to `ld-linux`, with `main` byte-identical), and reusing the probe's stats
   directory moved counts by 0.4-3.6%.
-- Full gate: 56 s locally for six workloads x two sides x two runs; 44 s in CI
-  (`43082851708`), where the whole job took 4m12s.
+- Verdict logic, checked by feeding fabricated counts to `evaluate()`: `+3%` →
+  `REGRESSED`, `+1%` → `OK`, `-3%` → `IMPROVED`, `+3%` with that workload's
+  `--accepted-delta realistic-2d-450=0.035` → `OK (accepted +3.5%)`, with
+  `=0.025` → `REGRESSED`, and an exception naming another workload does not
+  apply; a differing checksum → `SEMANTICS CHANGED`, a 3% repeat spread →
+  `NON-DETERMINISTIC`.
+- Advisory timing and RSS, checked through
+  `ci_benchmark_gate.has_failure(..., advisory_timing=True)`: timing
+  `REGRESSED`/`UNSTABLE` does not block, RSS `REGRESSED` does; RSS `+15%` is
+  `REGRESSED` and `+8%` is `OK` against the 10% ceiling. In CI (`43086799157`)
+  the run reported `1 unstable` and still ended `CI benchmark gate passed
+  (timing verdicts were advisory)`, with `Memory RSS ... +0.0% | OK`.
+- Artifacts: the `benchmark-reports` artifact of `43086799157` contains
+  `perf-ir-gate.json` and `perf-gate.json`, and the gate's JSON records the
+  thresholds it ran with (`accepted_delta: {}` when no exception is given).
+- Full gate: 56 s locally for six workloads x two sides x two runs; in CI
+  (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`.
 - Code: `CellEvoX/tests/perf_probe.{cpp,cmake}`,
   `CellEvoX/tests/benchmarks/perf_ir_gate.py`,
   `CellEvoX/tests/benchmarks/ci_benchmark_gate.py` (`--advisory-timing`),
