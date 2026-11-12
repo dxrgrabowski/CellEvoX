@@ -86,8 +86,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--work-dir", default="/tmp/cellevox_ir_gate")
     parser.add_argument("--report-json", default=None)
     args = parser.parse_args()
-    if args.runs < 1:
-        parser.error("--runs must be at least 1")
+    if args.runs < 2:
+        parser.error("--runs must be at least 2: the repeat-spread determinism check needs two runs")
     args.accepted_delta = parse_accepted_deltas(args.accepted_delta, parser, args.threshold)
     return args
 

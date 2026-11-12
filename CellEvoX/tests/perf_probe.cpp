@@ -182,7 +182,8 @@ void mixSnapshotFiles(Checksum& checksum,
     }
     file.seekg(0);
     std::vector<char> bytes(static_cast<size_t>(size));
-    file.read(bytes.data(), size);
+    const auto byte_count = static_cast<std::streamsize>(size);
+    file.read(bytes.data(), byte_count);
     if (!file) {
       throw std::runtime_error("population snapshot unreadable: " + path);
     }

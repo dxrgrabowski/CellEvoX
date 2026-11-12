@@ -135,6 +135,9 @@ jobs:
     # PR deliberately accepts, add --accepted-delta WORKLOAD=RATIO here (one
     # workload, visible in review); do not raise --threshold.
     - name: Deterministic Instruction Gate
+      # Skip when a build failed: the probe binaries do not exist and the step
+      # would only add a second, confusing error.
+      if: steps.build_base.outcome == 'success' && steps.build_head.outcome == 'success'
       run: |
         mkdir -p benchmark_reports
         python3 head/CellEvoX/tests/benchmarks/perf_ir_gate.py \
