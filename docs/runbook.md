@@ -242,15 +242,69 @@ fields are in integer `T` units, not loop steps.
 
 ## CI notes
 
-`.github/workflows/ci.yml` runs tests plus a paired base/head benchmark gate
-(5% time, 10% memory). Its `-DSKIP_GUI=ON` flag is a dead leftover from an
-older baseline; do not treat it as a requirement.
+`.github/workflows/ci.yml` runs the test suite plus two performance gates in one
+`bench-regression-check` job with a 10-minute ceiling.
 
-The gate interleaves base and head (7 rounds x 5 samples, order flipped every
-round, retry at 10 samples per round) and judges a benchmark on the median of
-the round means, so a single noisy round widens the interval instead of moving
-the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
-the older blocked schedule. Rationale: ADR-0009.
+The **deterministic instruction gate** blocks. `tests/benchmarks/perf_ir_gate.py`
+runs six fixed-iteration workloads from `tests/perf_probe.cpp` under Valgrind
+Callgrind and fails when retired instructions grow more than 2% (or above a
+named `--accepted-delta`), when the two binaries print different checksums, or
+when repeated runs of one side disagree. The probe is opt-in, so reproduce a
+failure by building it in both trees:
+
+```bash
+cmake -B build -S CellEvoX -DCMAKE_BUILD_TYPE=Release -DCELLEVOX_BUILD_PERF_PROBE=ON
+cmake --build build --target CellEvoXPerfProbe -j"$(nproc)"
+python3 CellEvoX/tests/benchmarks/perf_ir_gate.py \
+  --base-binary <base-build>/bin/CellEvoXPerfProbe \
+  --head-binary build/bin/CellEvoXPerfProbe
+```
+
+`--accepted-delta WORKLOAD=RATIO` is how a deliberately accepted cost is
+recorded; do not raise `--threshold`. Rationale: ADR-0011.
+
+The gate injects this PR's probe into the base checkout, so a red `Build Base`
+with a green `Build Head` usually means the PR changed an interface the probe
+uses (`SimulationEngine`, `CommonPopulationStep`, `PopulationSnapshotIO`,
+`Cell`, `Run`, `MutationType`). Rebase or land that interface change first, or
+update the probe: it is not a performance verdict. A failed build also means the
+gate step is skipped, so no `perf-ir-gate.json` exists: a red build is the
+evidence, and a missing verdict is not a pass.
+
+The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
+advisory: timings are reported, the 10% peak-RSS ceiling still blocks, and so
+does a group that loses its RSS reading (lost coverage is not a pass). An
+`UNKNOWN` reading, including a run that produced no groups at all, is a rerun,
+not a verdict. The gate flips base/head order every round and judges a benchmark
+on the median of the round means, so a single noisy round widens the interval
+instead of moving the result. CI invokes it as:
+
+```bash
+python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
+  --base-binary <base-build>/bin/CellEvoXTests \
+  --head-binary <head-build>/bin/CellEvoXTests \
+  --groups quick --rounds 3 --initial-samples 3 \
+  --threshold 0.05 --memory-threshold 0.10 --max-relative-ci 0.05 \
+  --advisory-timing \
+  --benchmark-warmup-time 200 --benchmark-resamples 20000 \
+  --benchmark-confidence-interval 0.95 \
+  --out-dir benchmark_reports --report-json benchmark_reports/perf-gate.json
+```
+
+Use the same flags locally, or the sample count will not match CI. `--retry-samples`
+defaults to 12 and only applies to a non-advisory run whose timings come back
+`NOISY CI` or `UNSTABLE CI`. Advisory mode never retries and ignores the flag even
+when it is set: a retry re-runs the whole group (every round, both binaries),
+which does not fit the 10-minute ceiling for a signal that cannot block. A wide
+advisory interval is therefore answered by rerunning the job. Rationale:
+ADR-0011.
+
+The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time
+out; a timeout is job-level, so it skips both gates and the report upload. Rerun
+the job, and never read a missing verdict as a pass.
+
+The base build's `-DSKIP_GUI=ON` flag is a dead leftover from an older baseline;
+do not treat it as a requirement.
 
 `.github/workflows/ai-review.yml` runs the advisory AI review
 (`tools/ai_review.py`, DeepSeek via OpenRouter) on non-draft pull

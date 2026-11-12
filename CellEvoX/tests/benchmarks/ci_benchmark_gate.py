@@ -10,6 +10,11 @@ Measurements are interleaved: every round runs base and head back to back, and
 the order flips every round (A/B, B/A, ...) so a slow patch of the shared runner
 hits both binaries instead of only the second one. Per benchmark, the round means
 are collapsed into a median with a bootstrap interval across rounds.
+
+With --advisory-timing the wall-clock verdicts are reported but do not fail the
+job; only the peak-RSS ceiling blocks, and a benchmark that disappeared or lost
+its RSS measurement still fails. The blocking performance signal is the
+deterministic instruction-count gate in perf_ir_gate.py (ADR-0011).
 """
 
 import argparse
@@ -198,7 +203,30 @@ def needs_retry(results: Dict[str, Dict]) -> bool:
     return any(item.get("status") in {"NOISY CI", "UNSTABLE CI"} for item in results.values())
 
 
-def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool, threshold: float) -> bool:
+def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: bool, threshold: float,
+                advisory_timing: bool = False) -> bool:
+    if advisory_timing:
+        # Wall-clock timing is advisory: it is reported but only the peak-RSS
+        # ceiling blocks. The blocking performance signal is the instruction
+        # count gate (tests/benchmarks/perf_ir_gate.py). A benchmark that
+        # disappeared, or an RSS measurement that is absent
+        # (including an empty run, where aggregate_memory reports UNKNOWN)
+        # or unparsable, still blocks: lost coverage must not pass silently.
+        # Read counts defensively, like "memory" below: a summary that lost the
+        # key is malformed, and unknown coverage must block, not raise KeyError.
+        counts = summary.get("counts")
+        if counts is None or counts.get("missing"):
+            return True
+        # A group with no benchmark result at all is lost coverage even when both
+        # binaries ran and their RSS parsed: nothing was compared, so nothing was
+        # measured. counts stays all-zero in that case, so this guard is what
+        # stops an empty run from passing as OK.
+        if not results:
+            return True
+        # A missing "memory" key is fail-closed as well: None != "OK". A group
+        # that ran but whose RSS could not be read is treated the same as lost
+        # coverage: rerun the job rather than pass it.
+        return summary.get("memory", {}).get("status") != "OK"
     counts = summary["counts"]
     if counts["regressed"] or counts["missing"]:
         return True
@@ -208,8 +236,10 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         return any(inconclusive_regression(item, threshold) for item in results.values())
     return False
 
-def print_group_report(group: str, samples: int, rounds: int, results: Dict[str, Dict], summary: Dict) -> None:
-    print(f"\n=== Benchmark group: {group} ({rounds} interleaved rounds x {samples} samples per binary) ===")
+def print_group_report(group: str, samples: int, rounds: int, results: Dict[str, Dict], summary: Dict,
+                       advisory_timing: bool = False) -> None:
+    mode = " [timing verdicts are ADVISORY]" if advisory_timing else ""
+    print(f"\n=== Benchmark group: {group} ({rounds} interleaved rounds x {samples} samples per binary){mode} ===")
     print(f"{'Benchmark':<55} {'Base mean [CI]':>34} {'Head mean [CI]':>34} {'Change':>10}  Status")
     print("-" * 145)
     for name, item in results.items():
@@ -231,6 +261,41 @@ def print_group_report(group: str, samples: int, rounds: int, results: Dict[str,
           f"{counts['improved']} improved | {counts['ok']} ok | "
           f"{counts['noisy']} noisy | {counts['unstable']} unstable | "
           f"{counts['regressed']} regressed | {counts['new']} new | {counts['missing']} missing")
+
+
+def aggregate_memory(memory_summaries: List[Dict]) -> Dict:
+    """Collapse per-group RSS summaries into one, with REGRESSED > UNKNOWN > OK."""
+    if not memory_summaries:
+        return {"status": "UNKNOWN", "delta": 0.0,
+                "baseline_max_rss_kb": 0, "current_max_rss_kb": 0}
+    statuses = [memory.get("status") for memory in memory_summaries]
+    # Precedence is independent of group order: a REGRESSED group wins, and
+    # UNKNOWN only fills an aggregate that no group has already marked REGRESSED.
+    if "REGRESSED" in statuses:
+        memory_status = "REGRESSED"
+    elif any(status != "OK" for status in statuses):
+        # A group without a usable RSS reading is UNKNOWN; keep that visible
+        # instead of collapsing it into OK.
+        memory_status = "UNKNOWN"
+    else:
+        memory_status = "OK"
+    # Report the numbers of the largest measured |delta| among groups whose
+    # status is the aggregate verdict, so a REGRESSED aggregate never shows an
+    # OK group's RSS. UNKNOWN groups carry no readings, so they fall back to the
+    # largest measured |delta|.
+    measured = [memory for memory in memory_summaries
+                if memory.get("status") != "UNKNOWN"
+                and (memory_status == "UNKNOWN" or memory.get("status") == memory_status)]
+    if not measured:
+        return {"status": memory_status, "delta": 0.0,
+                "baseline_max_rss_kb": 0, "current_max_rss_kb": 0}
+    chosen = max(measured, key=lambda memory: abs(memory.get("delta", 0.0)))
+    return {
+        "status": memory_status,
+        "delta": chosen["delta"],
+        "baseline_max_rss_kb": chosen["baseline_max_rss_kb"],
+        "current_max_rss_kb": chosen["current_max_rss_kb"],
+    }
 
 
 def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
@@ -274,27 +339,9 @@ def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
             combined_counts[key] += value
         memory_summaries.append(summary["memory"])
 
-    memory_status = "OK"
-    memory_delta = 0.0
-    base_rss = 0
-    head_rss = 0
-    for memory in memory_summaries:
-        if memory.get("status") == "REGRESSED":
-            memory_status = "REGRESSED"
-        # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
-        if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
-            memory_delta = memory["delta"]
-            base_rss = memory["baseline_max_rss_kb"]
-            head_rss = memory["current_max_rss_kb"]
-
     summary = {
         "counts": combined_counts,
-        "memory": {
-            "status": memory_status if memory_summaries else "UNKNOWN",
-            "delta": memory_delta,
-            "baseline_max_rss_kb": base_rss,
-            "current_max_rss_kb": head_rss,
-        },
+        "memory": aggregate_memory(memory_summaries),
     }
     return combined_results, summary
 
@@ -317,6 +364,10 @@ def main() -> int:
     parser.add_argument("--memory-threshold", type=float, default=0.10)
     parser.add_argument("--max-relative-ci", type=float, default=0.05)
     parser.add_argument("--fail-on-inconclusive", action="store_true")
+    parser.add_argument("--advisory-timing", action="store_true",
+                        help="Report wall-clock verdicts as advisory instead of blocking; only the "
+                             "peak-RSS ceiling and missing coverage can fail. The blocking "
+                             "performance signal is the instruction-count gate in perf_ir_gate.py")
     parser.add_argument("--benchmark-warmup-time", type=int, default=None)
     parser.add_argument("--benchmark-resamples", type=int, default=None)
     parser.add_argument("--benchmark-confidence-interval", type=float, default=None)
@@ -340,6 +391,7 @@ def main() -> int:
             "benchmark_resamples": args.benchmark_resamples,
             "benchmark_confidence_interval": args.benchmark_confidence_interval,
             "fail_on_inconclusive": args.fail_on_inconclusive,
+            "advisory_timing": args.advisory_timing,
         },
         "groups": {},
     }
@@ -348,13 +400,14 @@ def main() -> int:
     for group in groups:
         samples = args.initial_samples
         results, summary = run_group(args, group, samples)
-        print_group_report(group, samples, args.rounds, results, summary)
+        print_group_report(group, samples, args.rounds, results, summary, args.advisory_timing)
 
-        if args.retry_samples and args.retry_samples > samples and needs_retry(results):
+        if (args.retry_samples and args.retry_samples > samples and needs_retry(results)
+                and not args.advisory_timing):
             print(f"\nGroup '{group}' is inconclusive; retrying with {args.retry_samples} samples per round.")
             samples = args.retry_samples
             results, summary = run_group(args, group, samples)
-            print_group_report(group, samples, args.rounds, results, summary)
+            print_group_report(group, samples, args.rounds, results, summary, args.advisory_timing)
 
         final_report["groups"][group] = {
             "rounds": args.rounds,
@@ -362,7 +415,7 @@ def main() -> int:
             "results": results,
             "summary": summary,
         }
-        if has_failure(results, summary, args.fail_on_inconclusive, args.threshold):
+        if has_failure(results, summary, args.fail_on_inconclusive, args.threshold, args.advisory_timing):
             failed = True
 
     if args.report_json:
@@ -374,7 +427,8 @@ def main() -> int:
     if failed:
         print("\nCI benchmark gate failed.")
         return 1
-    print("\nCI benchmark gate passed.")
+    suffix = " (timing verdicts were advisory)" if args.advisory_timing else ""
+    print(f"\nCI benchmark gate passed{suffix}.")
     return 0
 
 

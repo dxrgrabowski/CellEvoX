@@ -121,6 +121,8 @@ set(CORE_SOURCES
     src/spatial/SpatialHashGrid.cpp
 )
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)
+
 add_executable(CellEvoX
     src/main.cpp
     ${CORE_SOURCES}
