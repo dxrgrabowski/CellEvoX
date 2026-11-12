@@ -280,3 +280,24 @@ jobs:
 
     - name: Run Tests
       run: python3 -m pytest -q tests
+
+  review-tools:
+    name: Review tooling tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install pytest
+      run: python3 -m pip install --quiet pytest
+
+    # The review tool is stdlib-only; the tests stub the model response, so
+    # this job never needs OPENROUTER_API_KEY and never touches the network.
+    - name: Run Tests
+      run: python3 -m pytest -q tools/test_ai_review.py

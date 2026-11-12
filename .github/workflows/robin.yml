@@ -1,0 +1,78 @@
+name: Robin
+
+# Second advisory reviewer, kept next to .github/workflows/ai-review.yml so the
+# two can be compared on the same pull requests. Robin is a third-party action
+# pinned to a release commit: it posts its own comment, never approves or
+# requests changes, and is not a required check.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: robin-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI review (Robin)
+    # Same guard as ai-review.yml: drafts are not worth a model call, and fork
+    # PRs get no secrets.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Robin
+        # v2.13.3. A tag on the reusable workflow does not pin its nested action,
+        # so the action itself is pinned to the release commit.
+        uses: antongulin/robin@c307d49e53284c3c0e05c9a764ab9e8cce6f7dff
+        with:
+          # Reuses the key ai-review.yml already needs, on the same model, so a
+          # difference between the two comments comes from the reviewer, not the
+          # model. The key is therefore shared with a third-party action: a
+          # compromise here exposes the key the first-party tool uses, and
+          # revoking it disables both arms (ADR-0010). These are the action's
+          # declared inputs (llm-api-key, llm-base-url, model), not the LLM_*
+          # environment variables.
+          llm-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          llm-base-url: https://openrouter.ai/api/v1
+          model: deepseek/deepseek-v4.1-flash-1017
+          # Review every push, like ai-review.yml. The two workflows cancel only
+          # their own in-flight run, so during a burst of pushes one arm can
+          # finish on an earlier commit than the other; compare them once both
+          # have settled on the head commit.
+          review-on-synchronize: "true"
+          # Advisory only: a high finding must not submit REQUEST_CHANGES.
+          # The action's default defers to repo config, which defaults to true.
+          request-changes: "false"
+          # Single-shot diff review. Agent mode would read extra files and send
+          # them to the provider, which is outside the egress this repo allows.
+          agent-mode: "off"
+          # Same 1M characters as the tool's default --max-chars, but a different
+          # quantity: Robin bounds the diff alone, the tool bounds the assembled
+          # payload (diff + bodies + inventory). Neither ceiling contains the
+          # other, so on a PR near the limit one arm can refuse while the other
+          # reviews. Each refuses a larger input rather than truncating it.
+          max-diff-size: "1000000"
+          # Same model and temperature as the tool so a difference in the
+          # comments comes from the reviewer. Reasoning is off on both: the tool
+          # sends `reasoning: {enabled: false}`, and for OpenRouter Robin sends
+          # `reasoning: {effort: "none"}`, the provider's documented way to turn
+          # it off. Robin's "off" sends no reasoning configuration at all, which
+          # leaves the model's default on: that run spent the entire completion
+          # budget on reasoning and failed with finish_reason=length.
+          llm-temperature: "0"
+          reasoning-effort: "none"
+          # Read from the PR base branch, so this arm sees the same contract the
+          # tool injects. Single-shot mode has no tools and no snapshot, so the
+          # inline text alone cannot make Robin read a file.
+          review-instructions-file: AGENTS.md
+          review-instructions: |
+            AGENTS.md is the review contract: flag behavioural regressions,
+            missing test updates, and changes that need an ADR under Negative
+            Space. Do not report style preferences.
