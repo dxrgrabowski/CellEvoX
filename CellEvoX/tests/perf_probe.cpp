@@ -127,8 +127,8 @@ void mixCell(Checksum& checksum, const Cell& cell) {
   checksum.f64(cell.death_time);
   checksum.u64(cell.mutations.size());
   for (const auto& mutation : cell.mutations) {
-    checksum.u32(mutation.first);
-    checksum.u64(mutation.second);
+    checksum.u32(mutation.mutation_id);
+    checksum.u64(mutation.mutation_type);
   }
 }
 

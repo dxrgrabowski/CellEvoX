@@ -1,4 +1,4 @@
-# ADR-0010: Configurable gamma-distributed mutation effects
+# ADR-0012: Configurable gamma-distributed mutation effects
 Status: Accepted · 2026-11-11
 
 ## Context
