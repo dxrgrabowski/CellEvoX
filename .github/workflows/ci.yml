@@ -35,6 +35,11 @@ jobs:
       with:
         path: head
 
+    # The verdict logic is the only blocking performance signal, so its unit
+    # tests run before the expensive builds and fail fast.
+    - name: Test Instruction Gate Verdict Logic
+      run: python3 head/CellEvoX/tests/benchmarks/test_perf_ir_gate.py
+
     # The Ubuntu mirror occasionally throttles to a few kB/s, which used to
     # stretch this step from ~30 s to 15-38 min. Cache the .deb archives so a
     # slow mirror can only affect a cold cache.

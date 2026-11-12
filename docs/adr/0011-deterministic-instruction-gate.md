@@ -61,9 +61,11 @@ verdicts are advisory.
   ceiling was measured with a warm ccache; a cold cache rebuilds three targets
   for two trees and can approach it. The ccache key restores from `main`, so
   later runs start warm. A cold-cache timeout is an accepted, rerunnable
-  infrastructure failure, not a verdict and not a bug to investigate. The hard
-  10-minute ceiling is issue #70's constraint and this is its accepted
-  trade-off.
+  infrastructure failure, not a verdict and not a bug to investigate. Because the
+  timeout is job-level it skips both gates and the report upload, so a timed-out
+  run is never a pass: rerun it instead of reading the absence of a verdict as
+  success. The hard 10-minute ceiling is issue #70's constraint and this is its
+  accepted trade-off.
 
 ## Evidence
 - Same binary as base and head: `+0.00%` everywhere, and both repeats of each
