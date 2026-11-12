@@ -111,7 +111,9 @@ jobs:
       run: |
         # The instruction gate compares the same probe in both trees. The probe is
         # new in this PR, so inject it into the base checkout instead of requiring
-        # the base commit to already contain it (ADR-0011).
+        # the base commit to already contain it (ADR-0011). A red Build Base with
+        # a green Build Head is usually a changed probe interface, not a verdict;
+        # see the diagnosis paragraph in docs/runbook.md.
         # Overwrite any probe files the base checkout already carries: both
         # sides must measure the same probe source, so the head probe wins.
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
