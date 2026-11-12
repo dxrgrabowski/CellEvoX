@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -30,6 +31,7 @@
 #include <string_view>
 #include <vector>
 
+#include "io/PopulationSnapshotIO.hpp"
 #include "systems/CommonPopulationStep.hpp"
 #include "systems/SimulationEngine.hpp"
 
@@ -139,6 +141,53 @@ void mixCellTable(Checksum& checksum, const CellTable& table) {
   }
 }
 
+template <typename TreeTable>
+void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
+  std::vector<uint32_t> ids;
+  ids.reserve(tree.size());
+  for (auto it = tree.begin(); it != tree.end(); ++it) {
+    ids.push_back(it->first);
+  }
+  // Hash map iteration order is an implementation detail; sort for stability.
+  std::sort(ids.begin(), ids.end());
+  checksum.u64(ids.size());
+  for (uint32_t id : ids) {
+    typename TreeTable::const_accessor accessor;
+    if (tree.find(accessor, id)) {
+      checksum.u32(id);
+      checksum.u32(accessor->second.parent_id);
+      checksum.u32(accessor->second.child_sum);
+      checksum.f64(accessor->second.death_time);
+    }
+  }
+}
+
+// Snapshot files are part of the workload's output. The engine logs and
+// continues when a write fails, so without this the bytes on disk are the one
+// part of the result the checksum cannot see: a skipped or corrupted write
+// would lower the instruction count and could be reported as an improvement.
+void mixSnapshotFiles(Checksum& checksum,
+                      const std::string& output_path,
+                      const std::vector<std::pair<int, CellMap>>& report) {
+  checksum.u64(report.size());
+  for (const auto& entry : report) {
+    const std::string path = CellEvoX::io::populationSnapshotPath(output_path, entry.first);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      throw std::runtime_error("population snapshot missing: " + path);
+    }
+    const std::streamoff size = file.tellg();
+    file.seekg(0);
+    std::vector<char> bytes(static_cast<size_t>(size));
+    file.read(bytes.data(), size);
+    if (!file) {
+      throw std::runtime_error("population snapshot unreadable: " + path);
+    }
+    checksum.u64(bytes.size());
+    checksum.bytes(bytes.data(), bytes.size());
+  }
+}
+
 void mixRun(Checksum& checksum, const ecs::Run& run) {
   checksum.f64(run.tau);
   checksum.u64(run.total_deaths);
@@ -172,12 +221,12 @@ void mixRun(Checksum& checksum, const ecs::Run& run) {
   }
 
   checksum.u64(run.generational_popul_report.size());
-  for (const auto& generation : run.generational_popul_report) {
-    checksum.u64(static_cast<uint64_t>(generation.first));
-    checksum.u64(generation.second.size());
+  for (const auto& [generation, population] : run.generational_popul_report) {
+    checksum.u64(static_cast<uint64_t>(generation));
+    mixCellTable(checksum, population);
   }
 
-  checksum.u64(run.phylogenetic_tree.size());
+  mixPhylogeneticTree(checksum, run.phylogenetic_tree);
   checksum.u64(run.total_mutations);
   checksum.u64(static_cast<uint64_t>(run.driver_mutations));
   checksum.u64(static_cast<uint64_t>(run.positive_mutations));
@@ -196,6 +245,7 @@ uint64_t runStepsWorkload(const std::shared_ptr<SimulationConfig>& config, uint3
   auto run = engine.run(0);
   Checksum checksum;
   mixRun(checksum, run);
+  mixSnapshotFiles(checksum, config->output_path, run.generational_popul_report);
   return checksum.value();
 }
 
@@ -274,6 +324,20 @@ void printWorkloads() {
   std::exit(2);
 }
 
+// std::stoull/std::stoul throw on malformed or out-of-range input; route that
+// to the usage error instead of an uncaught exception.
+uint64_t parseUnsigned(std::string_view option, const std::string& text) {
+  try {
+    size_t consumed = 0;
+    const unsigned long long value = std::stoull(text, &consumed);
+    if (consumed == text.size()) {
+      return value;
+    }
+  } catch (const std::exception&) {
+  }
+  usageError(std::string(option) + " expects an unsigned integer, got '" + text + "'");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -289,11 +353,11 @@ int main(int argc, char** argv) {
     if (argument == "--workload" && has_value) {
       workload = argv[++i];
     } else if (argument == "--iterations" && has_value) {
-      iterations = std::stoull(argv[++i]);
+      iterations = parseUnsigned("--iterations", argv[++i]);
     } else if (argument == "--seed" && has_value) {
-      seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+      seed = static_cast<uint32_t>(parseUnsigned("--seed", argv[++i]));
     } else if (argument == "--threads" && has_value) {
-      threads = static_cast<uint32_t>(std::stoul(argv[++i]));
+      threads = static_cast<uint32_t>(parseUnsigned("--threads", argv[++i]));
     } else if (argument == "--stats-dir" && has_value) {
       stats_dir = argv[++i];
     } else {
@@ -315,18 +379,27 @@ int main(int argc, char** argv) {
   // the instruction count.
   tbb::global_control parallelism(tbb::global_control::max_allowed_parallelism, threads);
 
+  // Own a subdirectory instead of clearing the caller's directory: the gate
+  // passes a fresh path, but --stats-dir may point at a folder holding other
+  // files. Removing only the probe's own output keeps repeat runs reproducible.
+  const std::filesystem::path run_stats_dir = std::filesystem::path(stats_dir) / "perf_probe";
   std::error_code error;
-  std::filesystem::remove_all(stats_dir, error);
-  std::filesystem::create_directories(stats_dir, error);
+  std::filesystem::remove_all(run_stats_dir, error);
+  std::filesystem::create_directories(run_stats_dir, error);
   if (error) {
-    std::cerr << "error: cannot prepare stats dir '" << stats_dir << "': " << error.message()
-              << "\n";
+    std::cerr << "error: cannot prepare stats dir '" << run_stats_dir.string() << "': "
+              << error.message() << "\n";
     return 2;
   }
 
   Checksum checksum;
-  for (uint64_t i = 0; i < iterations; ++i) {
-    checksum.u64(runWorkloadIteration(workload, stats_dir, seed));
+  try {
+    for (uint64_t i = 0; i < iterations; ++i) {
+      checksum.u64(runWorkloadIteration(workload, run_stats_dir.string(), seed));
+    }
+  } catch (const std::exception& error) {
+    std::cerr << "error: " << error.what() << "\n";
+    return 2;
   }
 
   std::cout << "RESULT workload=" << workload << " iterations=" << iterations << " checksum=0x"

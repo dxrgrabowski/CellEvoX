@@ -26,10 +26,11 @@ Everything that is not a measured, deterministic, semantically identical
 comparison fails the gate. There is no skip path.
 
 A workload named in ``--accepted-delta WORKLOAD=RATIO`` may grow by that ratio
-instead of ``--threshold``, and its row is printed as ``OK (accepted +N%)``. This
-is for a cost the project has decided to pay in the current PR, not for widening
-the gate: it is scoped to one workload and visible in the CI invocation, so the
-reviewer sees it.
+instead of ``--threshold``, and its row is printed as ``OK (accepted +N%)``. A
+ratio at or below ``--threshold`` cannot tighten the workload and so has no
+effect. This is for a cost the project has decided to pay in the current PR, not
+for widening the gate: it is scoped to one workload and visible in the CI
+invocation, so the reviewer sees it.
 
 Instruction collection is limited to the probe's ``main`` with
 ``--collect-atstart=no --toggle-collect=main``. Anything the dynamic loader
@@ -196,7 +197,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
         entry["detail"] = f"base=0x{base['checksums'][0]} head=0x{head['checksums'][0]}"
         return entry
     delta = (head["ir"] - base["ir"]) / base["ir"]
-    allowed = args.accepted_delta.get(workload, args.threshold)
+    # An accepted delta can only relax a workload, never tighten it below the
+    # global threshold it is an exception to.
+    allowed = max(args.threshold, args.accepted_delta.get(workload, args.threshold))
     entry["delta"] = delta
     entry["allowed"] = allowed
     if delta > allowed:
@@ -239,6 +242,8 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
 def main() -> int:
     args = parse_args()
     workloads = [item.strip() for item in args.workloads.split(",") if item.strip()]
+    if not workloads:
+        raise SystemExit("No workloads selected: --workloads must name at least one workload.")
     unknown = [item for item in workloads if item not in WORKLOADS]
     if unknown:
         raise SystemExit(f"Unknown workload(s): {', '.join(unknown)}. Known: {', '.join(WORKLOADS)}")

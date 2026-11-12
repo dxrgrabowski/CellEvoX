@@ -12,7 +12,8 @@ hits both binaries instead of only the second one. Per benchmark, the round mean
 are collapsed into a median with a bootstrap interval across rounds.
 
 With --advisory-timing the wall-clock verdicts are reported but do not fail the
-job; only the peak-RSS ceiling blocks. The blocking performance signal is the
+job; only the peak-RSS ceiling blocks, and a benchmark that disappeared or lost
+its RSS measurement still fails. The blocking performance signal is the
 deterministic instruction-count gate in perf_ir_gate.py (ADR-0011).
 """
 
@@ -207,8 +208,12 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
     if advisory_timing:
         # Wall-clock timing is advisory: it is reported but only the peak-RSS
         # ceiling blocks. The blocking performance signal is the instruction
-        # count gate (tests/benchmarks/perf_ir_gate.py).
-        return summary["memory"].get("status") == "REGRESSED"
+        # count gate (tests/benchmarks/perf_ir_gate.py). A benchmark that
+        # disappeared, or an RSS measurement that is absent or unparsable,
+        # still blocks: lost coverage must not pass silently.
+        if summary["counts"]["missing"]:
+            return True
+        return summary["memory"].get("status") != "OK"
     counts = summary["counts"]
     if counts["regressed"] or counts["missing"]:
         return True
@@ -293,6 +298,10 @@ def run_group(args, group: str, samples: int) -> Tuple[Dict, Dict]:
     for memory in memory_summaries:
         if memory.get("status") == "REGRESSED":
             memory_status = "REGRESSED"
+        elif memory.get("status") != "OK" and memory_status == "OK":
+            # A group without a usable RSS reading is UNKNOWN; keep that visible
+            # instead of collapsing it into OK.
+            memory_status = "UNKNOWN"
         # ">=" so an unchanged RSS (delta exactly 0.0) still reports the real numbers.
         if memory.get("status") != "UNKNOWN" and abs(memory.get("delta", 0.0)) >= abs(memory_delta):
             memory_delta = memory["delta"]
@@ -331,8 +340,8 @@ def main() -> int:
     parser.add_argument("--fail-on-inconclusive", action="store_true")
     parser.add_argument("--advisory-timing", action="store_true",
                         help="Report wall-clock verdicts as advisory instead of blocking; only the "
-                             "peak-RSS ceiling can fail. The blocking performance signal is the "
-                             "instruction-count gate in perf_ir_gate.py")
+                             "peak-RSS ceiling and missing coverage can fail. The blocking "
+                             "performance signal is the instruction-count gate in perf_ir_gate.py")
     parser.add_argument("--benchmark-warmup-time", type=int, default=None)
     parser.add_argument("--benchmark-resamples", type=int, default=None)
     parser.add_argument("--benchmark-confidence-interval", type=float, default=None)

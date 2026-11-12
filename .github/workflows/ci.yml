@@ -103,6 +103,10 @@ jobs:
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
         grep -q 'perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt || \
           sed -i '/^add_executable(CellEvoX$/i include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' base_repo/CellEvoX/CMakeLists.txt
+        grep -q 'perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt || {
+          echo "error: could not inject tests/perf_probe.cmake into the base CMakeLists.txt"
+          exit 1
+        }
         cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
@@ -137,6 +141,9 @@ jobs:
           --report-json benchmark_reports/perf-ir-gate.json
 
     - name: Paired Performance Gate (advisory timing)
+      # Run even when the instruction gate failed: the advisory report is the
+      # evidence for a failure investigation, and it is uploaded below.
+      if: always()
       env:
         BENCHMARK_GROUPS: ${{ inputs.benchmark_groups || 'quick' }}
       run: |

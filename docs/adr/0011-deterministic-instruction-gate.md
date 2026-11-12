@@ -40,16 +40,21 @@ verdicts are advisory.
   the project deliberately accepts is named instead:
   `--accepted-delta realistic-2d-450=0.03` relaxes that single workload and
   prints `OK (accepted +3.0%)`, so the exception is written in the accepting
-  PR's `ci.yml` instead of silently widening the gate.
+  PR's `ci.yml` instead of silently widening the gate. The exception does not
+  expire: it stays in `ci.yml` after merge, so the accepting PR must also record
+  the follow-up that removes it, or later PRs inherit the headroom.
 - Callgrind is 20-50x slower than native, so the probe covers small populations
   and short runs; long scenarios stay in the advisory gate.
 - Adding a workload means editing `perf_probe.cpp` and `WORKLOADS` in
   `perf_ir_gate.py`; unknown names are rejected, not skipped.
-- The base side is the PR branch point, so the reported delta is everything
-  merged into `main` since the branch was created, not just this PR. Rebase
+- The base side is `github.event.pull_request.base.sha` (the base branch tip,
+  fetched at depth 1), not the merge base. On a branch that is behind `main`
+  the comparison therefore includes `main`'s newer commits as well, so rebase
   before investigating a failure on a long-lived branch.
 - The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, funded by running
-  the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`.
+  the advisory schedule at `3 rounds x 3 samples` instead of `7 x 5`. That
+  ceiling was measured with a warm ccache; a cold cache rebuilds three targets
+  for two trees and can approach it, which is the trade-off issue #70 accepts.
 
 ## Evidence
 - Same binary as base and head: `+0.00%` everywhere, and both repeats of each
@@ -85,6 +90,14 @@ verdicts are advisory.
 - Artifacts: the `benchmark-reports` artifact of `43086799157` contains
   `perf-ir-gate.json` and `perf-gate.json`, and the gate's JSON records the
   thresholds it ran with (`accepted_delta: {}` when no exception is given).
+- Checksum coverage was widened to the outputs the engine only logs on failure:
+  lineage node contents (`parent_id`, `child_sum`, `death_time`) and the bytes of
+  every population snapshot file. Two `realistic-2d-450` runs into separate stats
+  directories returned the identical checksum `0x3779bbec57a40b7b`, so hashing
+  file bytes did not reintroduce nondeterminism. A missing snapshot file throws
+  and the probe exits 2, which the gate reports as `MISSING` rather than a
+  smaller instruction count. Malformed numeric arguments now exit 2 instead of
+  terminating on an uncaught exception.
 - Full gate: 56 s locally for six workloads x two sides x two runs; in CI
   (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`.
 - Code: `CellEvoX/tests/perf_probe.{cpp,cmake}`,
