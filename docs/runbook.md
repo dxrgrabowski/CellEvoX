@@ -264,12 +264,13 @@ python3 CellEvoX/tests/benchmarks/perf_ir_gate.py \
 recorded; do not raise `--threshold`. Rationale: ADR-0011.
 
 The **paired wall-clock gate** (`ci_benchmark_gate.py --advisory-timing`) is
-advisory: timings are reported, the 10% peak-RSS ceiling still blocks. It runs 3
+advisory: timings are reported, the 10% peak-RSS ceiling still blocks, and so
+does a group that loses its RSS reading (lost coverage is not a pass). It runs 3
 interleaved rounds x 3 samples, flips base/head order every round, and judges a
 benchmark on the median of the round means, so a single noisy round widens the
-interval instead of moving the result. Advisory mode never retries, so it always
-uses `--initial-samples` and a local `--retry-samples` run samples more than CI
-does. Rationale: ADR-0009.
+interval instead of moving the result. Advisory mode never retries, so CI always
+uses `--initial-samples`; a local run that passes `--retry-samples` will sample
+more than CI does. Rationale: ADR-0009.
 
 The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time
 out; a timeout is job-level, so it skips both gates and the report upload. Rerun

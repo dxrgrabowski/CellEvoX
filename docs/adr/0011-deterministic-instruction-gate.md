@@ -36,7 +36,8 @@ verdicts are advisory.
   `continue-on-error`.
 - The wall-clock gate still runs, with `--advisory-timing`: its verdicts are
   reported but no longer fail the job. The 10% peak-RSS ceiling from ADR-0008
-  still blocks.
+  still blocks, and so does a benchmark that disappears or a group whose RSS
+  reading is missing: lost coverage is not a pass.
 
 ## Consequences
 - A regression now has a reproducible signature; no retry decides the job.

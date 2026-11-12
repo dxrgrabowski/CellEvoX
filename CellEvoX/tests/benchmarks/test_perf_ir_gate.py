@@ -115,6 +115,13 @@ class MeasureSideTest(unittest.TestCase):
             result = perf_ir_gate.measure_side("base", Path("probe"), "w", args())
         self.assertEqual("exit 2; timeout after 1s", result["error"])
 
+    def test_parse_args_returns_accepted_deltas(self):
+        argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h",
+                "--accepted-delta", "realistic-2d-450=0.035"]
+        with mock.patch.object(sys, "argv", argv):
+            args = perf_ir_gate.parse_args()
+        self.assertEqual({"realistic-2d-450": 0.035}, args.accepted_delta)
+
     def test_parse_args_rejects_single_run(self):
         argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h", "--runs", "1"]
         # argparse also exits for a bad argument, so assert on the message to

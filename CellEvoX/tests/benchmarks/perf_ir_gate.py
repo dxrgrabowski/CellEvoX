@@ -192,6 +192,8 @@ def measure_side(side: str, binary: Path, workload: str, args: argparse.Namespac
     return {
         "ir": min(counts),
         "runs": counts,
+        # Noise can only add instructions, so the minimum is the noise-free
+        # estimate and (max - min) / min measures the added noise alone.
         "spread": (max(counts) - min(counts)) / min(counts),
         "checksums": sorted(checksums),
     }
@@ -232,6 +234,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
     if delta > allowed:
         entry["status"] = "REGRESSED"
     elif delta < -args.threshold:
+        # An improvement is judged against the global --threshold, not the
+        # workload's accepted delta: an accepted overhead is headroom for a
+        # regression, not a reason to call a small win flat.
         entry["status"] = "IMPROVED"
     else:
         entry["status"] = "OK"

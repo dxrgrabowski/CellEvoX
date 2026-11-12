@@ -175,7 +175,9 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // assumed more than the report promises. The generation index is not hashed
 // separately: the report is built in a fixed order, which is part of the
 // contract this checksum relies on, and a reordering still moves the bytes
-// inside the hash.
+// inside the hash. A snapshot ABI version bump changes these bytes on purpose,
+// so it reports SEMANTICS CHANGED until the probe and ADR-0011's Evidence are
+// updated together.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
