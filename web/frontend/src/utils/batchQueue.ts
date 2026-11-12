@@ -106,7 +106,7 @@ export function describeBatchConfig(config: Record<string, unknown>): BatchConfi
       id: mutation.id,
       isDriver: mutation.is_driver,
       effect: isGamma
-        ? `μ=${formatEffect(mutation.effect_mean ?? 0)} (γ)`
+        ? `|μ|=${Number(Math.abs(mutation.effect_mean ?? 0).toFixed(4))} (γ)`
         : formatEffect(mutation.effect),
       probability: formatProbability(mutation.probability),
       effectDirection: isGamma

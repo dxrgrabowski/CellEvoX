@@ -27,8 +27,9 @@ whole distribution and a daughter's fitness stays positive; `effect_mean` and
 `effect_std` must be positive. Both directions are capped the same way.
 
 The realized per-mutation effect is persisted in `Cell::mutations` and in every
-output, so classification (positive/negative/neutral) reflects the sampled value
-rather than the configured direction.
+exported mutation payload — driver mutations only, unless
+`full_mutation_payload` is enabled — so classification (positive/negative/neutral)
+reflects the sampled value rather than the configured direction.
 
 ### RNG stream
 Stream ids `0/1/2` stay untouched. Stream `3` is the mutation-effect stream, and

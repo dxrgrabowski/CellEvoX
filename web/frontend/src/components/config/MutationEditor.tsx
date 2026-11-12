@@ -88,7 +88,14 @@ export default function MutationEditor({ mutations }: Props) {
                       style={{ cursor: 'pointer', border: 'none' }}
                       onClick={() => update(idx, {
                         effect_mode: mode.value,
-                        ...(mode.value === 'gamma' ? GAMMA_DEFAULTS : {}),
+                        ...(mode.value === 'gamma'
+                          ? {
+                              effect_mean: mut.effect_mean ?? GAMMA_DEFAULTS.effect_mean,
+                              effect_std: mut.effect_std ?? GAMMA_DEFAULTS.effect_std,
+                              effect_limit: mut.effect_limit ?? GAMMA_DEFAULTS.effect_limit,
+                              effect_direction: mut.effect_direction ?? GAMMA_DEFAULTS.effect_direction,
+                            }
+                          : { effect: mut.effect ?? 0 }),
                       })}
                     >
                       {mode.label}
@@ -215,7 +222,7 @@ export default function MutationEditor({ mutations }: Props) {
                       <InlineNumberValue
                         ariaLabel={`Mutation ${mut.id} effect limit`}
                         value={effectLimit}
-                        min={0.0001}
+                        min={Math.max(0.0001, effectMean)}
                         max={0.9999}
                         decimals={4}
                         color="var(--accent)"

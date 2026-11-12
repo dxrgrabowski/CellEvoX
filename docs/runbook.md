@@ -137,9 +137,11 @@ fitness is `fitness * (1 + signed_effect)`. `effect_mean` and `effect_std` must 
 positive, and `effect_limit` must lie in `(0, 1)` and be at least `effect_mean`;
 otherwise the run is rejected at startup. Because the tail is clamped, the
 realized mean is at or below `effect_mean` — larger `effect_std`/`effect_mean`
-ratios make the downward bias stronger. The realized effect of every mutation is
-written to the `Mutations` column and the snapshot payload, so downstream
-classification uses the sampled sign, not `effect_direction`.
+ratios make the downward bias stronger. The realized effect of every exported
+mutation is written to the `Mutations` column and the snapshot payload, so
+downstream classification uses the sampled sign, not `effect_direction`. With
+`full_mutation_payload: false` (the default) those outputs contain driver
+mutations only; passenger effects stay on the cells but are not exported.
 
 Run it with exports only:
 
