@@ -17,6 +17,7 @@ than as a test failure. pytest collection is best-effort only.
 """
 
 import argparse
+import ast
 import io
 import os
 import subprocess
@@ -86,6 +87,14 @@ class EvaluateTest(unittest.TestCase):
     def test_accepted_delta_too_small_still_blocks(self):
         entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"w": 0.025}))
         self.assertEqual("REGRESSED", entry["status"])
+
+    def test_accepted_delta_below_the_threshold_cannot_tighten_a_workload(self):
+        # parse_accepted_deltas rejects this state, but a future parser change
+        # must not lower a workload's ceiling below the global threshold: the
+        # max() in evaluate() keeps --threshold authoritative.
+        entry = perf_ir_gate.evaluate("w", side(100), side(101), args(accepted_delta={"w": 0.01}))
+        self.assertEqual(0.02, entry["allowed"])
+        self.assertEqual("OK", entry["status"])
 
     def test_no_marker_without_a_named_exception(self):
         self.assertNotIn("accepted", perf_ir_gate.evaluate("w", side(100), side(101), args()))
@@ -312,6 +321,28 @@ class AggregateMemoryTest(unittest.TestCase):
         self.assertEqual(1000, result["current_max_rss_kb"])
 
 
+class StdlibOnlyTest(unittest.TestCase):
+    def test_gate_modules_import_only_the_standard_library(self):
+        # CI imports both gate modules before it installs dependencies, so a
+        # third-party import fails there as an ImportError rather than as a
+        # readable test failure. Sibling modules in this directory are part of
+        # the gate itself; everything else must be stdlib.
+        for module in (ci_benchmark_gate, perf_ir_gate):
+            module_path = Path(module.__file__)
+            tree = ast.parse(module_path.read_text())
+            imported = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    imported.add(node.module.split(".")[0])
+            third_party = {name for name in imported
+                           if name not in sys.stdlib_module_names
+                           and not (module_path.parent / f"{name}.py").exists()}
+            self.assertEqual(set(), third_party,
+                             f"{module.__name__} imports non-stdlib modules: {sorted(third_party)}")
+
+
 class HasFailureTest(unittest.TestCase):
     """In advisory mode only lost coverage and peak RSS may block."""
 
@@ -350,14 +381,22 @@ class HasFailureTest(unittest.TestCase):
         self.assertTrue(ci_benchmark_gate.has_failure({}, summary, False, 0.02,
                                                       advisory_timing=True))
 
+    def test_advisory_mode_blocks_on_an_empty_group_with_readable_rss(self):
+        # A filter that matched nothing leaves results empty while both binaries
+        # still ran and their RSS parsed; with every count at zero that must not
+        # pass as a clean advisory run.
+        self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(), False, 0.02,
+                                                      advisory_timing=True))
+
     def test_non_advisory_mode_blocks_on_a_counted_regression(self):
         self.assertTrue(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02))
 
     def test_advisory_mode_does_not_block_on_a_counted_regression(self):
         # --advisory-timing demotes the same counted regression that blocks
         # the default mode; only lost coverage and RSS still block.
-        self.assertFalse(ci_benchmark_gate.has_failure({}, self.summary(regressed=1), False, 0.02,
-                                                       advisory_timing=True))
+        results = {"bench": {"status": "REGRESSED"}}
+        self.assertFalse(ci_benchmark_gate.has_failure(results, self.summary(regressed=1), False,
+                                                       0.02, advisory_timing=True))
 
 
 class MainTest(unittest.TestCase):

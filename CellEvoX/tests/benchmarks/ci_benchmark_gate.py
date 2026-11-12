@@ -214,6 +214,12 @@ def has_failure(results: Dict[str, Dict], summary: Dict, fail_on_inconclusive: b
         # or unparsable, still blocks: lost coverage must not pass silently.
         if summary["counts"]["missing"]:
             return True
+        # A group with no benchmark result at all is lost coverage even when both
+        # binaries ran and their RSS parsed: nothing was compared, so nothing was
+        # measured. counts stays all-zero in that case, so this guard is what
+        # stops an empty run from passing as OK.
+        if not results:
+            return True
         # A missing "memory" key is fail-closed as well: None != "OK". A group
         # that ran but whose RSS could not be read is treated the same as lost
         # coverage: rerun the job rather than pass it.

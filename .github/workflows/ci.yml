@@ -115,7 +115,13 @@ jobs:
         # a green Build Head is usually a changed probe interface, not a verdict;
         # see the diagnosis paragraph in docs/runbook.md.
         # Overwrite any probe files the base checkout already carries: both
-        # sides must measure the same probe source, so the head probe wins.
+        # sides must measure the same probe source, so the head probe wins. The
+        # copy covers the target definition (perf_probe.cmake) as well as the
+        # probe, so both sides build the same target from the same sources and
+        # options. When the base tree already includes that file the guard below
+        # keeps its include line, and the copied file is what it includes; a base
+        # tree that declared the target inline instead fails Build Base with a
+        # duplicate target rather than silently measuring a different probe.
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
         echo "Base probe source: head/CellEvoX/tests/perf_probe.cpp (injected; both sides measure the same instrument)"
         # Append after the existing content instead of anchoring on a target

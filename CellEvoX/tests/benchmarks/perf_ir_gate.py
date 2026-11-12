@@ -264,7 +264,8 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
     # Belt and braces: parse_accepted_deltas already rejects a ratio at or below
     # the threshold, so the max cannot fire today. It is kept so that a future
     # parser change cannot silently tighten a workload below the global
-    # threshold it is meant to be an exception to.
+    # threshold it is meant to be an exception to; the test suite constructs
+    # that state directly, so the guard is exercised rather than assumed.
     allowed = max(args.threshold, args.accepted_delta.get(workload, args.threshold))
     # Whether the named exception is what keeps this delta from blocking:
     # above the global threshold but inside the workload's accepted ceiling.

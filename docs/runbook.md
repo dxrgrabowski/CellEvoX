@@ -291,9 +291,12 @@ python3 CellEvoX/tests/benchmarks/ci_benchmark_gate.py \
   --out-dir benchmark_reports --report-json benchmark_reports/perf-gate.json
 ```
 
-Use the same flags locally, or the sample count will not match CI. Advisory mode
-never retries: `--retry-samples` has no effect when `--advisory-timing` is set, so
-the `--initial-samples` count is final both locally and in CI. Rationale:
+Use the same flags locally, or the sample count will not match CI. `--retry-samples`
+defaults to 12 and only applies to a non-advisory run whose timings come back
+`NOISY CI` or `UNSTABLE CI`. Advisory mode never retries and ignores the flag even
+when it is set: a retry re-runs the whole group (every round, both binaries),
+which does not fit the 10-minute ceiling for a signal that cannot block. A wide
+advisory interval is therefore answered by rerunning the job. Rationale:
 ADR-0011.
 
 The 10-minute ceiling was measured with a warm ccache. A cold-cache run can time

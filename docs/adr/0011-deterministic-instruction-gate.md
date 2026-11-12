@@ -74,7 +74,12 @@ verdicts are advisory.
   fetched at depth 1), not the merge base. On a branch that is behind `main`
   the comparison therefore includes `main`'s newer commits as well, so rebase
   before investigating a failure on a long-lived branch.
-- The job keeps `timeout-minutes: 10`: the gate costs 45-60 s, and the advisory
+- The probe pins TBB through `tbb::global_control` at `--threads 1` before any
+  task starts, and CI sets no TBB environment variable. Both sides run in one
+  job, so a host-level default would move them equally, but a variable that
+  changes TBB's default parallelism is the first thing to rule out if the `Ir`
+  floor moves between hosts.
+- The job reduces `timeout-minutes` from 90 to 10: the gate costs 45-60 s, and the advisory
   schedule runs at `3 rounds x 3 samples` instead of `7 x 5`. That reduction is
   necessary but not sufficient: the 10-minute ceiling also depends on a warm
   ccache. Advisory mode never retries, so `3 x 3` is also the final sample count:

@@ -175,11 +175,13 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // continues when a write fails, so without this the bytes on disk are the one
 // part of the result the checksum cannot see: a skipped or corrupted write
 // would lower the instruction count and could be reported as an improvement.
-// The engine writes one snapshot per `generational_popul_report` entry, so a
-// missing file means the run itself is broken rather than that the probe
-// assumed more than the report promises. Files the report does not reference
-// are out of scope: the report is the source of truth for which snapshots this
-// workload produced. The format is packed and value-initialized (see
+// The report entry is appended by the same code path that writes the file, and
+// it is appended even when the write failed, so a skipped write is still in the
+// report and is caught below as a missing file. Files the report does not
+// reference were not produced by this workload's snapshot path and are never
+// read back, so they cannot change the instruction count this checksum
+// witnesses; the report is the source of truth for which snapshots the workload
+// produced. The format is packed and value-initialized (see
 // PopulationSnapshotIO.hpp), so hashing raw bytes compares content rather than
 // padding. The generation index is not hashed
 // separately: the report is built in a fixed order, which is part of the
