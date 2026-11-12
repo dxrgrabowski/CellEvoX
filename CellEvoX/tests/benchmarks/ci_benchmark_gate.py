@@ -13,7 +13,7 @@ are collapsed into a median with a bootstrap interval across rounds.
 
 With --advisory-timing the wall-clock verdicts are reported but do not fail the
 job; only the peak-RSS ceiling blocks. The blocking performance signal is the
-deterministic instruction-count gate in perf_ir_gate.py (ADR-0010).
+deterministic instruction-count gate in perf_ir_gate.py (ADR-0011).
 """
 
 import argparse

@@ -1,4 +1,4 @@
-# Deterministic instruction-count probe (ADR-0010). See tests/perf_probe.cpp.
+# Deterministic instruction-count probe (ADR-0011). See tests/perf_probe.cpp.
 #
 # There is no library target: CORE_SOURCES are compiled into each executable.
 # Keep the include/link setup in sync with CellEvoXTests.

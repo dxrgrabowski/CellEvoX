@@ -1,5 +1,5 @@
 # ADR-0009: Interleaved benchmark rounds with median aggregation
-Status: Superseded by ADR-0010 · 2026-11-12 (was Proposed 2026-10-26)
+Status: Superseded by ADR-0011 · 2026-11-12 (was Proposed 2026-10-26)
 
 ## Context
 ADR-0008 measures base and head as two contiguous blocks on the same host. On a

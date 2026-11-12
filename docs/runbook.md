@@ -251,3 +251,28 @@ round, retry at 10 samples per round) and judges a benchmark on the median of
 the round means, so a single noisy round widens the interval instead of moving
 the result. Reproduce a failure locally with the same flags; `--rounds 1` runs
 the older blocked schedule. Rationale: ADR-0009.
+
+`.github/workflows/ai-review.yml` runs the advisory AI review
+(`tools/ai_review.py`, DeepSeek via OpenRouter) on non-draft pull
+requests from this repository and rewrites one sticky PR comment on every push.
+It needs the repository secret `OPENROUTER_API_KEY`; fork PRs are skipped
+because secrets are not exposed to them. The job fails only when the review
+cannot run (missing key, API error, unparseable response) — findings never block
+the merge. Run it locally against the same diff:
+
+```bash
+OPENROUTER_API_KEY=... python3 tools/ai_review.py \
+  --range origin/main...HEAD --reasoning off
+```
+
+`--dry-run` builds the payload and writes it under
+`/tmp/aireview/out/<slug>.payload.txt` without a model call, which is the way to
+check what would leave the repository (`--out` moves that directory). The
+tool's tests run in CI (`review-tools` job) and never touch the network.
+
+`.github/workflows/robin.yml` runs the third-party Robin action on the same
+events, the same model and the same `OPENROUTER_API_KEY`, as an advisory
+comparison arm: it posts its own comment next to ours and is not a merge gate.
+It is pinned to the `v2.13.3` commit, runs single-shot (`agent-mode: "off"`) and
+must never submit `REQUEST_CHANGES` (`request-changes: "false"`). If Robin is
+retired, delete that file; nothing else depends on it. Rationale: ADR-0010.

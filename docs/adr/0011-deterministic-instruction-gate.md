@@ -1,4 +1,4 @@
-# ADR-0010: Deterministic instruction-count gate
+# ADR-0011: Deterministic instruction-count gate
 Status: Accepted · 2026-11-12
 
 ## Context

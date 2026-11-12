@@ -6,7 +6,7 @@ mark the ADR `Superseded by ADR-XXXX` instead of deleting it.
 
 Every ADR needs its `Evidence` section filled in before it moves from `Proposed`
 to `Accepted`. ADR-0003 was accepted on 2026-11-04; ADR-0004 on 2026-11-11
-(#52); ADR-0010 on 2026-11-12. Acceptance dates are recorded in each ADR.
+(#52); ADR-0011 on 2026-11-12. Acceptance dates are recorded in each ADR.
 
 | ADR | Status | Decision |
 | --- | --- | --- |
@@ -17,9 +17,10 @@ to `Accepted`. ADR-0003 was accepted on 2026-11-04; ADR-0004 on 2026-11-11
 | [0005](0005-postprocessing-subprocess.md) | Accepted | Post-processing via Python subprocesses |
 | [0006](0006-web-runner-model.md) | Accepted | Single global runner with isolated batch outputs |
 | [0007](0007-build-portability.md) | Accepted | `-march=native` default and Python-embed build |
-| [0008](0008-performance-gate.md) | Superseded by ADR-0010 | Paired benchmark gate and phase profiling |
-| [0009](0009-interleaved-benchmark-rounds.md) | Superseded by ADR-0010 | Interleaved base/head rounds, median of round means |
-| [0010](0010-deterministic-instruction-gate.md) | Accepted | Instruction count blocks; wall-clock is advisory |
+| [0008](0008-performance-gate.md) | Superseded by ADR-0011 | Paired benchmark gate and phase profiling |
+| [0009](0009-interleaved-benchmark-rounds.md) | Superseded by ADR-0011 | Interleaved base/head rounds, median of round means |
+| [0010](0010-advisory-ai-diff-review.md) | Proposed | Advisory AI diff review over the PR diff through a hosted model, plus a pinned Robin comparison arm |
+| [0011](0011-deterministic-instruction-gate.md) | Accepted | Instruction count blocks; wall-clock is advisory |
 
 ## Template
 

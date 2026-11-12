@@ -1,5 +1,5 @@
 # ADR-0008: Paired benchmark gate and phase profiling
-Status: Superseded by ADR-0010 · 2026-11-12 (was Accepted 2026-10-26)
+Status: Superseded by ADR-0011 · 2026-11-12 (was Accepted 2026-10-26)
 
 ## Context
 Performance is dominated by memory layout and parallel phases. Absolute numbers

@@ -99,7 +99,7 @@ jobs:
       run: |
         # The instruction gate compares the same probe in both trees. The probe is
         # new in this PR, so inject it into the base checkout instead of requiring
-        # the base commit to already contain it (ADR-0010).
+        # the base commit to already contain it (ADR-0011).
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
         grep -q 'perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt || \
           sed -i '/^add_executable(CellEvoX$/i include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' base_repo/CellEvoX/CMakeLists.txt
@@ -123,7 +123,7 @@ jobs:
         path: ${{ runner.temp }}/ctest.xml
         if-no-files-found: ignore
 
-    # Blocking performance signal (ADR-0010). Retired instruction counts are
+    # Blocking performance signal (ADR-0011). Retired instruction counts are
     # reproducible run-to-run, unlike wall-clock timings on shared runners, so a
     # regression here is a real change in work performed. To admit a cost this
     # PR deliberately accepts, add --accepted-delta WORKLOAD=RATIO here (one
@@ -300,3 +300,24 @@ jobs:
 
     - name: Run Tests
       run: python3 -m pytest -q tests
+
+  review-tools:
+    name: Review tooling tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install pytest
+      run: python3 -m pip install --quiet pytest
+
+    # The review tool is stdlib-only; the tests stub the model response, so
+    # this job never needs OPENROUTER_API_KEY and never touches the network.
+    - name: Run Tests
+      run: python3 -m pytest -q tools/test_ai_review.py

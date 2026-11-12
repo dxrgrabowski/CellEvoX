@@ -1,4 +1,4 @@
-// Deterministic instruction-count probe (ADR-0010).
+// Deterministic instruction-count probe (ADR-0011).
 //
 // Runs one fixed-iteration simulation workload and prints a single machine
 // readable line:
