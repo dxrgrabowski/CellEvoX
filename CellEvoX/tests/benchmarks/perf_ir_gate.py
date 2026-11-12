@@ -146,7 +146,10 @@ def measure(side: str, binary: Path, workload: str, run_index: int, args: argpar
         return {"error": f"cannot execute: {exc}"}
 
     if completed.returncode != 0:
-        tail = (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]
+        # Cap each line: the report is an uploaded artifact, and a compiler or
+        # loader can emit a single very long line.
+        tail = [line[:200] for line in
+                (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]]
         detail = " / ".join(tail) if tail else "(no output)"
         return {"error": f"exit {completed.returncode}: {detail}"}
 
@@ -226,7 +229,9 @@ def evaluate(workload: str, base: Dict, head: Dict, args: argparse.Namespace) ->
     else:
         entry["status"] = "OK"
         if workload in args.accepted_delta and delta > args.threshold:
-            entry["accepted"] = allowed
+            # Keep the measured delta separate from the allowed ceiling so the
+            # report shows what was actually paid, not just the exception.
+            entry["accepted"] = {"delta": delta, "allowed": allowed}
     return entry
 
 
@@ -247,7 +252,9 @@ def print_report(results: List[Dict], args: argparse.Namespace) -> None:
             continue
         status_text = status
         if entry.get("accepted") is not None:
-            status_text = f"OK (accepted +{entry['accepted']:.1%})"
+            accepted = entry["accepted"]
+            status_text = (f"OK (accepted {accepted['delta']:+.1%} <= "
+                           f"{accepted['allowed']:+.1%})")
         print(f"  {entry['workload']:<26} {entry['base']['ir']:>15,} {entry['head']['ir']:>15,} "
               f"{entry['delta']:+9.2%}  {status_text}")
     print("-" * 82)

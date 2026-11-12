@@ -298,6 +298,7 @@ uint64_t runWorkloadIteration(std::string_view workload,
   if (workload == "stochastic-step-mutations") {
     std::vector<MutationType> mutations;
     for (uint8_t i = 0; i < 8; ++i) {
+      // Fields in order: effect, probability, type_id, is_driver.
       mutations.push_back({0.05f * static_cast<float>(i + 1), 0.05f, i, (i % 2 == 0)});
     }
     return runStepsWorkload(makeConfig(stats_dir, 100000, 10000000, seed, mutations), 1);

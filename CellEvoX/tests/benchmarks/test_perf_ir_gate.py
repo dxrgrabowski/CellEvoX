@@ -10,7 +10,15 @@ Run directly (no pytest dependency required):
 """
 
 import argparse
+import os
+import sys
 import unittest
+from unittest import mock
+from pathlib import Path
+
+# Keep the test runnable from any working directory or runner, including pytest
+# collecting this file from the repository root.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import perf_ir_gate
 
@@ -19,9 +27,9 @@ def side(ir, checksum="aa", spread=0.0):
     return {"ir": ir, "runs": [ir, ir], "spread": spread, "checksums": [checksum]}
 
 
-def args(threshold=0.02, accepted_delta=None, max_spread=0.02):
+def args(threshold=0.02, accepted_delta=None, max_spread=0.02, runs=2):
     return argparse.Namespace(threshold=threshold, accepted_delta=accepted_delta or {},
-                              max_spread=max_spread)
+                              max_spread=max_spread, runs=runs)
 
 
 class EvaluateTest(unittest.TestCase):
@@ -61,7 +69,8 @@ class EvaluateTest(unittest.TestCase):
     def test_accepted_delta_relaxes_one_workload(self):
         entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"w": 0.035}))
         self.assertEqual("OK", entry["status"])
-        self.assertEqual(0.035, entry["accepted"])
+        self.assertAlmostEqual(0.03, entry["accepted"]["delta"])
+        self.assertEqual(0.035, entry["accepted"]["allowed"])
 
     def test_accepted_delta_too_small_still_blocks(self):
         entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"w": 0.025}))
@@ -73,6 +82,36 @@ class EvaluateTest(unittest.TestCase):
     def test_exception_for_another_workload_does_not_apply(self):
         entry = perf_ir_gate.evaluate("w", side(100), side(103), args(accepted_delta={"other": 0.05}))
         self.assertEqual("REGRESSED", entry["status"])
+
+
+class MeasureSideTest(unittest.TestCase):
+    def test_picks_minimum_and_reports_spread(self):
+        runs = [{"ir": 102, "checksum": "aa"}, {"ir": 100, "checksum": "aa"}]
+        with mock.patch.object(perf_ir_gate, "measure", side_effect=runs):
+            result = perf_ir_gate.measure_side("base", Path("probe"), "w", args())
+        self.assertEqual(100, result["ir"])
+        self.assertEqual([102, 100], result["runs"])
+        self.assertAlmostEqual(0.02, result["spread"])
+
+    def test_joins_run_errors(self):
+        runs = [{"error": "exit 2"}, {"error": "timeout after 1s"}]
+        with mock.patch.object(perf_ir_gate, "measure", side_effect=runs):
+            result = perf_ir_gate.measure_side("base", Path("probe"), "w", args())
+        self.assertEqual("exit 2; timeout after 1s", result["error"])
+
+    def test_parse_args_rejects_single_run(self):
+        argv = ["perf_ir_gate.py", "--base-binary", "b", "--head-binary", "h", "--runs", "1"]
+        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit):
+            perf_ir_gate.parse_args()
+
+
+class CallgrindParsingTest(unittest.TestCase):
+    def test_summary_line_is_parsed(self):
+        self.assertEqual(["123456"],
+                         perf_ir_gate.SUMMARY_RE.findall("events: Ir\nsummary: 123456\n"))
+
+    def test_summary_must_start_the_line(self):
+        self.assertEqual([], perf_ir_gate.SUMMARY_RE.findall("totals: summary: 9\n"))
 
 
 class ParseAcceptedDeltasTest(unittest.TestCase):

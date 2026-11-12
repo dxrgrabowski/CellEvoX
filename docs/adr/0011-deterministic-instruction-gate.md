@@ -65,7 +65,9 @@ verdicts are advisory.
   timeout is job-level it skips both gates and the report upload, so a timed-out
   run is never a pass: rerun it instead of reading the absence of a verdict as
   success. The hard 10-minute ceiling is issue #70's constraint and this is its
-  accepted trade-off.
+  accepted trade-off. If cold-cache timeouts recur in practice, the follow-up is
+  to split the advisory wall-clock gate into its own job so the blocking
+  instruction gate is not starved by the timing schedule.
 
 ## Evidence
 - Same binary as base and head: `+0.00%` everywhere, and both repeats of each
