@@ -44,6 +44,7 @@ estimate of the deterministic workload cost.
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -117,7 +118,9 @@ def parse_accepted_deltas(entries: List[str], parser: argparse.ArgumentParser,
 
 def measure(side: str, binary: Path, workload: str, run_index: int, args: argparse.Namespace) -> Dict:
     """Run one Callgrind measurement and return {ir, checksum} or {error}."""
-    run_dir = Path(args.work_dir) / f"{workload}-{side}-{run_index}"
+    # Include the PID so two concurrent gate invocations on one host do not
+    # delete and recreate each other's measurement directory.
+    run_dir = Path(args.work_dir) / f"{workload}-{side}-{run_index}-{os.getpid()}"
     out_file = run_dir / "callgrind.out"
     # Start every measurement from a nonexistent stats directory: the probe's
     # cleanup cost depends on how much the previous run left behind, and that

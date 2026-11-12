@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -166,6 +167,9 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // continues when a write fails, so without this the bytes on disk are the one
 // part of the result the checksum cannot see: a skipped or corrupted write
 // would lower the instruction count and could be reported as an improvement.
+// The engine writes one snapshot per `generational_popul_report` entry, so a
+// missing file means the run itself is broken rather than that the probe
+// assumed more than the report promises.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
@@ -342,6 +346,14 @@ uint64_t parseUnsigned(std::string_view option, const std::string& text) {
   usageError(std::string(option) + " expects an unsigned integer, got '" + text + "'");
 }
 
+uint32_t parseUint32(std::string_view option, const std::string& text) {
+  const uint64_t value = parseUnsigned(option, text);
+  if (value > std::numeric_limits<uint32_t>::max()) {
+    usageError(std::string(option) + " is out of range for a 32-bit value, got '" + text + "'");
+  }
+  return static_cast<uint32_t>(value);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -359,9 +371,9 @@ int main(int argc, char** argv) {
     } else if (argument == "--iterations" && has_value) {
       iterations = parseUnsigned("--iterations", argv[++i]);
     } else if (argument == "--seed" && has_value) {
-      seed = static_cast<uint32_t>(parseUnsigned("--seed", argv[++i]));
+      seed = parseUint32("--seed", argv[++i]);
     } else if (argument == "--threads" && has_value) {
-      threads = static_cast<uint32_t>(parseUnsigned("--threads", argv[++i]));
+      threads = parseUint32("--threads", argv[++i]);
     } else if (argument == "--stats-dir" && has_value) {
       stats_dir = argv[++i];
     } else {

@@ -102,12 +102,10 @@ jobs:
         # new in this PR, so inject it into the base checkout instead of requiring
         # the base commit to already contain it (ADR-0011).
         cp head/CellEvoX/tests/perf_probe.cpp head/CellEvoX/tests/perf_probe.cmake base_repo/CellEvoX/tests/
-        grep -q 'perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt || \
-          sed -i '/^add_executable(CellEvoX$/i include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' base_repo/CellEvoX/CMakeLists.txt
-        grep -q 'perf_probe.cmake' base_repo/CellEvoX/CMakeLists.txt || {
-          echo "error: could not inject tests/perf_probe.cmake into the base CMakeLists.txt"
-          exit 1
-        }
+        # Append after the existing content instead of anchoring on a target
+        # line: the probe needs CORE_SOURCES defined, and nothing in the include
+        # depends on where the other targets are declared.
+        echo 'include(${CMAKE_CURRENT_SOURCE_DIR}/tests/perf_probe.cmake)' >> base_repo/CellEvoX/CMakeLists.txt
         cmake -B base_build -S base_repo/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DSKIP_GUI=ON
         cmake --build base_build --target CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
