@@ -217,7 +217,8 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
                   std::move(generational_popul_report),
                   total_deaths,
                   tau,
-                  termination_reason);
+                  termination_reason,
+                  config->mutation_effect_neutral_tolerance);
 }
 
 void SimulationEngine3DCapacity::step() {

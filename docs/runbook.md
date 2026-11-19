@@ -140,8 +140,18 @@ realized mean is at or below `effect_mean` — larger `effect_std`/`effect_mean`
 ratios make the downward bias stronger. The realized effect of every exported
 mutation is written to the `Mutations` column and the snapshot payload, so
 downstream classification uses the sampled sign, not `effect_direction`. With
-`full_mutation_payload: false` (the default) those outputs contain driver
-mutations only; passenger effects stay on the cells but are not exported.
+`full_mutation_payload: false` those outputs contain driver mutations only;
+passenger effects stay on the cells but are not exported. It defaults to `true`,
+so every mutation is exported unless you switch it off.
+
+The final positive/negative/neutral tallies compare each realized effect against
+`mutation_effect_neutral_tolerance` (top-level config key, in `[0, 1)`), and
+`|effect| <= tolerance` counts as neutral. The default is one `float` epsilon
+(`≈1.19e-7`): `Cell::fitness` is stored as `float`, so anything smaller is
+rounding noise and its sign says nothing about selection. Raise it only when you
+want small effects treated as drift on purpose, e.g.
+`"mutation_effect_neutral_tolerance": 0.001`; the band only changes the reported
+counters, never the dynamics. See ADR-0012 ("Neutral band").
 
 Run it with exports only:
 

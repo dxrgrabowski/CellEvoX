@@ -11,7 +11,8 @@ Run::Run(CellMap&& cells,
          std::vector<std::pair<int, CellMap>> generational_popul_report,
          size_t deaths,
          double tau,
-         TerminationReason termination_reason)
+         TerminationReason termination_reason,
+         double neutral_effect_tolerance)
     : cells(std::move(cells)),
       mutation_id_to_type(std::move(mutation_id_to_type)),
       cells_graveyard(std::move(cells_graveyard)),
@@ -19,7 +20,8 @@ Run::Run(CellMap&& cells,
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau),
-      termination_reason(termination_reason) {
+      termination_reason(termination_reason),
+      neutral_effect_tolerance(neutral_effect_tolerance) {
   CELLEVOX_PROFILE_PHASE("run_result_processing");
   {
     CELLEVOX_PROFILE_PHASE("run_process_info");
@@ -203,10 +205,13 @@ void Run::processRunInfo() {
       }
 
       // Classification uses the realized effect of this occurrence: gamma
-      // mutations have no latent sign in their configuration.
-      if (mutation.effect > 0.0f) {
+      // mutations have no latent sign in their configuration. Effects inside
+      // the neutral band (|effect| <= neutral_effect_tolerance) are within the
+      // float rounding noise of `Cell::fitness`, so they are reported as
+      // neutral even when non-zero (see ADR-0012, "Neutral band").
+      if (static_cast<double>(mutation.effect) > neutral_effect_tolerance) {
         ++positive_mutations;
-      } else if (mutation.effect < 0.0f) {
+      } else if (static_cast<double>(mutation.effect) < -neutral_effect_tolerance) {
         ++negative_mutations;
       } else {
         ++neutral_mutations;

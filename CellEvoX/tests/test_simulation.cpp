@@ -12,6 +12,7 @@
 #include <random>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -479,22 +480,66 @@ TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]")
     fourth.mutations = {{104, 5, -0.15f}};
     REQUIRE(cells.insert({13, std::move(fourth)}));
 
+    // A non-zero effect inside the default neutral band (one float epsilon) is
+    // rounding noise of `Cell::fitness` and must not count as beneficial.
+    Cell fifth(14);
+    fifth.mutations = {{105, 6, 5.0e-8f}};
+    REQUIRE(cells.insert({14, std::move(fifth)}));
+
     std::map<uint8_t, MutationType> mutation_types;
     mutation_types[1] = {0.10f, 0.0f, 1, true};
     mutation_types[2] = {-0.20f, 0.0f, 2, false};
     mutation_types[3] = {0.00f, 0.0f, 3, true};
     mutation_types[4] = {0.05f, 0.0f, 4, false};
     mutation_types[5] = gammaMutation(5, 0.0f, false, MutationEffectDirection::Positive);
+    mutation_types[6] = {5.0e-8f, 0.0f, 6, false};
 
     Graveyard graveyard;
     ecs::Run run(std::move(cells), std::move(mutation_types), std::move(graveyard), {}, {}, 0, 1.0);
 
-    REQUIRE(run.total_mutations == 5);
+    REQUIRE(run.total_mutations == 6);
     REQUIRE(run.driver_mutations == 2);
     REQUIRE(run.positive_mutations == 2);
     REQUIRE(run.negative_mutations == 2);
-    REQUIRE(run.neutral_mutations == 1);
-    REQUIRE(run.average_mutations == Catch::Approx(5.0 / 4.0));
+    REQUIRE(run.neutral_mutations == 2);
+    REQUIRE(run.average_mutations == Catch::Approx(6.0 / 5.0));
+}
+
+TEST_CASE("Run neutral band is configurable and overridable", "[Run][Correctness]") {
+    auto build_run = [](double tolerance) {
+        CellMap cells;
+        Cell cell(10);
+        cell.mutations = {{100, 1, 0.0005f}, {101, 2, 0.002f}, {102, 3, -0.0005f}};
+        REQUIRE(cells.insert({10, std::move(cell)}));
+
+        std::map<uint8_t, MutationType> mutation_types;
+        mutation_types[1] = {0.0005f, 0.0f, 1, false};
+        mutation_types[2] = {0.002f, 0.0f, 2, false};
+        mutation_types[3] = {-0.0005f, 0.0f, 3, false};
+
+        Graveyard graveyard;
+        return ecs::Run(std::move(cells),
+                        std::move(mutation_types),
+                        std::move(graveyard),
+                        {},
+                        {},
+                        0,
+                        1.0,
+                        ecs::TerminationReason::PlannedHorizon,
+                        tolerance);
+    };
+
+    // Default band: float rounding noise only, so these effects are real.
+    const auto strict = build_run(std::numeric_limits<float>::epsilon());
+    REQUIRE(strict.positive_mutations == 2);
+    REQUIRE(strict.negative_mutations == 1);
+    REQUIRE(strict.neutral_mutations == 0);
+
+    // Explicit override: effects up to 1e-3 are treated as neutral drift.
+    const auto tolerant = build_run(1.0e-3);
+    REQUIRE(tolerant.positive_mutations == 1);
+    REQUIRE(tolerant.negative_mutations == 0);
+    REQUIRE(tolerant.neutral_mutations == 2);
 }
 
 TEST_CASE("Run handles empty populations without invalid averages", "[Run][Correctness]") {
@@ -710,13 +755,13 @@ TEST_CASE("Deterministic gamma sampler matches its requested moments", "[Determi
 
     // shape = (mu/sigma)^2 = 6.25, scale = sigma^2/mu = 0.008 for mu=0.05, sigma=0.02.
     const auto [mean, variance] = moments(6.25, 0.008);
-    REQUIRE(mean == Catch::Approx(0.05).epsilon(0.03));
-    REQUIRE(variance == Catch::Approx(0.0004).epsilon(0.10));
+    REQUIRE(mean == Catch::Approx(0.05).epsilon(0.01));
+    REQUIRE(variance == Catch::Approx(0.0004).epsilon(0.05));
 
     // shape < 1 exercises the U^(1/shape) boost path.
     const auto [small_shape_mean, small_shape_variance] = moments(0.5, 1.0);
-    REQUIRE(small_shape_mean == Catch::Approx(0.5).epsilon(0.03));
-    REQUIRE(small_shape_variance == Catch::Approx(0.5).epsilon(0.10));
+    REQUIRE(small_shape_mean == Catch::Approx(0.5).epsilon(0.01));
+    REQUIRE(small_shape_variance == Catch::Approx(0.5).epsilon(0.05));
 
     // Counter-based draws: same key repeats, another substream slot differs.
     const uint64_t slot0 = substream(kStreamMutationEffect, 0);

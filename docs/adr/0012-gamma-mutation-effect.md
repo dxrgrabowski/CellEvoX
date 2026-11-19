@@ -40,6 +40,31 @@ index. A gamma draw consumes one or two uniforms, or Box–Muller normals for th
 `(seed, step, cell_id, substream)`. Constant-only runs therefore consume the same
 draws as before and stay bit-identical.
 
+### Neutral band
+Classification compares the realized effect against a configurable band
+`mutation_effect_neutral_tolerance`: `|effect| <= tolerance` is reported as
+neutral, otherwise the sign decides. The default is
+`std::numeric_limits<float>::epsilon()` (`≈1.19e-7`), and the value must be in
+`[0, 1)`.
+
+The default is not a tuning choice, it is the resolution of the simulated state.
+`Cell::fitness` and `CellMutation::effect` are `float`, so the smallest relative
+change they can represent next to `1.0` is `2^-23 ≈ 1.19e-7` (one epsilon; half a
+ULP is `5.96e-8`). A smaller effect either rounds away entirely or lands in the
+`float` conversion when the `double` draw is stored, and its sign is then an
+artefact of rounding rather than of the model. Keeping the band at exactly one
+epsilon makes the counters describe what the simulation can actually represent,
+and it can never hide a reproducible fitness change.
+
+A larger band is a modelling statement, not a numerical one. `1e-3`, for example,
+is ~8400× float epsilon and would call a fully representable 0.1% fitness change
+neutral. That is defensible as a drift threshold — selection is conventionally
+treated as negligible when `|s| < 1/(2N_e)`, which for `N_e = 1000` sits at
+`5e-4` — but the right value follows from the effective population size and the
+fitness scale of a particular study, not from a universal constant. It is
+therefore an explicit override (`mutation_effect_neutral_tolerance` in the
+config JSON) and not the default.
+
 ## Consequences
 - Adding or reordering mutation effects changes the gamma draws from that point
   on; constant-only configurations remain bit-identical to the previous
@@ -53,6 +78,9 @@ draws as before and stay bit-identical.
   same commit; old runs are not kept readable.
 - The cap is a deliberate modelling bias, not a bug: a downstream comparison of
   configured `effect_mean` against achieved mean fitness must account for it.
+- The neutral band only affects reported counters; it does not change the
+  fitness update or the stored effect. Raising it therefore leaves dynamics
+  bit-identical and only reclassifies the positive/negative/neutral tallies.
 - Multiple mutations per division event remain out of scope.
 
 ## Evidence
@@ -61,7 +89,12 @@ draws as before and stay bit-identical.
 - Application: `CellEvoX/include/systems/MutationEffect.hpp` (`realizedMutationEffect`)
   and `CellEvoX/src/systems/MutationEffect.cpp` (out-of-line gamma draw, so the
   event loop's no-mutation fast path stays lean), shared by both live modes.
-- Config validation: `CellEvoX/include/utils/SimulationConfig.hpp`.
+- Config validation: `CellEvoX/include/utils/SimulationConfig.hpp`
+  (`mutation_effect_neutral_tolerance` must be finite and in `[0, 1)`).
+- Neutral-band classification: `CellEvoX/src/ecs/Run.cpp` (`processRunInfo`); the
+  value is threaded from `SimulationConfig` through `SimulationEngine::run`.
+- Tests: `CellEvoX/tests/test_simulation.cpp` ("Run neutral band is configurable
+  and overridable") and `web/backend/tests/test_api.py`.
 - ABI sizes pinned by `static_assert`s in
   `CellEvoX/include/io/PopulationSnapshotIO.hpp`; cross-language fixtures in
   `CellEvoX/tests/fixtures/mini_run/`.

@@ -85,6 +85,13 @@ inline void validateConfig(const SimulationConfig& config) {
     requireNonNegative(config.epsilon, "epsilon");
   }
 
+  requireNonNegative(config.mutation_effect_neutral_tolerance,
+                     "mutation_effect_neutral_tolerance");
+  if (!(config.mutation_effect_neutral_tolerance < 1.0)) {
+    throw std::runtime_error(
+        "Invalid simulation config: mutation_effect_neutral_tolerance must be below 1");
+  }
+
   double total_mutation_probability = 0.0;
   std::unordered_set<uint8_t> mutation_ids;
   for (const auto& mutation : config.mutations) {
@@ -223,6 +230,9 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     if (j.contains("epsilon")) {
       config.epsilon = j.at("epsilon");
     }
+    if (j.contains("mutation_effect_neutral_tolerance")) {
+      config.mutation_effect_neutral_tolerance = j.at("mutation_effect_neutral_tolerance");
+    }
 
     for (const auto& mut : j.at("mutations")) {
       const auto mutation_id = mut.at("id").get<int>();
@@ -293,6 +303,8 @@ inline void printConfig(const SimulationConfig& config) {
   }
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
+  spdlog::info("Neutral mutation effect tolerance: {:.3g}",
+               config.mutation_effect_neutral_tolerance);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
   if (config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);

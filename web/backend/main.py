@@ -133,6 +133,55 @@ def _integer_config_field(config: dict, field: str, run_index: int) -> int:
     return int(value)
 
 
+def _validate_mutation_fields(config: dict, run_index: int) -> None:
+    """Mirror the cross-field rules enforced by the C++ config validator.
+
+    Per-field ranges live in the config schema and are enforced by the UI, but a
+    request can bypass them, so the batch API re-checks the rules that would
+    otherwise fail only after the binary starts.
+    """
+    tolerance = config.get("mutation_effect_neutral_tolerance")
+    if tolerance is not None:
+        value = _numeric_config_field(config, "mutation_effect_neutral_tolerance", run_index)
+        if value < 0 or value >= 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: mutation_effect_neutral_tolerance must be in [0, 1)"
+                ),
+            )
+
+    for position, mutation in enumerate(config.get("mutations", [])):
+        if not isinstance(mutation, dict):
+            continue
+        if mutation.get("effect_mode", "constant") != "gamma":
+            continue
+        label = f"mutations[{position}]"
+        mean = mutation.get("effect_mean")
+        std = mutation.get("effect_std")
+        limit = mutation.get("effect_limit")
+        numeric = all(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for v in (mean, std, limit)
+        )
+        if not numeric or mean <= 0 or std <= 0 or not 0 < limit < 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: {label} requires effect_mean > 0, effect_std > 0 "
+                    f"and effect_limit in (0, 1) for gamma effects"
+                ),
+            )
+        if limit < mean:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: {label} effect_limit ({limit:g}) must be at least "
+                    f"effect_mean ({mean:g})"
+                ),
+            )
+
+
 def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:
     normalized_postprocess = postprocess.lower().strip()
     if normalized_postprocess not in {"full", "exports"}:
@@ -142,6 +191,7 @@ def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:
         )
 
     for index, config in enumerate(configs, start=1):
+        _validate_mutation_fields(config, index)
         steps = _integer_config_field(config, "steps", index)
         tau_step = _numeric_config_field(config, "tau_step", index)
         stat_res = _integer_config_field(config, "statistics_resolution", index)

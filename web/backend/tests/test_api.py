@@ -114,6 +114,58 @@ def test_batch_start_rejects_unreachable_statistics_resolution(client, valid_con
     assert "statistics_resolution" in response.json()["detail"]
 
 
+def test_batch_start_rejects_gamma_limit_below_mean(client, valid_config):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "probability": 0.01,
+            "effect_mode": "gamma",
+            "effect_mean": 0.2,
+            "effect_std": 0.1,
+            "effect_direction": "positive",
+            "effect_limit": 0.1,
+        }
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "effect_limit" in response.json()["detail"]
+
+
+def test_batch_start_rejects_neutral_tolerance_out_of_range(client, valid_config):
+    valid_config["mutation_effect_neutral_tolerance"] = 1.0
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "mutation_effect_neutral_tolerance" in response.json()["detail"]
+
+
+def test_valid_gamma_mutation_passes_batch_validation(valid_config):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "probability": 0.01,
+            "effect_mode": "gamma",
+            "effect_mean": 0.05,
+            "effect_std": 0.02,
+            "effect_direction": "negative",
+            "effect_limit": 0.2,
+        }
+    ]
+
+    main._validate_web_batch_outputs([valid_config], "full")
+
+
 def test_start_conflicts_when_runner_is_busy(client, monkeypatch, valid_config):
     monkeypatch.setattr(main.runner, "is_running", lambda: True)
 
