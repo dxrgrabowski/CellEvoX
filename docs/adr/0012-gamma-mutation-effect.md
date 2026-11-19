@@ -41,20 +41,26 @@ index. A gamma draw consumes one or two uniforms, or Box–Muller normals for th
 draws as before and stay bit-identical.
 
 ### Neutral band
+In short: an effect too small for a `float` fitness to record as a distinct
+value is reported as neutral, so the positive/negative counters are not decided
+by the last rounding bit.
+
 Classification compares the realized effect against a configurable band
 `mutation_effect_neutral_tolerance`: `|effect| <= tolerance` is reported as
 neutral, otherwise the sign decides. The default is
 `std::numeric_limits<float>::epsilon()` (`≈1.19e-7`), and the value must be in
 `[0, 1)`.
 
-The default is not a tuning choice, it is the resolution of the simulated state.
-`Cell::fitness` and `CellMutation::effect` are `float`, so the smallest relative
-change they can represent next to `1.0` is `2^-23 ≈ 1.19e-7` (one epsilon; half a
-ULP is `5.96e-8`). A smaller effect either rounds away entirely or lands in the
-`float` conversion when the `double` draw is stored, and its sign is then an
-artefact of rounding rather than of the model. Keeping the band at exactly one
-epsilon makes the counters describe what the simulation can actually represent,
-and it can never hide a reproducible fitness change.
+The default is a reporting threshold, not a guarantee that fitness is unchanged.
+`Cell::fitness` and `CellMutation::effect` are `float`, and next to `1.0` the gap
+to the following representable value — one unit in the last place (ULP) — is
+`2^-23 ≈ 1.19e-7`, i.e. exactly one float epsilon. An effect at or below this gap
+is at the resolution limit of the stored fitness, so its sign is dominated by
+rounding rather than by the model. A representable change can still fall inside
+the band — for instance `fitness = 1.0f` plus one epsilon — and be counted
+neutral; the rationale is that such a change is within a single rounding step of
+the state and its sign is not trustworthy, not that the state provably stayed
+put.
 
 A larger band is a modelling statement, not a numerical one. `1e-3`, for example,
 is ~8400× float epsilon and would call a fully representable 0.1% fitness change

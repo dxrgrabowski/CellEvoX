@@ -151,7 +151,13 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
                 ),
             )
 
-    for position, mutation in enumerate(config.get("mutations", [])):
+    mutations = config.get("mutations", [])
+    if not isinstance(mutations, list):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run #{run_index}: mutations must be a list",
+        )
+    for position, mutation in enumerate(mutations):
         if not isinstance(mutation, dict):
             continue
         if mutation.get("effect_mode", "constant") != "gamma":

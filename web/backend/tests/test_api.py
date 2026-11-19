@@ -149,6 +149,18 @@ def test_batch_start_rejects_neutral_tolerance_out_of_range(client, valid_config
     assert "mutation_effect_neutral_tolerance" in response.json()["detail"]
 
 
+def test_batch_start_rejects_null_mutation_list(client, valid_config):
+    valid_config["mutations"] = None
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "mutations" in response.json()["detail"]
+
+
 def test_valid_gamma_mutation_passes_batch_validation(valid_config):
     valid_config["mutations"] = [
         {

@@ -147,11 +147,12 @@ so every mutation is exported unless you switch it off.
 The final positive/negative/neutral tallies compare each realized effect against
 `mutation_effect_neutral_tolerance` (top-level config key, in `[0, 1)`), and
 `|effect| <= tolerance` counts as neutral. The default is one `float` epsilon
-(`≈1.19e-7`): `Cell::fitness` is stored as `float`, so anything smaller is
-rounding noise and its sign says nothing about selection. Raise it only when you
-want small effects treated as drift on purpose, e.g.
-`"mutation_effect_neutral_tolerance": 0.001`; the band only changes the reported
-counters, never the dynamics. See ADR-0012 ("Neutral band").
+(`≈1.19e-7`), the gap between `1.0` and the next representable `float`: effects at
+that scale are at the resolution of the stored `fitness`, so their sign is
+rounding noise rather than selection. This is a reporting threshold, not a claim
+that fitness did not change. Raise it only when you want small effects treated as
+drift on purpose, e.g. `"mutation_effect_neutral_tolerance": 0.001`; the band only
+changes the reported counters, never the dynamics. See ADR-0012 ("Neutral band").
 
 Run it with exports only:
 
