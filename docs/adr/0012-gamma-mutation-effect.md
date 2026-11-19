@@ -100,7 +100,8 @@ config JSON) and not the default.
 - Neutral-band classification: `CellEvoX/src/ecs/Run.cpp` (`processRunInfo`); the
   value is threaded from `SimulationConfig` through `SimulationEngine::run`.
 - Tests: `CellEvoX/tests/test_simulation.cpp` ("Run neutral band is configurable
-  and overridable") and `web/backend/tests/test_api.py`.
+  and overridable") covers the classification; `web/backend/tests/test_api.py`
+  covers only the API-level validation of the configured value.
 - ABI sizes pinned by `static_assert`s in
   `CellEvoX/include/io/PopulationSnapshotIO.hpp`; cross-language fixtures in
   `CellEvoX/tests/fixtures/mini_run/`.

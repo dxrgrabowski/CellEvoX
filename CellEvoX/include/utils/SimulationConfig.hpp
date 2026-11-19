@@ -87,6 +87,8 @@ inline void validateConfig(const SimulationConfig& config) {
 
   requireNonNegative(config.mutation_effect_neutral_tolerance,
                      "mutation_effect_neutral_tolerance");
+  // Written as a negated comparison so that NaN, which compares false against
+  // everything, is rejected here as well (requireNonNegative already does).
   if (!(config.mutation_effect_neutral_tolerance < 1.0)) {
     throw std::runtime_error(
         "Invalid simulation config: mutation_effect_neutral_tolerance must be below 1");

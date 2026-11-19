@@ -4,6 +4,7 @@ Ports: API=7432, WebSocket on same server
 """
 import asyncio
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -143,11 +144,12 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
     tolerance = config.get("mutation_effect_neutral_tolerance")
     if tolerance is not None:
         value = _numeric_config_field(config, "mutation_effect_neutral_tolerance", run_index)
-        if value < 0 or value >= 1:
+        if not math.isfinite(value) or value < 0 or value >= 1:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Run #{run_index}: mutation_effect_neutral_tolerance must be in [0, 1)"
+                    f"Run #{run_index}: mutation_effect_neutral_tolerance must be a finite "
+                    f"number in [0, 1)"
                 ),
             )
 
@@ -167,15 +169,15 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
         std = mutation.get("effect_std")
         limit = mutation.get("effect_limit")
         numeric = all(
-            isinstance(v, (int, float)) and not isinstance(v, bool)
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
             for v in (mean, std, limit)
         )
         if not numeric or mean <= 0 or std <= 0 or not 0 < limit < 1:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Run #{run_index}: {label} requires effect_mean > 0, effect_std > 0 "
-                    f"and effect_limit in (0, 1) for gamma effects"
+                    f"Run #{run_index}: {label} requires finite effect_mean > 0, "
+                    f"effect_std > 0 and effect_limit in (0, 1) for gamma effects"
                 ),
             )
         if limit < mean:

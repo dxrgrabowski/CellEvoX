@@ -191,6 +191,7 @@ TEST_CASE("CommonPopulationStep clamps gamma effects at the configured limit",
 
     SimulationConfig config;
     config.tau_step = 1.0;
+    config.seed = 12345;  // pinned: `clamped > 0` below depends on the draws
     config.env_capacity = 1'000'000'000;
 
     MutationType gamma_mutation{};

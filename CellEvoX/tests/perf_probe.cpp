@@ -201,9 +201,11 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 // The file is parsed through the shared reader and its logical content is
 // hashed, not its raw bytes: an ABI version bump changes the record layout on
 // purpose (v3 adds the realized effect to each driver-mutation record), so raw
-// bytes would report SEMANTICS CHANGED for an otherwise identical run. Only
+// files would report SEMANTICS CHANGED for an otherwise identical run. Only
 // fields carried by every supported version are hashed, and the driver-mutation
-// payload is hashed as (id, type), which both v2 and v3 store.
+// payload is hashed as (id, type), which both v2 and v3 store. The realized
+// effect (v3 only) is deliberately not hashed: it is already reflected in the
+// record's `fitness`, which is hashed above.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
