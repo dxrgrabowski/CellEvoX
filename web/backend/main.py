@@ -4,6 +4,7 @@ Ports: API=7432, WebSocket on same server
 """
 import asyncio
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -78,6 +79,19 @@ async def get_config_schema():
             "is_driver": {"type": "boolean"},
             "effect": {"type": "float", "min": -0.5, "max": 0.5, "step": 0.001},
             "probability": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_mode": {
+                "type": "enum",
+                "values": ["constant", "gamma"],
+                "default": "constant",
+            },
+            "effect_mean": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_std": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "effect_direction": {
+                "type": "enum",
+                "values": ["positive", "negative"],
+                "default": "positive",
+            },
+            "effect_limit": {"type": "float", "min": 0.0001, "max": 0.9999, "step": 0.0001},
         }
     }
 
@@ -120,6 +134,62 @@ def _integer_config_field(config: dict, field: str, run_index: int) -> int:
     return int(value)
 
 
+def _validate_mutation_fields(config: dict, run_index: int) -> None:
+    """Mirror the cross-field rules enforced by the C++ config validator.
+
+    Per-field ranges live in the config schema and are enforced by the UI, but a
+    request can bypass them, so the batch API re-checks the rules that would
+    otherwise fail only after the binary starts.
+    """
+    tolerance = config.get("mutation_effect_neutral_tolerance")
+    if tolerance is not None:
+        value = _numeric_config_field(config, "mutation_effect_neutral_tolerance", run_index)
+        if not math.isfinite(value) or value < 0 or value >= 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: mutation_effect_neutral_tolerance must be a finite "
+                    f"number in [0, 1)"
+                ),
+            )
+
+    mutations = config.get("mutations", [])
+    if not isinstance(mutations, list):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run #{run_index}: mutations must be a list",
+        )
+    for position, mutation in enumerate(mutations):
+        if not isinstance(mutation, dict):
+            continue
+        if mutation.get("effect_mode", "constant") != "gamma":
+            continue
+        label = f"mutations[{position}]"
+        mean = mutation.get("effect_mean")
+        std = mutation.get("effect_std")
+        limit = mutation.get("effect_limit")
+        numeric = all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            for v in (mean, std, limit)
+        )
+        if not numeric or mean <= 0 or std <= 0 or not 0 < limit < 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: {label} requires finite effect_mean > 0, "
+                    f"effect_std > 0 and effect_limit in (0, 1) for gamma effects"
+                ),
+            )
+        if limit < mean:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Run #{run_index}: {label} effect_limit ({limit:g}) must be at least "
+                    f"effect_mean ({mean:g})"
+                ),
+            )
+
+
 def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:
     normalized_postprocess = postprocess.lower().strip()
     if normalized_postprocess not in {"full", "exports"}:
@@ -129,6 +199,7 @@ def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:
         )
 
     for index, config in enumerate(configs, start=1):
+        _validate_mutation_fields(config, index)
         steps = _integer_config_field(config, "steps", index)
         tau_step = _numeric_config_field(config, "tau_step", index)
         stat_res = _integer_config_field(config, "statistics_resolution", index)

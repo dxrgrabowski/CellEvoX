@@ -6,6 +6,8 @@ no real binary is executed and no repository-wide scan happens.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -112,6 +114,110 @@ def test_batch_start_rejects_unreachable_statistics_resolution(client, valid_con
 
     assert response.status_code == 400
     assert "statistics_resolution" in response.json()["detail"]
+
+
+def test_batch_start_rejects_gamma_limit_below_mean(client, valid_config):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "probability": 0.01,
+            "effect_mode": "gamma",
+            "effect_mean": 0.2,
+            "effect_std": 0.1,
+            "effect_direction": "positive",
+            "effect_limit": 0.1,
+        }
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "effect_limit" in response.json()["detail"]
+
+
+def test_batch_start_rejects_neutral_tolerance_out_of_range(client, valid_config):
+    valid_config["mutation_effect_neutral_tolerance"] = 1.0
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "mutation_effect_neutral_tolerance" in response.json()["detail"]
+
+
+def test_batch_start_rejects_null_mutation_list(client, valid_config):
+    valid_config["mutations"] = None
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "mutations" in response.json()["detail"]
+
+
+def _post_batch_raw(client, payload):
+    """Post a hand-crafted body: httpx refuses NaN/Infinity, client libraries do not."""
+    return client.post(
+        "/api/simulation/batch/start",
+        content=json.dumps(payload),
+        headers={"Content-Type": "application/json"},
+    )
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf")])
+def test_batch_start_rejects_non_finite_gamma_fields(client, valid_config, bad_value):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "probability": 0.01,
+            "effect_mode": "gamma",
+            "effect_mean": bad_value,
+            "effect_std": 0.02,
+            "effect_direction": "positive",
+            "effect_limit": 0.2,
+        }
+    ]
+
+    response = _post_batch_raw(client, {"configs": [valid_config], "postprocess": "full"})
+
+    assert response.status_code == 400
+    assert "effect_mean" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf")])
+def test_batch_start_rejects_non_finite_neutral_tolerance(client, valid_config, bad_value):
+    valid_config["mutation_effect_neutral_tolerance"] = bad_value
+
+    response = _post_batch_raw(client, {"configs": [valid_config], "postprocess": "full"})
+
+    assert response.status_code == 400
+    assert "mutation_effect_neutral_tolerance" in response.json()["detail"]
+
+
+def test_valid_gamma_mutation_passes_batch_validation(valid_config):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "probability": 0.01,
+            "effect_mode": "gamma",
+            "effect_mean": 0.05,
+            "effect_std": 0.02,
+            "effect_direction": "negative",
+            "effect_limit": 0.2,
+        }
+    ]
+
+    main._validate_web_batch_outputs([valid_config], "full")
 
 
 def test_start_conflicts_when_runner_is_busy(client, monkeypatch, valid_config):

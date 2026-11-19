@@ -11,7 +11,8 @@ Run::Run(CellMap&& cells,
          std::vector<std::pair<int, CellMap>> generational_popul_report,
          size_t deaths,
          double tau,
-         TerminationReason termination_reason)
+         TerminationReason termination_reason,
+         double neutral_effect_tolerance)
     : cells(std::move(cells)),
       mutation_id_to_type(std::move(mutation_id_to_type)),
       cells_graveyard(std::move(cells_graveyard)),
@@ -19,7 +20,8 @@ Run::Run(CellMap&& cells,
       generational_popul_report(std::move(generational_popul_report)),
       total_deaths(deaths),
       tau(tau),
-      termination_reason(termination_reason) {
+      termination_reason(termination_reason),
+      neutral_effect_tolerance(neutral_effect_tolerance) {
   CELLEVOX_PROFILE_PHASE("run_result_processing");
   {
     CELLEVOX_PROFILE_PHASE("run_process_info");
@@ -191,21 +193,25 @@ void Run::processRunInfo() {
 
   for (const auto& cell : cells) {
     total_mutations += cell.second.mutations.size();
-    for (const auto& mutation_id : cell.second.mutations) {
-      const auto mut_type_it = mutation_id_to_type.find(mutation_id.second);
+    for (const auto& mutation : cell.second.mutations) {
+      const auto mut_type_it = mutation_id_to_type.find(mutation.mutation_type);
       if (mut_type_it == mutation_id_to_type.end()) {
-        spdlog::warn("Unknown mutation type id {} in cell {}", mutation_id.second, cell.first);
+        spdlog::warn("Unknown mutation type id {} in cell {}", mutation.mutation_type, cell.first);
         continue;
       }
 
-      const auto& mut_type = mut_type_it->second;
-      if (mut_type.is_driver) {
+      if (mut_type_it->second.is_driver) {
         ++driver_mutations;
       }
 
-      if (mut_type.effect > 0) {
+      // Classification uses the realized effect of this occurrence: gamma
+      // mutations have no latent sign in their configuration. Effects inside
+      // the neutral band (|effect| <= neutral_effect_tolerance) are within the
+      // float rounding noise of `Cell::fitness`, so they are reported as
+      // neutral even when non-zero (see ADR-0012, "Neutral band").
+      if (static_cast<double>(mutation.effect) > neutral_effect_tolerance) {
         ++positive_mutations;
-      } else if (mut_type.effect < 0) {
+      } else if (static_cast<double>(mutation.effect) < -neutral_effect_tolerance) {
         ++negative_mutations;
       } else {
         ++neutral_mutations;
@@ -220,7 +226,7 @@ void Run::processRunInfo() {
   } else {
     average_mutations =
         static_cast<float>(static_cast<double>(total_mutations) / living_cell_count);
-    total_mutations_memory = total_mutations * sizeof(std::pair<uint32_t, uint8_t>);
+    total_mutations_memory = total_mutations * sizeof(CellMutation);
     total_cell_memory_usage = living_cell_count * sizeof(Cell);
   }
 

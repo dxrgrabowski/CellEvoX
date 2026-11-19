@@ -4,11 +4,21 @@ export type SimulationMode =
   | 'stochastic'
   | 'spatial_3d_capacity';
 
+export type MutationEffectMode = 'constant' | 'gamma';
+export type MutationEffectDirection = 'positive' | 'negative';
+
 export interface MutationType {
   id: number;
   is_driver: boolean;
-  effect: number;      // float, fitness delta
+  effect: number;      // float, fitness delta (effect_mode === 'constant')
   probability: number; // per-cell per-step
+  // Gamma-sampled effect (effect_mode === 'gamma'). Missing effect_mode means
+  // 'constant', which keeps older saved configs valid.
+  effect_mode?: MutationEffectMode;
+  effect_mean?: number;      // requested mean of |effect|, > 0
+  effect_std?: number;       // requested standard deviation, > 0
+  effect_direction?: MutationEffectDirection;
+  effect_limit?: number;     // hard cap on |effect|, in (0, 1), >= effect_mean
 }
 
 export interface SimulationConfig {

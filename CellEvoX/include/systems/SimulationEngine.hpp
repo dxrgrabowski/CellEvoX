@@ -5,6 +5,7 @@
 #include <atomic>
 #include <csignal>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <utility>
 #include <vector>
@@ -41,6 +42,12 @@ struct SimulationConfig {
   float mech_dt = 0.1f;
   int mech_substeps = 5;
   float epsilon = 0.1f;
+  // A realized mutation effect with |effect| at or below this band is reported
+  // as neutral. One float epsilon (~1.19e-7) is the gap between 1.0 and the next
+  // representable float, the resolution of `Cell::fitness`. This is a reporting
+  // threshold, not proof that fitness did not change. Raise it to treat small
+  // effects as drift on purpose (see ADR-0012, "Neutral band").
+  double mutation_effect_neutral_tolerance = std::numeric_limits<float>::epsilon();
 };
 
 struct StatSnapshot {

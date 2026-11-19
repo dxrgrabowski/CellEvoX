@@ -31,7 +31,7 @@ def parse_mutations(mutations_str: str) -> List[Tuple[int, int]]:
         return []
     
     mutations = []
-    pattern = r'\((\d+),(\d+)\)'
+    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
     for match in re.finditer(pattern, mutations_str):
         mutation_id = int(match.group(1))
         mutation_type_id = int(match.group(2))

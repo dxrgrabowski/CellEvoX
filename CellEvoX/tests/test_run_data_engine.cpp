@@ -222,8 +222,8 @@ TEST_CASE(
         {2, 0, 1.0f, 0.0f, 0.0f, 0.0f, 1, 1, 1, 0, {0, 0, 0}},
     };
     const std::vector<PopulationSnapshotDriverMutation> mutations = {
-        {101, 1},
-        {102, 1},
+        {101, 1, 0.0f},
+        {102, 1, 0.0f},
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(

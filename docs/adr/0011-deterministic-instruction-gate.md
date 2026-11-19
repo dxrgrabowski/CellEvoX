@@ -63,8 +63,9 @@ verdicts are advisory.
   change to one is visible from the other. Drift shows up as a moved `Ir` floor
   in this Evidence table rather than as a build error.
 - Baseline-moving events land as one coordinated change: a snapshot ABI version
-  bump alters the bytes the probe hashes (so it reports `SEMANTICS CHANGED`, not
-  a regression), and fixing the `tau_step = 0.005` tech debt (AGENTS.md:
+  bump changes the snapshot layout, but the probe hashes the parsed logical
+  content rather than raw bytes, so base and head stay comparable across the
+  bump, and fixing the `tau_step = 0.005` tech debt (AGENTS.md:
   "Hardcoded `0.005` tau in `Application`'s analysis path instead of
   `config.tau_step`") moves the `Ir` floor. The probe's own `makeConfig` copy
   must move in the same change, or it keeps measuring the old `tau`. Either PR
@@ -136,13 +137,17 @@ verdicts are advisory.
   `perf-ir-gate.json` and `perf-gate.json`, and the gate's JSON records the
   thresholds it ran with (`accepted_delta: {}` when no exception is given).
 - Checksum coverage was widened to the outputs the engine only logs on failure:
-  lineage node contents (`parent_id`, `child_sum`, `death_time`) and the bytes of
-  every population snapshot file. Two `realistic-2d-450` runs into separate stats
-  directories returned the identical checksum `0x3779bbec57a40b7b`, so hashing
-  file bytes did not reintroduce nondeterminism. A missing snapshot file throws
-  and the probe exits 2, which the gate reports as `MISSING` rather than a
-  smaller instruction count. Malformed numeric arguments now exit 2 instead of
-  terminating on an uncaught exception.
+  lineage node contents (`parent_id`, `child_sum`, `death_time`) and every
+  population snapshot file. The snapshot is parsed through the shared reader and
+  its logical content is hashed rather than its raw bytes, so an ABI version bump
+  (a new record field) does not split base and head; only fields carried by every
+  supported version are hashed, and the driver-mutation payload is hashed as
+  `(id, type)`. Two `realistic-2d-450` runs into separate stats directories
+  returned the identical checksum `0xadf2387008b12b44`, so hashing the parsed
+  content did not reintroduce nondeterminism. A missing snapshot file makes the
+  reader fail and the probe exits 2, which the gate reports as `MISSING` rather
+  than a smaller instruction count. Malformed numeric arguments now exit 2
+  instead of terminating on an uncaught exception.
 - Full gate: 56 s locally for six workloads x two sides x two runs; in CI
   (`43086799157`) 36 s for the gate and 161 s for `bench-regression-check`,
   where the job total already includes the dependency install and the unit-test

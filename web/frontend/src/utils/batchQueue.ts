@@ -68,6 +68,11 @@ function readMutations(config: Record<string, unknown>): MutationType[] {
     is_driver: Boolean(mutation.is_driver),
     effect: asNumber(mutation.effect) ?? 0,
     probability: asNumber(mutation.probability) ?? 0,
+    effect_mode: mutation.effect_mode === 'gamma' ? 'gamma' : 'constant',
+    effect_mean: asNumber(mutation.effect_mean) ?? undefined,
+    effect_std: asNumber(mutation.effect_std) ?? undefined,
+    effect_direction: mutation.effect_direction === 'negative' ? 'negative' : 'positive',
+    effect_limit: asNumber(mutation.effect_limit) ?? undefined,
   }));
 }
 
@@ -95,13 +100,20 @@ export function describeBatchConfig(config: Record<string, unknown>): BatchConfi
   ].filter((detail): detail is string => Boolean(detail));
 
   const visibleMutationLimit = 6;
-  const mutationTokens = mutations.slice(0, visibleMutationLimit).map(mutation => ({
-    id: mutation.id,
-    isDriver: mutation.is_driver,
-    effect: formatEffect(mutation.effect),
-    probability: formatProbability(mutation.probability),
-    effectDirection: effectDirection(mutation.effect),
-  }));
+  const mutationTokens = mutations.slice(0, visibleMutationLimit).map(mutation => {
+    const isGamma = mutation.effect_mode === 'gamma';
+    return {
+      id: mutation.id,
+      isDriver: mutation.is_driver,
+      effect: isGamma
+        ? `|μ|=${Number(Math.abs(mutation.effect_mean ?? 0).toFixed(4))} (γ)`
+        : formatEffect(mutation.effect),
+      probability: formatProbability(mutation.probability),
+      effectDirection: isGamma
+        ? mutation.effect_direction ?? 'positive'
+        : effectDirection(mutation.effect),
+    };
+  });
   const mutationOverflowCount = Math.max(0, mutations.length - mutationTokens.length);
 
   return {

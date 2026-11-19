@@ -85,15 +85,19 @@ inline void validateConfig(const SimulationConfig& config) {
     requireNonNegative(config.epsilon, "epsilon");
   }
 
+  requireNonNegative(config.mutation_effect_neutral_tolerance,
+                     "mutation_effect_neutral_tolerance");
+  // Written as a negated comparison so that NaN, which compares false against
+  // everything, is rejected here as well (requireNonNegative already does).
+  if (!(config.mutation_effect_neutral_tolerance < 1.0)) {
+    throw std::runtime_error(
+        "Invalid simulation config: mutation_effect_neutral_tolerance must be below 1");
+  }
+
   double total_mutation_probability = 0.0;
   std::unordered_set<uint8_t> mutation_ids;
   for (const auto& mutation : config.mutations) {
-    requireFinite(mutation.effect, "mutations[].effect");
     requireFinite(mutation.probability, "mutations[].probability");
-    if (mutation.effect <= -1.0f) {
-      throw std::runtime_error(
-          "Invalid simulation config: mutation effect must keep daughter fitness positive");
-    }
     if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
       throw std::runtime_error(
           "Invalid simulation config: mutation probability must be in [0, 1]");
@@ -101,6 +105,47 @@ inline void validateConfig(const SimulationConfig& config) {
     if (!mutation_ids.insert(mutation.type_id).second) {
       throw std::runtime_error("Invalid simulation config: duplicate mutation id");
     }
+
+    switch (mutation.effect_mode) {
+      case MutationEffectMode::Constant:
+        requireFinite(mutation.effect, "mutations[].effect");
+        if (mutation.effect <= -1.0f) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect must keep daughter fitness positive");
+        }
+        break;
+      case MutationEffectMode::Gamma:
+        requireFinite(mutation.effect_mean, "mutations[].effect_mean");
+        requireFinite(mutation.effect_std, "mutations[].effect_std");
+        requireFinite(mutation.effect_limit, "mutations[].effect_limit");
+        if (!(mutation.effect_mean > 0.0f)) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_mean must be positive");
+        }
+        if (!(mutation.effect_std > 0.0f)) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_std must be positive");
+        }
+        if (!(mutation.effect_limit > 0.0f) || !(mutation.effect_limit < 1.0f)) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_limit must be in (0, 1) so that "
+              "daughter fitness stays positive");
+        }
+        if (mutation.effect_limit < mutation.effect_mean) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_limit must be at least effect_mean");
+        }
+        if (mutation.effect_direction != MutationEffectDirection::Positive &&
+            mutation.effect_direction != MutationEffectDirection::Negative) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_direction must be 'positive' or "
+              "'negative'");
+        }
+        break;
+      default:
+        throw std::runtime_error("Invalid simulation config: unknown mutation effect_mode");
+    }
+
     total_mutation_probability += mutation.probability;
   }
   if (total_mutation_probability > 1.0 + 1e-9) {
@@ -187,6 +232,9 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
     if (j.contains("epsilon")) {
       config.epsilon = j.at("epsilon");
     }
+    if (j.contains("mutation_effect_neutral_tolerance")) {
+      config.mutation_effect_neutral_tolerance = j.at("mutation_effect_neutral_tolerance");
+    }
 
     for (const auto& mut : j.at("mutations")) {
       const auto mutation_id = mut.at("id").get<int>();
@@ -194,10 +242,37 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
           mutation_id > static_cast<int>(std::numeric_limits<uint8_t>::max())) {
         throw std::runtime_error("Invalid simulation config: mutation id must fit in uint8_t");
       }
-      config.mutations.push_back({mut.at("effect").get<float>(),
-                                  mut.at("probability").get<float>(),
-                                  static_cast<uint8_t>(mutation_id),
-                                  mut.at("is_driver").get<bool>()});
+      MutationType mutation_type{};
+      mutation_type.probability = mut.at("probability").get<float>();
+      mutation_type.type_id = static_cast<uint8_t>(mutation_id);
+      mutation_type.is_driver = mut.at("is_driver").get<bool>();
+
+      // A missing effect_mode means "constant" so existing configs keep working.
+      const std::string effect_mode =
+          mut.contains("effect_mode") ? mut.at("effect_mode").get<std::string>() : "constant";
+      if (effect_mode == "constant") {
+        mutation_type.effect_mode = MutationEffectMode::Constant;
+        mutation_type.effect = mut.at("effect").get<float>();
+      } else if (effect_mode == "gamma") {
+        mutation_type.effect_mode = MutationEffectMode::Gamma;
+        mutation_type.effect_mean = mut.at("effect_mean").get<float>();
+        mutation_type.effect_std = mut.at("effect_std").get<float>();
+        mutation_type.effect_limit = mut.at("effect_limit").get<float>();
+        const std::string effect_direction = mut.at("effect_direction").get<std::string>();
+        if (effect_direction == "positive") {
+          mutation_type.effect_direction = MutationEffectDirection::Positive;
+        } else if (effect_direction == "negative") {
+          mutation_type.effect_direction = MutationEffectDirection::Negative;
+        } else {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_direction must be 'positive' or "
+              "'negative'");
+        }
+      } else {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation effect_mode must be 'constant' or 'gamma'");
+      }
+      config.mutations.push_back(mutation_type);
     }
     validateConfig(config);
   } catch (const nlohmann::json::exception& e) {
@@ -230,6 +305,8 @@ inline void printConfig(const SimulationConfig& config) {
   }
   spdlog::info("Output path: {}", config.output_path);
   spdlog::info("Full mutation payload snapshots: {}", config.full_mutation_payload);
+  spdlog::info("Neutral mutation effect tolerance: {:.3g}",
+               config.mutation_effect_neutral_tolerance);
   spdlog::info("Phylogeny num cells: {}", config.phylogeny_num_cells_sampling);
   if (config.sim_type == SimulationType::SPATIAL_3D_CAPACITY) {
     spdlog::info("Spatial domain size: {:.2f}", config.spatial_domain_size);

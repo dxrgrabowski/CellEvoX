@@ -217,7 +217,8 @@ ecs::Run SimulationEngine3DCapacity::run(uint32_t steps) {
                   std::move(generational_popul_report),
                   total_deaths,
                   tau,
-                  termination_reason);
+                  termination_reason,
+                  config->mutation_effect_neutral_tolerance);
 }
 
 void SimulationEngine3DCapacity::step() {
@@ -696,11 +697,12 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
       return;
     }
     const uint32_t mutation_payload_offset = static_cast<uint32_t>(mutation_payload.size());
-    for (const auto& [mutation_id, mutation_type] : cell.mutations) {
-      const auto type_it = available_mutation_types.find(mutation_type);
+    for (const auto& mutation : cell.mutations) {
+      const auto type_it = available_mutation_types.find(mutation.mutation_type);
       if (config->full_mutation_payload ||
           (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
-        mutation_payload.push_back({mutation_id, mutation_type});
+        mutation_payload.push_back(
+            {mutation.mutation_id, mutation.mutation_type, mutation.effect});
       }
     }
     const auto mutation_payload_count =

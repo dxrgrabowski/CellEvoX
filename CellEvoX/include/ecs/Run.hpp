@@ -4,6 +4,7 @@
 #include <tbb/concurrent_hash_map.h>
 
 #include <random>
+#include <limits>
 #include <map>
 #include <unordered_set>
 #include <vector>
@@ -57,6 +58,7 @@ class Run {
   size_t total_graveyard_memory = 0;
   double tau = 0.0;
   TerminationReason termination_reason = TerminationReason::PlannedHorizon;
+  double neutral_effect_tolerance = std::numeric_limits<float>::epsilon();
 
   Run(CellMap &&cells,
       std::map<uint8_t, MutationType> mutation_id_to_type,
@@ -65,7 +67,8 @@ class Run {
       std::vector<std::pair<int, CellMap>> generational_popul_report,
       size_t deaths,
       double tau,
-      TerminationReason termination_reason = TerminationReason::PlannedHorizon);
+      TerminationReason termination_reason = TerminationReason::PlannedHorizon,
+      double neutral_effect_tolerance = std::numeric_limits<float>::epsilon());
 
   Run(const Run &) = delete;
   Run &operator=(const Run &) = delete;

@@ -17,7 +17,7 @@ def parse_mutations(mutations_str):
     if not mutations_str:
         return []
     mutations = []
-    pattern = r'\((\d+),(\d+)\)'
+    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
     for match in re.finditer(pattern, mutations_str):
         mutations.append((int(match.group(1)), int(match.group(2))))
     return mutations

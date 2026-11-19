@@ -22,6 +22,7 @@ ADR-0010 is still `Proposed`; the table below is the source of truth for status.
 | [0009](0009-interleaved-benchmark-rounds.md) | Superseded by ADR-0011 | Interleaved base/head rounds, median of round means |
 | [0010](0010-advisory-ai-diff-review.md) | Proposed | Advisory AI diff review over the PR diff through a hosted model, plus a pinned Robin comparison arm |
 | [0011](0011-deterministic-instruction-gate.md) | Accepted | Instruction count blocks; wall-clock is advisory |
+| [0012](0012-gamma-mutation-effect.md) | Accepted | Gamma-distributed mutation effects on a dedicated RNG stream |
 
 ## Template
 
