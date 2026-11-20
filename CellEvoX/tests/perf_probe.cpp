@@ -318,6 +318,7 @@ uint64_t runCommonStepWorkload(const std::string& stats_dir, size_t population) 
                                                *config,
                                                available_mutation_types,
                                                0.0,
+                                               0.0,
                                                actual_population,
                                                total_deaths,
                                                config->tau_step);

@@ -97,10 +97,21 @@ inline void validateConfig(const SimulationConfig& config) {
   double total_mutation_probability = 0.0;
   std::unordered_set<uint8_t> mutation_ids;
   for (const auto& mutation : config.mutations) {
-    requireFinite(mutation.probability, "mutations[].probability");
-    if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
-      throw std::runtime_error(
-          "Invalid simulation config: mutation probability must be in [0, 1]");
+    if (mutation.count_model == MutationCountModel::Bernoulli) {
+      requireFinite(mutation.probability, "mutations[].probability");
+      if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation probability must be in [0, 1]");
+      }
+      total_mutation_probability += mutation.probability;
+    } else if (mutation.count_model == MutationCountModel::Poisson) {
+      requireFinite(mutation.lambda, "mutations[].lambda");
+      if (mutation.lambda < 0.0f) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation lambda must be non-negative");
+      }
+    } else {
+      throw std::runtime_error("Invalid simulation config: unknown mutation count_model");
     }
     if (!mutation_ids.insert(mutation.type_id).second) {
       throw std::runtime_error("Invalid simulation config: duplicate mutation id");
@@ -145,8 +156,6 @@ inline void validateConfig(const SimulationConfig& config) {
       default:
         throw std::runtime_error("Invalid simulation config: unknown mutation effect_mode");
     }
-
-    total_mutation_probability += mutation.probability;
   }
   if (total_mutation_probability > 1.0 + 1e-9) {
     throw std::runtime_error(
@@ -243,9 +252,30 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
         throw std::runtime_error("Invalid simulation config: mutation id must fit in uint8_t");
       }
       MutationType mutation_type{};
-      mutation_type.probability = mut.at("probability").get<float>();
       mutation_type.type_id = static_cast<uint8_t>(mutation_id);
       mutation_type.is_driver = mut.at("is_driver").get<bool>();
+
+      // A missing count_model means "bernoulli" so existing configs keep working.
+      const std::string count_model =
+          mut.contains("count_model") ? mut.at("count_model").get<std::string>() : "bernoulli";
+      if (count_model == "bernoulli") {
+        if (mut.contains("lambda")) {
+          throw std::runtime_error(
+              "Invalid simulation config: bernoulli mutation must not carry 'lambda'");
+        }
+        mutation_type.count_model = MutationCountModel::Bernoulli;
+        mutation_type.probability = mut.at("probability").get<float>();
+      } else if (count_model == "poisson") {
+        if (mut.contains("probability")) {
+          throw std::runtime_error(
+              "Invalid simulation config: poisson mutation must not carry 'probability'");
+        }
+        mutation_type.count_model = MutationCountModel::Poisson;
+        mutation_type.lambda = mut.at("lambda").get<float>();
+      } else {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation count_model must be 'bernoulli' or 'poisson'");
+      }
 
       // A missing effect_mode means "constant" so existing configs keep working.
       const std::string effect_mode =
@@ -317,11 +347,19 @@ inline void printConfig(const SimulationConfig& config) {
   }
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
-    spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
-                 mut.is_driver ? "DRIVER " : "",
-                 mut.type_id,
-                 mut.effect,
-                 mut.probability);
+    if (mut.count_model == MutationCountModel::Poisson) {
+      spdlog::info("    {}poisson mutation with id: {}, effect: {:.2f}, lambda: {:.3f}",
+                   mut.is_driver ? "DRIVER " : "",
+                   mut.type_id,
+                   mut.effect,
+                   mut.lambda);
+    } else {
+      spdlog::info("    {}bernoulli mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
+                   mut.is_driver ? "DRIVER " : "",
+                   mut.type_id,
+                   mut.effect,
+                   mut.probability);
+    }
   }
 }
 

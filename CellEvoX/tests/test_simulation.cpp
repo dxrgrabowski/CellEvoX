@@ -202,6 +202,99 @@ TEST_CASE("SimulationConfig rejects invalid gamma mutation effects",
     REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
 }
 
+namespace {
+
+nlohmann::json mutationCountModelConfig() {
+    return {
+        {"simulation_mode", "stochastic"},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array({
+            {{"effect", 0.0}, {"probability", 0.1}, {"id", 1}, {"is_driver", false}}
+        })}
+    };
+}
+
+}  // namespace
+
+TEST_CASE("SimulationConfig parses hybrid mutation count models",
+          "[SimulationConfig][MutationCount]") {
+    auto config = utils::fromJson(mutationCountModelConfig());
+    REQUIRE(config.mutations.size() == 1);
+    // A missing count_model keeps the legacy Bernoulli behaviour.
+    REQUIRE(config.mutations[0].count_model == MutationCountModel::Bernoulli);
+    REQUIRE(config.mutations[0].probability == Catch::Approx(0.1f));
+    REQUIRE(config.mutations[0].lambda == Catch::Approx(0.0f));
+
+    auto hybrid = mutationCountModelConfig();
+    hybrid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.2}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.05}, {"count_model", "poisson"}, {"lambda", 2.5}, {"id", 2},
+         {"is_driver", true}},
+    });
+    config = utils::fromJson(hybrid);
+    REQUIRE(config.mutations.size() == 2);
+    REQUIRE(config.mutations[0].count_model == MutationCountModel::Bernoulli);
+    REQUIRE(config.mutations[1].count_model == MutationCountModel::Poisson);
+    REQUIRE(config.mutations[1].lambda == Catch::Approx(2.5f));
+    REQUIRE(config.mutations[1].probability == Catch::Approx(0.0f));
+
+    // An explicit count_model is accepted for the legacy model too.
+    auto explicit_bernoulli = mutationCountModelConfig();
+    explicit_bernoulli["mutations"][0]["count_model"] = "bernoulli";
+    REQUIRE(utils::fromJson(explicit_bernoulli).mutations[0].count_model ==
+            MutationCountModel::Bernoulli);
+}
+
+TEST_CASE("SimulationConfig rejects invalid mutation count models",
+          "[SimulationConfig][MutationCount][Correctness]") {
+    auto invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    REQUIRE_THROWS(utils::fromJson(invalid));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = 1.0;
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(invalid),
+        Catch::Matchers::ContainsSubstring("poisson") &&
+            Catch::Matchers::ContainsSubstring("probability"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["lambda"] = 1.0;
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(invalid),
+        Catch::Matchers::ContainsSubstring("bernoulli") &&
+            Catch::Matchers::ContainsSubstring("lambda"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = "binomial";
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("count_model"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = -0.5;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // Bernoulli probabilities share one pool and must not exceed one.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.7}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 0.7}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("probability"));
+}
+
 TEST_CASE("SimulationConfig rejects the removed deterministic RK4 mode",
           "[SimulationConfig][Correctness]") {
     nlohmann::json j = {
@@ -402,6 +495,7 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
                                                                      config,
                                                                      mutations,
                                                                      1.0,
+                                                                     0.0,
                                                                      actual_population,
                                                                      total_deaths,
                                                                      12.5);

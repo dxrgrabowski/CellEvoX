@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react';
-import type { MutationEffectMode, MutationType } from '../../types/simulation';
+import type { MutationCountModel, MutationEffectMode, MutationType } from '../../types/simulation';
 import { useConfigStore } from '../../stores';
 import InlineNumberValue from './InlineNumberValue';
 import SmoothSlider from './SmoothSlider';
@@ -11,12 +11,20 @@ const EFFECT_MODES: { value: MutationEffectMode; label: string }[] = [
   { value: 'gamma', label: 'Gamma' },
 ];
 
+const COUNT_MODELS: { value: MutationCountModel; label: string }[] = [
+  { value: 'bernoulli', label: 'Bernoulli' },
+  { value: 'poisson', label: 'Poisson' },
+];
+
 const GAMMA_DEFAULTS = {
   effect_mean: 0.05,
   effect_std: 0.02,
   effect_limit: 0.2,
   effect_direction: 'positive' as const,
 };
+
+const DEFAULT_PROBABILITY = 0.01;
+const DEFAULT_LAMBDA = 0.01;
 
 export default function MutationEditor({ mutations }: Props) {
   const setConfig = useConfigStore(s => s.setConfig);
@@ -29,7 +37,14 @@ export default function MutationEditor({ mutations }: Props) {
   const add = () => {
     const nextId = (mutations.length > 0 ? Math.max(...mutations.map(m => m.id)) : 0) + 1;
     setConfig({
-      mutations: [...mutations, { id: nextId, is_driver: false, effect: 0, probability: 0.01, effect_mode: 'constant' }]
+      mutations: [...mutations, {
+        id: nextId,
+        is_driver: false,
+        effect: 0,
+        probability: DEFAULT_PROBABILITY,
+        count_model: 'bernoulli',
+        effect_mode: 'constant',
+      }]
     });
   };
 
@@ -41,6 +56,7 @@ export default function MutationEditor({ mutations }: Props) {
     <div className="flex-col gap-16">
       {mutations.map((mut, idx) => {
         const effectMode = mut.effect_mode ?? 'constant';
+        const countModel = mut.count_model ?? 'bernoulli';
         const effectMean = mut.effect_mean ?? GAMMA_DEFAULTS.effect_mean;
         const effectStd = mut.effect_std ?? GAMMA_DEFAULTS.effect_std;
         const effectLimit = mut.effect_limit ?? GAMMA_DEFAULTS.effect_limit;
@@ -105,6 +121,33 @@ export default function MutationEditor({ mutations }: Props) {
               </div>
             </div>
 
+            {/* Count model */}
+            <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+              <span className="field-label" style={{ margin: 0 }}>Mutations per Division</span>
+              <div className="flex gap-8">
+                {COUNT_MODELS.map(model => {
+                  const isSelected = countModel === model.value;
+                  return (
+                    <button
+                      key={model.value}
+                      id={`mut-${idx}-count-model-${model.value}`}
+                      type="button"
+                      className={`badge ${isSelected ? 'badge--driver' : 'badge--passenger'}`}
+                      style={{ cursor: 'pointer', border: 'none' }}
+                      onClick={() => update(idx, {
+                        count_model: model.value,
+                        ...(model.value === 'poisson'
+                          ? { lambda: mut.lambda ?? DEFAULT_LAMBDA, probability: undefined }
+                          : { probability: mut.probability ?? DEFAULT_PROBABILITY, lambda: undefined }),
+                      })}
+                    >
+                      {model.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="grid-2">
               {/* Effect or mean */}
               {effectMode === 'constant' ? (
@@ -163,29 +206,54 @@ export default function MutationEditor({ mutations }: Props) {
                 </div>
               )}
 
-              {/* Probability */}
-              <div className="field">
-                <div className="field-label">
-                  Probability
-                  <InlineNumberValue
-                    ariaLabel={`Mutation ${mut.id} probability`}
-                    value={mut.probability}
-                    min={0.00001}
-                    max={0.5}
-                    decimals={5}
-                    color="var(--accent)"
-                    onChange={value => update(idx, { probability: value })}
+              {/* Probability (Bernoulli) or Lambda (Poisson) */}
+              {countModel === 'bernoulli' ? (
+                <div className="field">
+                  <div className="field-label">
+                    Probability
+                    <InlineNumberValue
+                      ariaLabel={`Mutation ${mut.id} probability`}
+                      value={mut.probability ?? DEFAULT_PROBABILITY}
+                      min={0.00001}
+                      max={0.5}
+                      decimals={5}
+                      color="var(--accent)"
+                      onChange={value => update(idx, { probability: value })}
+                    />
+                  </div>
+                  <SmoothSlider
+                    id={`mut-${idx}-prob`}
+                    min={0.00001} max={0.5} step={0.00001}
+                    aria-label={`Mutation ${mut.id} probability slider`}
+                    value={mut.probability ?? DEFAULT_PROBABILITY}
+                    onValueChange={value => update(idx, { probability: value })}
                   />
+                  <span className="field-hint">Per-cell per-step mutation chance</span>
                 </div>
-                <SmoothSlider
-                  id={`mut-${idx}-prob`}
-                  min={0.00001} max={0.5} step={0.00001}
-                  aria-label={`Mutation ${mut.id} probability slider`}
-                  value={mut.probability}
-                  onValueChange={value => update(idx, { probability: value })}
-                />
-                <span className="field-hint">Per-cell per-step mutation chance</span>
-              </div>
+              ) : (
+                <div className="field">
+                  <div className="field-label">
+                    Lambda (λ)
+                    <InlineNumberValue
+                      ariaLabel={`Mutation ${mut.id} lambda`}
+                      value={mut.lambda ?? DEFAULT_LAMBDA}
+                      min={0}
+                      max={10}
+                      decimals={4}
+                      color="var(--accent)"
+                      onChange={value => update(idx, { lambda: value })}
+                    />
+                  </div>
+                  <SmoothSlider
+                    id={`mut-${idx}-lambda`}
+                    min={0} max={10} step={0.0001}
+                    aria-label={`Mutation ${mut.id} lambda slider`}
+                    value={mut.lambda ?? DEFAULT_LAMBDA}
+                    onValueChange={value => update(idx, { lambda: value })}
+                  />
+                  <span className="field-hint">Mean mutation events per division (Poisson)</span>
+                </div>
+              )}
             </div>
 
             {effectMode === 'gamma' && (

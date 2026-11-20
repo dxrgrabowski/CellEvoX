@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <system_error>
@@ -949,24 +950,28 @@ void RunDataEngine::plotMutationFrequency() {
   if (run && !run->generational_popul_report.empty()) {
     const bool full_vaf = config && config->full_mutation_payload;
     for (const auto& [generation, cells] : run->generational_popul_report) {
-      std::map<uint32_t, uint32_t> mutation_counts;
+      std::map<std::pair<uint32_t, uint8_t>, uint32_t> mutation_counts;
       uint32_t total_cells = 0;
 
       for (const auto& item : cells) {
         const Cell& cell = item.second;
         ++total_cells;
 
+        std::set<std::pair<uint32_t, uint8_t>> alleles;
         for (const auto& mutation : cell.mutations) {
           if (!full_vaf &&
               !isDriverMutationType(run->mutation_id_to_type, mutation.mutation_type)) {
             continue;
           }
-          mutation_counts[mutation.mutation_id]++;
+          alleles.emplace(mutation.mutation_id, mutation.mutation_type);
+        }
+        for (const auto& allele : alleles) {
+          mutation_counts[allele]++;
         }
       }
 
       std::vector<double> vafs;
-      for (const auto& [mutation_id, count] : mutation_counts) {
+      for (const auto& [allele, count] : mutation_counts) {
         double vaf = static_cast<double>(count) / total_cells;
         vafs.push_back(vaf);
       }
@@ -999,7 +1004,7 @@ void RunDataEngine::plotMutationFrequency() {
     }
     const bool full_vaf = CellEvoX::io::hasFullMutationPayload(header);
 
-    std::map<uint32_t, uint32_t> mutation_counts;
+    std::map<std::pair<uint32_t, uint8_t>, uint32_t> mutation_counts;
     const uint32_t total_cells = static_cast<uint32_t>(records.size());
     if (total_cells == 0) {
       continue;
@@ -1011,13 +1016,17 @@ void RunDataEngine::plotMutationFrequency() {
       if (start > mutation_payload.size() || end > mutation_payload.size()) {
         continue;
       }
+      std::set<std::pair<uint32_t, uint8_t>> alleles;
       for (size_t i = start; i < end; ++i) {
-        mutation_counts[mutation_payload[i].mutation_id]++;
+        alleles.emplace(mutation_payload[i].mutation_id, mutation_payload[i].mutation_type);
+      }
+      for (const auto& allele : alleles) {
+        mutation_counts[allele]++;
       }
     }
 
     std::vector<double> vafs;
-    for (const auto& [mutation_id, count] : mutation_counts) {
+    for (const auto& [allele, count] : mutation_counts) {
       double vaf = static_cast<double>(count) / total_cells;
       vafs.push_back(vaf);
     }

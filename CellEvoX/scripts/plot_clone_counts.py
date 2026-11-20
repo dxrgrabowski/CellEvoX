@@ -24,8 +24,18 @@ def parse_mutations(mutations_str):
     return mutations
 
 def get_driver_signature(mutations_list, driver_type_ids):
-    drivers = [mut_id for mut_id, mut_type in mutations_list if mut_type in driver_type_ids]
-    return tuple(sorted(drivers))
+    """Hybrid token rendering (ADR-0013): bare id unless the id has >1 type."""
+    unique = sorted(
+        {(mut_id, mut_type) for mut_id, mut_type in mutations_list
+         if mut_type in driver_type_ids}
+    )
+    type_counts = {}
+    for mut_id, _ in unique:
+        type_counts[mut_id] = type_counts.get(mut_id, 0) + 1
+    return ",".join(
+        f"{mut_id}:{mut_type}" if type_counts[mut_id] > 1 else str(mut_id)
+        for mut_id, mut_type in unique
+    )
 
 def get_driver_mutation_type_ids(config_path):
     driver_ids = set()

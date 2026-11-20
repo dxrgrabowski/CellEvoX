@@ -208,5 +208,41 @@ class FixtureDiscovery(unittest.TestCase):
         self.assertEqual([source.generation for source in bin_sources], [5, 10])
 
 
+class HybridCloneSignatures(unittest.TestCase):
+    def test_renders_bare_ids_without_type_collision(self):
+        self.assertEqual(snapshot_io._render_signature([]), "ancestor")
+        self.assertEqual(snapshot_io._render_signature([(0, 1)]), "0")
+        self.assertEqual(snapshot_io._render_signature([(3, 7), (1, 2)]), "1,3")
+
+    def test_switches_to_id_type_on_collision(self):
+        self.assertEqual(
+            snapshot_io._render_signature([(0, 1), (0, 2)]), "0:1,0:2"
+        )
+        self.assertEqual(
+            snapshot_io._render_signature([(3, 5), (0, 2), (0, 1)]), "0:1,0:2,3"
+        )
+
+    def test_deduplicates_repeated_occurrences_of_one_allele(self):
+        # Multiple Poisson occurrences of the same (id, type) are one allele.
+        self.assertEqual(snapshot_io._render_signature([(0, 1), (0, 1)]), "0")
+
+    def test_driver_signature_filters_and_deduplicates(self):
+        mutations = [(101, 1, 0.0), (102, 1, 0.0), (102, 1, 0.0), (103, 2, 0.0)]
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1, 2}), "101,102,103"
+        )
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1}), "101,102"
+        )
+
+    def test_signature_round_trips_through_alleles(self):
+        self.assertEqual(
+            snapshot_io.signature_to_alleles("0:1,0:2,3"), ((0, 1), (0, 2), (3, None))
+        )
+        self.assertEqual(
+            snapshot_io.signature_to_driver_ids("0:1,0:2,3"), (0, 3)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -31,15 +31,21 @@ inline float realizedMutationEffect(const MutationType& mutation, uint64_t seed,
   return sampleGammaMutationEffect(mutation, seed, step, cell_id, mutation_slot);
 }
 
-// Appends the two daughters of one birth event that carries a mutation to
-// `new_cells`: the mutated daughter (placeholder mutation id 0, rewritten by the
-// caller) followed by the unmutated daughter. Defined out of line on purpose:
-// the type roulette, effect sampling and daughter construction must not sit in
-// the per-cell event loop of `applyCommonPopulationStep`, where they change
-// register allocation and code size of the no-mutation fast path.
+// Appends the two daughters of one birth event to `new_cells`: the mutated
+// daughter (placeholder mutation id 0, rewritten by the caller) followed by the
+// unmutated daughter. The function owns both mutation pools from ADR-0013:
+// the legacy Bernoulli pool (stream 2, at most one mutation) followed by the
+// Poisson pool (stream 4 count, stream 5 per-mutation type). All mutations go
+// to daughter A; daughter B is always an unmutated copy of the parent. The
+// `mutation_slot` of each realized effect is its index in the event list, so a
+// Bernoulli mutation always takes slot 0 and Poisson mutations follow.
+// Defined out of line on purpose: the pools, effect sampling and daughter
+// construction must not sit in the per-cell event loop of
+// `applyCommonPopulationStep`, where they change register allocation and code
+// size of the no-mutation fast path.
 void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, double fitness,
-                            double mutation_draw,
                             const std::map<uint8_t, MutationType>& available_mutation_types,
+                            double total_mutation_probability, double total_mutation_rate,
                             uint64_t seed, uint64_t rng_step, uint64_t cell_id);
 
 }  // namespace CellEvoX::systems::detail

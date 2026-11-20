@@ -125,28 +125,68 @@ def parse_mutations(mutations_str: object) -> List[Tuple[int, int, float]]:
     return mutations
 
 
+def _render_signature(alleles: Iterable[Tuple[int, Optional[int]]]) -> str:
+    """Render allele tokens with the hybrid rule from ADR-0013.
+
+    A token is the bare ``mutation_id`` unless that id carries more than one
+    ``mutation_type`` in this set, in which case every token for that id becomes
+    ``mutation_id:mutation_type``. Pre-#59 runs never hit the collision branch,
+    so their labels are unchanged.
+    """
+    unique = sorted(
+        {(int(mutation_id), None if mutation_type is None else int(mutation_type))
+         for mutation_id, mutation_type in alleles},
+        key=lambda allele: (allele[0], -1 if allele[1] is None else allele[1]),
+    )
+    if not unique:
+        return ANCESTOR_SIGNATURE
+
+    type_counts: Dict[int, int] = {}
+    for mutation_id, _mutation_type in unique:
+        type_counts[mutation_id] = type_counts.get(mutation_id, 0) + 1
+
+    tokens: List[str] = []
+    for mutation_id, mutation_type in unique:
+        if mutation_type is not None and type_counts[mutation_id] > 1:
+            tokens.append(f"{mutation_id}:{mutation_type}")
+        else:
+            tokens.append(str(mutation_id))
+    return ",".join(tokens)
+
+
+def signature_to_alleles(signature: str) -> Tuple[Tuple[int, Optional[int]], ...]:
+    """Parse a clone signature back into ``(mutation_id, mutation_type)`` tokens.
+
+    Bare tokens carry ``None`` as the type (legacy signatures).
+    """
+    if not signature or signature == ANCESTOR_SIGNATURE:
+        return ()
+    alleles: List[Tuple[int, Optional[int]]] = []
+    for part in signature.split(","):
+        mutation_id, _, mutation_type = part.partition(":")
+        alleles.append((int(mutation_id), int(mutation_type) if mutation_type else None))
+    return tuple(alleles)
+
+
 def signature_to_driver_ids(signature: str) -> Tuple[int, ...]:
     if not signature or signature == ANCESTOR_SIGNATURE:
         return ()
-    return tuple(int(part) for part in signature.split(","))
+    return tuple(sorted({mutation_id for mutation_id, _ in signature_to_alleles(signature)}))
 
 
 def driver_signature_from_mutations(
     mutations: Sequence[Tuple[int, int, float]], driver_type_ids: Set[int]
 ) -> str:
-    driver_ids = [
-        mutation_id
+    alleles = [
+        (mutation_id, mutation_type)
         for mutation_id, mutation_type, _effect in mutations
         if mutation_type in driver_type_ids
     ]
-    return driver_signature_from_driver_ids(driver_ids)
+    return _render_signature(alleles)
 
 
 def driver_signature_from_driver_ids(driver_ids: Iterable[int]) -> str:
-    normalized = sorted({int(driver_id) for driver_id in driver_ids})
-    if not normalized:
-        return ANCESTOR_SIGNATURE
-    return ",".join(str(driver_id) for driver_id in normalized)
+    return _render_signature((int(driver_id), None) for driver_id in driver_ids)
 
 
 def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
@@ -154,10 +194,10 @@ def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
     if signature == ANCESTOR_SIGNATURE:
         return ""
 
-    parts = list(signature_to_driver_ids(signature))
-    for index in range(len(parts)):
-        candidate_parts = parts[:index] + parts[index + 1 :]
-        candidate = driver_signature_from_driver_ids(candidate_parts)
+    alleles = list(signature_to_alleles(signature))
+    for index in range(len(alleles)):
+        candidate_alleles = alleles[:index] + alleles[index + 1 :]
+        candidate = _render_signature(candidate_alleles)
         if candidate in signature_set:
             return candidate
 
@@ -165,7 +205,7 @@ def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
 
 
 def signature_depth(signature: str) -> int:
-    return len(signature_to_driver_ids(signature))
+    return len(signature_to_alleles(signature))
 
 
 def clone_label(signature: str) -> str:
@@ -482,8 +522,10 @@ def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int
         if has_full_payload:
             signature = driver_signature_from_mutations(mutation_slice, driver_type_ids)
         else:
-            driver_ids = [mutation_id for mutation_id, _, _ in mutation_slice]
-            signature = driver_signature_from_driver_ids(driver_ids)
+            signature = _render_signature(
+                (mutation_id, mutation_type)
+                for mutation_id, mutation_type, _effect in mutation_slice
+            )
         rows.append(
             {
                 "CellID": cell_id,

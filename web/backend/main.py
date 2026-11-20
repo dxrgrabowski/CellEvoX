@@ -78,7 +78,13 @@ async def get_config_schema():
             "id": {"type": "integer"},
             "is_driver": {"type": "boolean"},
             "effect": {"type": "float", "min": -0.5, "max": 0.5, "step": 0.001},
+            "count_model": {
+                "type": "enum",
+                "values": ["bernoulli", "poisson"],
+                "default": "bernoulli",
+            },
             "probability": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
+            "lambda": {"type": "float", "min": 0.0, "max": 10.0, "step": 0.0001},
             "effect_mode": {
                 "type": "enum",
                 "values": ["constant", "gamma"],
@@ -162,9 +168,61 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
     for position, mutation in enumerate(mutations):
         if not isinstance(mutation, dict):
             continue
+        label = f"mutations[{position}]"
+        count_model = mutation.get("count_model", "bernoulli")
+        if count_model not in {"bernoulli", "poisson"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Run #{run_index}: {label} count_model must be 'bernoulli' or 'poisson'",
+            )
+        if count_model == "poisson":
+            if "probability" in mutation:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Run #{run_index}: {label} poisson count model must not carry "
+                        f"'probability'"
+                    ),
+                )
+            lam = mutation.get("lambda")
+            if not (
+                isinstance(lam, (int, float))
+                and not isinstance(lam, bool)
+                and math.isfinite(lam)
+                and lam >= 0
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Run #{run_index}: {label} requires a finite lambda >= 0 "
+                        f"for the poisson count model"
+                    ),
+                )
+        else:
+            if "lambda" in mutation:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Run #{run_index}: {label} bernoulli count model must not carry "
+                        f"'lambda'"
+                    ),
+                )
+            probability = mutation.get("probability")
+            if not (
+                isinstance(probability, (int, float))
+                and not isinstance(probability, bool)
+                and math.isfinite(probability)
+                and 0 <= probability <= 1
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Run #{run_index}: {label} requires a finite probability "
+                        f"in [0, 1] for the bernoulli count model"
+                    ),
+                )
         if mutation.get("effect_mode", "constant") != "gamma":
             continue
-        label = f"mutations[{position}]"
         mean = mutation.get("effect_mean")
         std = mutation.get("effect_std")
         limit = mutation.get("effect_limit")

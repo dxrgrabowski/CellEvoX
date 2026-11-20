@@ -13,6 +13,44 @@ import pandas as pd
 import numpy as np
 
 
+def render_clone_signature(alleles) -> str:
+    """Render ``(mutation_id, mutation_type)`` alleles with the ADR-0013 rule.
+
+    A token is the bare ``mutation_id`` unless that id carries more than one
+    type in the set, in which case every token for that id becomes
+    ``mutation_id:mutation_type``. Pre-#59 cells have no such collision, so
+    their labels are unchanged.
+    """
+    unique = sorted(
+        {(int(mutation_id), None if mutation_type is None else int(mutation_type))
+         for mutation_id, mutation_type in alleles},
+        key=lambda allele: (allele[0], -1 if allele[1] is None else allele[1]),
+    )
+    if not unique:
+        return "ancestor"
+    type_counts: dict[int, int] = {}
+    for mutation_id, _ in unique:
+        type_counts[mutation_id] = type_counts.get(mutation_id, 0) + 1
+    tokens = []
+    for mutation_id, mutation_type in unique:
+        if mutation_type is not None and type_counts[mutation_id] > 1:
+            tokens.append(f"{mutation_id}:{mutation_type}")
+        else:
+            tokens.append(str(mutation_id))
+    return ",".join(tokens)
+
+
+def parse_clone_signature(signature: str) -> list[tuple[int, Optional[int]]]:
+    """Parse a clone signature into ``(mutation_id, mutation_type)`` alleles."""
+    if not signature or signature == "ancestor":
+        return []
+    alleles = []
+    for part in signature.split(","):
+        mutation_id, _, mutation_type = part.partition(":")
+        alleles.append((int(mutation_id), int(mutation_type) if mutation_type else None))
+    return alleles
+
+
 class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
@@ -292,19 +330,16 @@ class ResultsParser:
         if cached is not None:
             return cached
 
-        driver_mutation_ids = []
+        driver_alleles = []
         for match in self.MUTATION_RE.finditer(mutations_str):
             try:
                 mutation_type_id = int(match.group(2))
             except ValueError:
                 continue
             if mutation_type_id in driver_type_ids:
-                driver_mutation_ids.append(int(match.group(1)))
+                driver_alleles.append((int(match.group(1)), mutation_type_id))
 
-        if driver_mutation_ids:
-            signature = ",".join(str(mutation_id) for mutation_id in sorted(driver_mutation_ids))
-        else:
-            signature = "ancestor"
+        signature = render_clone_signature(driver_alleles)
 
         signature_cache[mutations_str] = signature
         return signature
@@ -316,16 +351,15 @@ class ResultsParser:
             return "ancestor"
 
         # Mutation IDs are monotonic in CellEvoX outputs, so the newest driver is
-        # usually the final token. Try that parent first and keep a fallback for
-        # older or hand-authored outputs.
-        newest_parent = signature.rsplit(",", 1)[0]
-        if newest_parent in all_signatures:
-            return newest_parent
-
-        parts = signature.split(",")
-        for idx in range(len(parts)):
-            candidate_parts = parts[:idx] + parts[idx + 1:]
-            candidate = "ancestor" if not candidate_parts else ",".join(candidate_parts)
+        # usually the final token. Try that parent first and keep the legacy
+        # left-to-right fallback for older or hand-authored outputs. Dropping an
+        # allele can change how the remaining tokens are rendered (``id`` vs
+        # ``id:type``), so candidates are re-rendered instead of string-sliced.
+        alleles = parse_clone_signature(signature)
+        allele_count = len(alleles)
+        drop_order = [allele_count - 1] + list(range(allele_count - 1))
+        for idx in drop_order:
+            candidate = render_clone_signature(alleles[:idx] + alleles[idx + 1:])
             if candidate in all_signatures:
                 return candidate
         return "ancestor"
