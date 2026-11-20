@@ -74,13 +74,25 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
                       available_mutation_types.end(),
                       0.0,
                       [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
-                        return sum + pair.second.probability;
+                        return pair.second.count_model == MutationCountModel::Bernoulli
+                                   ? sum + pair.second.probability
+                                   : sum;
+                      });
+  total_mutation_rate =
+      std::accumulate(available_mutation_types.begin(),
+                      available_mutation_types.end(),
+                      0.0,
+                      [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
+                        return pair.second.count_model == MutationCountModel::Poisson
+                                   ? sum + static_cast<double>(pair.second.lambda)
+                                   : sum;
                       });
 
   // These are informational logs; they will be filtered by spdlog's level.
   spdlog::info("=== Simulation Engine Initialized ===");
   spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
-  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
+  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}, Total mutation rate: {:.6f}",
+               config->tau_step, total_mutation_probability, total_mutation_rate);
 
   // Initialize memory logging
   const auto memory_log_path =
@@ -212,6 +224,7 @@ void SimulationEngine::stochasticStep() {
                                                     *config,
                                                     available_mutation_types,
                                                     total_mutation_probability,
+                                                    total_mutation_rate,
                                                     actual_population,
                                                     total_deaths,
                                                     tau);

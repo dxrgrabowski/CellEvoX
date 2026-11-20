@@ -6,12 +6,16 @@ export type SimulationMode =
 
 export type MutationEffectMode = 'constant' | 'gamma';
 export type MutationEffectDirection = 'positive' | 'negative';
+export type MutationCountModel = 'bernoulli' | 'poisson';
 
 export interface MutationType {
   id: number;
   is_driver: boolean;
   effect: number;      // float, fitness delta (effect_mode === 'constant')
-  probability: number; // per-cell per-step
+  probability?: number; // per-cell per-step (count_model === 'bernoulli', default)
+  // Poisson count model (ADR-0013). Missing count_model means 'bernoulli'.
+  count_model?: MutationCountModel;
+  lambda?: number;      // expected occurrences per division, >= 0
   // Gamma-sampled effect (effect_mode === 'gamma'). Missing effect_mode means
   // 'constant', which keeps older saved configs valid.
   effect_mode?: MutationEffectMode;

@@ -96,9 +96,14 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
     CellEvoX::systems::DensePopulation cells(population);
     std::map<uint8_t, MutationType> available_mutation_types;
     double total_mutation_probability = 0.0;
+    double total_mutation_rate = 0.0;
     for (const auto& mutation : mutations) {
         available_mutation_types[mutation.type_id] = mutation;
-        total_mutation_probability += mutation.probability;
+        if (mutation.count_model == MutationCountModel::Poisson) {
+            total_mutation_rate += mutation.lambda;
+        } else {
+            total_mutation_probability += mutation.probability;
+        }
     }
 
     size_t actual_population = population;
@@ -107,6 +112,7 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
                                                         *cfg,
                                                         available_mutation_types,
                                                         total_mutation_probability,
+                                                        total_mutation_rate,
                                                         actual_population,
                                                         total_deaths,
                                                         cfg->tau_step);
@@ -365,12 +371,12 @@ TEST_CASE("Dense population step with optional event results", "[benchmark][popu
         for (int run = 0; run < meter.runs(); ++run) {
             states.emplace_back(population);
             CellEvoX::systems::applyCommonPopulationStep<collect_events>(
-                states.back(), *cfg, mutations, 0.0, counts[run], deaths[run], cfg->tau_step);
+                states.back(), *cfg, mutations, 0.0, 0.0, counts[run], deaths[run], cfg->tau_step);
         }
         meter.measure([&](int run) {
             for (int i = 0; i < steps_per_sample; ++i) {
                 CellEvoX::systems::applyCommonPopulationStep<collect_events>(
-                    states[run], *cfg, mutations, 0.0, counts[run], deaths[run],
+                    states[run], *cfg, mutations, 0.0, 0.0, counts[run], deaths[run],
                     (i + 2) * cfg->tau_step);
             }
         });

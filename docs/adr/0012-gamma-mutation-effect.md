@@ -87,7 +87,8 @@ config JSON) and not the default.
 - The neutral band only affects reported counters; it does not change the
   fitness update or the stored effect. Raising it therefore leaves dynamics
   bit-identical and only reclassifies the positive/negative/neutral tallies.
-- Multiple mutations per division event remain out of scope.
+- Multiple mutations per division event remain out of scope **in this ADR**;
+  ADR-0013 later consumes the slot-`1+` reservation described above.
 
 ## Evidence
 - Sampler: `CellEvoX/include/utils/DeterministicRng.hpp` (`gamma01`, `normal01`,

@@ -13,10 +13,18 @@ enum class MutationEffectDirection : uint8_t {
   Negative = 1,
 };
 
+// How many mutation occurrences a division can produce for this type.
+// `Bernoulli` is the legacy single-draw pool driven by `probability`.
+// `Poisson` is a counting process driven by `lambda` (see ADR-0013).
+enum class MutationCountModel : uint8_t {
+  Bernoulli = 0,
+  Poisson = 1,
+};
+
 struct MutationType {
   float effect{0.0f};
-  float probability{0.0f};
-  uint8_t type_id{0};  // up to 256 mutationTypes
+  float probability{0.0f};  // Bernoulli pool only
+  uint8_t type_id{0};       // up to 256 mutationTypes
   bool is_driver{false};
 
   // Effect model. `effect_mode == Constant` uses `effect` exactly as before.
@@ -28,6 +36,11 @@ struct MutationType {
   float effect_std{0.0f};
   MutationEffectDirection effect_direction{MutationEffectDirection::Positive};
   float effect_limit{0.0f};
+
+  // Appended after the legacy fields so existing positional aggregates keep
+  // their meaning.
+  MutationCountModel count_model{MutationCountModel::Bernoulli};
+  float lambda{0.0f};  // Poisson rate, used when count_model == Poisson
 
   double gammaShape() const {
     const double ratio = static_cast<double>(effect_mean) / static_cast<double>(effect_std);

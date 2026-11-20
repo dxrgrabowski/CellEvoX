@@ -220,6 +220,90 @@ def test_valid_gamma_mutation_passes_batch_validation(valid_config):
     main._validate_web_batch_outputs([valid_config], "full")
 
 
+def test_valid_hybrid_count_models_pass_batch_validation(valid_config):
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.01},
+        {"id": 1, "is_driver": False, "effect": 0.0, "count_model": "poisson", "lambda": 2.5},
+    ]
+
+    main._validate_web_batch_outputs([valid_config], "full")
+
+
+def test_batch_start_rejects_poisson_without_lambda(client, valid_config):
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson"}
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "lambda" in response.json()["detail"]
+
+
+def test_batch_start_rejects_poisson_with_probability(client, valid_config):
+    valid_config["mutations"] = [
+        {
+            "id": 0,
+            "is_driver": True,
+            "effect": 0.1,
+            "count_model": "poisson",
+            "lambda": 1.0,
+            "probability": 0.01,
+        }
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "probability" in response.json()["detail"]
+
+
+def test_batch_start_rejects_bernoulli_with_lambda(client, valid_config):
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.01, "lambda": 1.0}
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "lambda" in response.json()["detail"]
+
+
+def test_batch_start_rejects_unknown_count_model(client, valid_config):
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.01, "count_model": "binomial"}
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "count_model" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), -0.1])
+def test_batch_start_rejects_invalid_lambda(client, valid_config, bad_value):
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson", "lambda": bad_value}
+    ]
+
+    response = _post_batch_raw(client, {"configs": [valid_config], "postprocess": "full"})
+
+    assert response.status_code == 400
+    assert "lambda" in response.json()["detail"]
+
+
 def test_start_conflicts_when_runner_is_busy(client, monkeypatch, valid_config):
     monkeypatch.setattr(main.runner, "is_running", lambda: True)
 

@@ -72,43 +72,62 @@ def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
     return driver_ids
 
 
+def _render_signature(alleles: List[Tuple[int, int]]) -> str:
+    """Hybrid token rendering (ADR-0013): bare id unless the id has >1 type."""
+    unique = sorted(
+        {(int(mid), None if mtype is None else int(mtype)) for mid, mtype in alleles},
+        key=lambda a: (a[0], -1 if a[1] is None else a[1]),
+    )
+    if not unique:
+        return "ancestor"
+    type_counts: Dict[int, int] = {}
+    for mid, _ in unique:
+        type_counts[mid] = type_counts.get(mid, 0) + 1
+    return ",".join(
+        f"{mid}:{mtype}" if mtype is not None and type_counts[mid] > 1 else str(mid)
+        for mid, mtype in unique
+    )
+
+
 def get_driver_signature(mutations: List[Tuple[int, int]], driver_type_ids: Set[int]) -> str:
     """
     Extract driver mutations and return a signature string.
-    Returns sorted, comma-separated mutation_ids for driver mutations only.
+    Alleles are keyed by (mutation_id, mutation_type); the token is the bare
+    mutation_id unless that id carries several types in the cell.
     """
-    driver_mutation_ids = sorted([
-        mut_id for mut_id, mut_type in mutations 
+    driver_alleles = [
+        (mut_id, mut_type) for mut_id, mut_type in mutations
         if mut_type in driver_type_ids
-    ])
-    
-    if not driver_mutation_ids:
-        return "ancestor"  # No driver mutations = ancestral clone
-    
-    return ",".join(str(m) for m in driver_mutation_ids)
+    ]
+    return _render_signature(driver_alleles)
+
+
+def _signature_alleles(signature: str) -> List[Tuple[int, int]]:
+    if signature == "ancestor":
+        return []
+    alleles = []
+    for part in signature.split(","):
+        mid, _, mtype = part.partition(":")
+        alleles.append((int(mid), int(mtype) if mtype else None))
+    return alleles
 
 
 def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
     """
     Find the parent clone signature.
-    Parent is the signature with one less driver mutation that is a subset.
+    Parent is the signature with one less allele that is present in the run.
     """
     if signature == "ancestor":
         return ""
-    
-    parts = [int(x) for x in signature.split(",")]
-    
-    # Try removing each mutation to find a valid parent
-    for i in range(len(parts)):
-        candidate_parts = parts[:i] + parts[i+1:]
-        if not candidate_parts:
-            candidate = "ancestor"
-        else:
-            candidate = ",".join(str(m) for m in candidate_parts)
-        
+
+    alleles = _signature_alleles(signature)
+
+    # Try removing each allele to find a valid parent
+    for i in range(len(alleles)):
+        candidate = _render_signature(alleles[:i] + alleles[i+1:])
         if candidate in all_signatures:
             return candidate
-    
+
     # If no subset found, parent is ancestor
     return "ancestor"
 

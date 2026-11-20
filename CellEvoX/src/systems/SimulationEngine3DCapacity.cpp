@@ -84,6 +84,7 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
       total_deaths(0),
       tau(0.0),
       total_mutation_probability(0.0),
+      total_mutation_rate(0.0),
       config(std::move(config)),
       spatial_rng_(this->config->seed ^ 0xA5A5A5A5u),
       spatial_grid_(2.0f * CELL_RADIUS, this->config->spatial_domain_size) {
@@ -121,7 +122,18 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
                       available_mutation_types.end(),
                       0.0,
                       [](double sum, const std::pair<const uint8_t, MutationType>& mutation) {
-                        return sum + mutation.second.probability;
+                        return mutation.second.count_model == MutationCountModel::Bernoulli
+                                   ? sum + mutation.second.probability
+                                   : sum;
+                      });
+  total_mutation_rate =
+      std::accumulate(available_mutation_types.begin(),
+                      available_mutation_types.end(),
+                      0.0,
+                      [](double sum, const std::pair<const uint8_t, MutationType>& mutation) {
+                        return mutation.second.count_model == MutationCountModel::Poisson
+                                   ? sum + static_cast<double>(mutation.second.lambda)
+                                   : sum;
                       });
 
   initializePopulationPositions();
@@ -232,6 +244,7 @@ void SimulationEngine3DCapacity::step() {
                                                                *config,
                                                                available_mutation_types,
                                                                total_mutation_probability,
+                                                               total_mutation_rate,
                                                                actual_population,
                                                                total_deaths,
                                                                tau);

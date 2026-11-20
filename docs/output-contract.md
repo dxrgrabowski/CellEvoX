@@ -84,6 +84,15 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
   `full_mutation_payload: false` the column contains driver mutations only;
   setting it to `true` exports the full payload and also widens the VAF
   histograms to all mutations.
+- `mutation_id` is **not unique within a cell**. Under the Poisson count model
+  (ADR-0013) one division can acquire several mutations, all stamped with the
+  same origin cell ID. Repeated `(mutation_id,mutation_type)` entries are
+  independent occurrences, not a data error, and `MutationCount` counts
+  occurrences. The allele key for VAF and clone signatures is
+  `(mutation_id,mutation_type)`: a cell either carries an allele or not, so VAF
+  is cells carrying the allele over all cells. Clone labels render the bare
+  `mutation_id` unless that id carries more than one `mutation_type` in the
+  cell, in which case every token for that id becomes `mutation_id:mutation_type`.
 - Non-spatial runs leave `X,Y,Z` **empty** (`,,` in the CSV, `NaN` in the binary snapshot)
   with `PositionValid = 0` and `SpatialDimensions = 0`; a CSV reader such as
   pandas loads them as `NaN`, not `0`. 3D runs emit real coordinates with
