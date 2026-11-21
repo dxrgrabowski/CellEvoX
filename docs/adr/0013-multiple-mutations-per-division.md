@@ -104,13 +104,20 @@ therefore never perturb other draws.
 
 - `kStreamMutation = 2`: Bernoulli draw `u` — one per birth, only when the
   Bernoulli pool is non-empty. Unchanged for legacy configs.
-- `kStreamMutationCount = 4`: Poisson count, `substream(4, 0)` — one per birth,
-  only when the Poisson pool is non-empty.
-- `kStreamMutationType = 5`: Poisson type selection, `substream(5, j)` — one per
-  Poisson mutation `j`.
+- `kStreamMutationCount = 1 << 56`: Poisson count,
+  `substream(kStreamMutationCount, 0)` — one per birth, only when the Poisson
+  pool is non-empty.
+- `kStreamMutationType = 1 << 57`: Poisson type selection,
+  `substream(kStreamMutationType, j)` — one per Poisson mutation `j`.
 - `kStreamMutationEffect = 3` (ADR-0012): gamma effect,
   `substream(3, m)`, where `m` is the mutation's index in the event list; read
   only for gamma-mode types.
+
+The count and type purposes must not use adjacent low ids (`4`/`5`). The gamma
+sampler starts at stream `3` and walks forward one key per draw, so a low count
+id aliases the effect draws and the type draw aliases the count's second PTRS
+uniform, correlating the count with the selected type. Placing both purposes far
+above that contiguous range keeps every draw key disjoint.
 
 The low 32 bits of each substream stay the draw index, so the gamma sampler keeps
 working per slot exactly as it does for slot `0` today. Because `m` is the
@@ -240,8 +247,8 @@ branch. Touch points:
   Bernoulli pool only, compute `Λ`, keep the named-field parsing style it uses
   since ADR-0012.
 - `CellEvoX/include/utils/DeterministicRng.hpp` — Poisson sampler on top of
-  `uniform01`, plus `kStreamMutationCount = 4` / `kStreamMutationType = 5`
-  next to the existing stream constants.
+  `uniform01`, plus `kStreamMutationCount` / `kStreamMutationType` high, sparse
+  constants next to the existing stream constants.
 - `CellEvoX/src/systems/MutationEffect.cpp` and
   `CellEvoX/include/systems/MutationEffect.hpp` — `appendMutatedDaughters`
   grows the two pools and the `k` loop; `mutation_slot` becomes the event-list

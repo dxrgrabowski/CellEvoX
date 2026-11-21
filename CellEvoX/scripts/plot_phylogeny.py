@@ -88,8 +88,23 @@ def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
 
     alleles = _signature_alleles(signature)
 
-    for i in range(len(alleles)):
-        candidate = _render_signature(alleles[:i] + alleles[i+1:])
+    # All alleles acquired in one division share the origin mutation_id
+    # (ADR-0013), so remove the whole id instead of a single id:type token.
+    groups = []
+    for allele in alleles:
+        if groups and groups[-1][0][0] == allele[0]:
+            groups[-1].append(allele)
+        else:
+            groups.append([allele])
+
+    for group_index in range(len(groups)):
+        candidate_alleles = [
+            allele
+            for index, group in enumerate(groups)
+            if index != group_index
+            for allele in group
+        ]
+        candidate = _render_signature(candidate_alleles)
         if candidate in all_signatures:
             return candidate
 

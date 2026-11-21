@@ -115,16 +115,31 @@ def _signature_alleles(signature: str) -> List[Tuple[int, int]]:
 def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
     """
     Find the parent clone signature.
-    Parent is the signature with one less allele that is present in the run.
+    Parent is the signature with one event (mutation id) removed.
     """
     if signature == "ancestor":
         return ""
 
     alleles = _signature_alleles(signature)
 
-    # Try removing each allele to find a valid parent
-    for i in range(len(alleles)):
-        candidate = _render_signature(alleles[:i] + alleles[i+1:])
+    # All alleles acquired in one division share the origin mutation_id
+    # (ADR-0013), so remove the whole id instead of a single id:type token.
+    groups = []
+    for allele in alleles:
+        if groups and groups[-1][0][0] == allele[0]:
+            groups[-1].append(allele)
+        else:
+            groups.append([allele])
+
+    # Try removing each event to find a valid parent
+    for group_index in range(len(groups)):
+        candidate_alleles = [
+            allele
+            for index, group in enumerate(groups)
+            if index != group_index
+            for allele in group
+        ]
+        candidate = _render_signature(candidate_alleles)
         if candidate in all_signatures:
             return candidate
 

@@ -243,6 +243,18 @@ class HybridCloneSignatures(unittest.TestCase):
             snapshot_io.signature_to_driver_ids("0:1,0:2,3"), (0, 3)
         )
 
+    def test_parent_drops_every_allele_from_one_division(self):
+        signatures = {"ancestor", "7", "7,12:1,12:2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("7,12:1,12:2", signatures), "7"
+        )
+
+    def test_parent_does_not_drop_a_single_allele_from_one_division(self):
+        signatures = {"ancestor", "0", "0:1,0:2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0:1,0:2", signatures), "ancestor"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

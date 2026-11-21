@@ -145,12 +145,21 @@ def test_muller_parent_drops_newest_allele(tmp_path):
     assert parser._muller_parent_signature("0", signatures) == "ancestor"
 
 
-def test_muller_parent_rerenders_tokens_after_dropping_allele(tmp_path):
-    """Dropping one of two same-id alleles must re-render as bare ``id``."""
+def test_muller_parent_drops_all_alleles_from_one_division(tmp_path):
+    """Alleles sharing a mutation id came from one division and drop together."""
     parser = ResultsParser(repo_root=tmp_path)
+    signatures = {"ancestor", "7", "7,12:1,12:2"}
+
+    assert parser._muller_parent_signature("7,12:1,12:2", signatures) == "7"
+
+
+def test_muller_parent_does_not_drop_a_single_allele_from_one_division(tmp_path):
+    parser = ResultsParser(repo_root=tmp_path)
+    # Dropping only one of the two same-id alleles would fabricate the
+    # unrelated "0" label; both alleles belong to the same event.
     signatures = {"ancestor", "0", "0:1,0:2"}
 
-    assert parser._muller_parent_signature("0:1,0:2", signatures) == "0"
+    assert parser._muller_parent_signature("0:1,0:2", signatures) == "ancestor"
 
 
 def test_muller_parent_falls_back_to_ancestor_without_known_parent(tmp_path):

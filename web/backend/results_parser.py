@@ -352,14 +352,26 @@ class ResultsParser:
 
         # Mutation IDs are monotonic in CellEvoX outputs, so the newest driver is
         # usually the final token. Try that parent first and keep the legacy
-        # left-to-right fallback for older or hand-authored outputs. Dropping an
-        # allele can change how the remaining tokens are rendered (``id`` vs
-        # ``id:type``), so candidates are re-rendered instead of string-sliced.
+        # left-to-right fallback for older or hand-authored outputs. All alleles
+        # acquired in one division share the origin ``mutation_id`` (ADR-0013),
+        # so removing a parent means dropping that whole id, not one
+        # ``id:type`` token. Candidates are re-rendered instead of sliced.
         alleles = parse_clone_signature(signature)
-        allele_count = len(alleles)
-        drop_order = [allele_count - 1] + list(range(allele_count - 1))
-        for idx in drop_order:
-            candidate = render_clone_signature(alleles[:idx] + alleles[idx + 1:])
+        groups: list[list[tuple[int, Optional[int]]]] = []
+        for allele in alleles:
+            if groups and groups[-1][0][0] == allele[0]:
+                groups[-1].append(allele)
+            else:
+                groups.append([allele])
+        drop_order = [len(groups) - 1] + list(range(len(groups) - 1))
+        for group_index in drop_order:
+            candidate_alleles = [
+                allele
+                for index, group in enumerate(groups)
+                if index != group_index
+                for allele in group
+            ]
+            candidate = render_clone_signature(candidate_alleles)
             if candidate in all_signatures:
                 return candidate
         return "ancestor"

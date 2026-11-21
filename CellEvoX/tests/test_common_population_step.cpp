@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <map>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -430,4 +431,95 @@ TEST_CASE("Deterministic poisson draws are reproducible across both sampling reg
     // Inversion for lambda < 10 and PTRS above it; both must match the mean.
     REQUIRE(sample_mean(3.0, 4000) == Catch::Approx(3.0).margin(0.3));
     REQUIRE(sample_mean(25.0, 4000) == Catch::Approx(25.0).margin(1.0));
+}
+
+TEST_CASE("Poisson inversion terminates when the uniform rounds up to one",
+          "[DeterministicRng][Poisson][Regression]") {
+    using CellEvoX::deterministic_rng::poisson01;
+
+    // Reported stall: (bits + 0.5) / 2^53 can round up to exactly 1.0, and the
+    // double cumulative sum can stop advancing just below it. The inversion
+    // loop must still terminate with a plausible Poisson(8) count.
+    const uint64_t sample = poisson01(16137269099215192712ULL, 0, 0, 4, 8.0);
+    REQUIRE(sample < 100);
+
+    for (uint64_t stream = 0; stream < 256; ++stream) {
+        REQUIRE(poisson01(16137269099215192712ULL, 0, 0, stream, 8.0) < 100);
+    }
+}
+
+TEST_CASE("Poisson rejects rates that cannot be represented as uint64_t",
+          "[DeterministicRng][Poisson]") {
+    using CellEvoX::deterministic_rng::poisson01;
+
+    REQUIRE_THROWS_AS(poisson01(1, 0, 0, 0, 1e20), std::overflow_error);
+    REQUIRE_THROWS_AS(poisson01(1, 0, 0, 0, 18446744073709551616.0), std::overflow_error);
+}
+
+TEST_CASE("Poisson count and type draws use disjoint stream keys",
+          "[DeterministicRng][Poisson][Determinism]") {
+    using namespace CellEvoX::deterministic_rng;
+
+    // The count/type purposes must sit far above the legacy contiguous range
+    // owned by death/birth/mutation/effect; the gamma sampler walks forward
+    // from stream 3 one key per draw.
+    STATIC_REQUIRE(kStreamMutationCount >= kStreamMutationEffect + (1ULL << 32U));
+    STATIC_REQUIRE(kStreamMutationType >= kStreamMutationCount + (1ULL << 32U));
+
+    constexpr uint64_t kSeed = 42;
+    constexpr uint64_t kStep = 1;
+    constexpr double kRatePerType = 2.5;
+    constexpr double kTotalRate = 2.0 * kRatePerType;
+    constexpr uint32_t kCells = 20000;
+
+    // Two equally likely Poisson types: the first selected type must be ~50/50.
+    // When the count and type draws shared keys with the effect stream, the
+    // count's PTRS uniforms skewed this share.
+    size_t first_type = 0;
+    size_t second_type = 0;
+    for (uint32_t cell_id = 0; cell_id < kCells; ++cell_id) {
+        const uint64_t count = poisson01(
+            kSeed, kStep, cell_id, substream(kStreamMutationCount, 0), kTotalRate);
+        for (uint64_t j = 0; j < count; ++j) {
+            const double type_draw =
+                uniform01(kSeed, kStep, cell_id,
+                          substream(kStreamMutationType, static_cast<uint32_t>(j)));
+            if (type_draw * kTotalRate < kRatePerType) {
+                ++first_type;
+            } else {
+                ++second_type;
+            }
+        }
+    }
+
+    REQUIRE(first_type + second_type > 20000);
+    const double share =
+        static_cast<double>(first_type) / static_cast<double>(first_type + second_type);
+    REQUIRE(share == Catch::Approx(0.5).margin(0.03));
+}
+
+TEST_CASE("Mutation rejects a daughter whose stored float fitness underflows",
+          "[MutationEffect][Validation]") {
+    Cell parent;
+    parent.id = 7;
+    parent.fitness = 5.0e-39f;  // subnormal, but strictly positive
+    REQUIRE(parent.fitness > 0.0f);
+
+    MutationType mutation{};
+    mutation.type_id = 1;
+    mutation.count_model = MutationCountModel::Bernoulli;
+    mutation.probability = 1.0f;
+    // 1 + effect is ~2^-24 in double, so the product falls below float range.
+    mutation.effect = -0.99999994f;
+
+    const std::map<uint8_t, MutationType> mutations = {{1, mutation}};
+
+    REQUIRE(CellEvoX::deterministic_rng::uniform01(
+                1, 0, parent.id, CellEvoX::deterministic_rng::kStreamMutation) < 1.0);
+
+    std::vector<Cell> daughters;
+    REQUIRE_THROWS_AS(
+        CellEvoX::systems::detail::appendMutatedDaughters(
+            daughters, parent, parent.fitness, mutations, 1.0, 0.0, 1, 0, parent.id),
+        std::runtime_error);
 }

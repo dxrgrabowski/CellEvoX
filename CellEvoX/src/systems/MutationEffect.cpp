@@ -56,7 +56,7 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
   }
 
   // 2. Poisson pool. Skipped entirely when empty, so Bernoulli-only runs never
-  //    read streams 4/5.
+  //    read the count/type streams.
   if (total_mutation_rate > 0.0) {
     const uint64_t count = CellEvoX::deterministic_rng::poisson01(
         seed, rng_step, cell_id,
@@ -116,6 +116,12 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
     if (!std::isfinite(daughter_fitness) || daughter_fitness <= 0.0) {
       throw std::runtime_error("Mutation produced invalid daughter fitness");
     }
+  }
+  // Cell stores fitness as float; a positive double below float range would
+  // round to 0.0f, so validate the value that is actually stored.
+  const float stored_fitness = static_cast<float>(daughter_fitness);
+  if (!std::isfinite(stored_fitness) || stored_fitness <= 0.0f) {
+    throw std::runtime_error("Mutation produced invalid daughter fitness");
   }
 
   Cell daughter_cell1 = Cell(cell, daughter_fitness);

@@ -35,7 +35,8 @@ inline float realizedMutationEffect(const MutationType& mutation, uint64_t seed,
 // daughter (placeholder mutation id 0, rewritten by the caller) followed by the
 // unmutated daughter. The function owns both mutation pools from ADR-0013:
 // the legacy Bernoulli pool (stream 2, at most one mutation) followed by the
-// Poisson pool (stream 4 count, stream 5 per-mutation type). All mutations go
+// Poisson pool (`kStreamMutationCount` count, `kStreamMutationType`
+// per-mutation type). All mutations go
 // to daughter A; daughter B is always an unmutated copy of the parent. The
 // `mutation_slot` of each realized effect is its index in the event list, so a
 // Bernoulli mutation always takes slot 0 and Poisson mutations follow.

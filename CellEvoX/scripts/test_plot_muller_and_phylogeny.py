@@ -251,5 +251,19 @@ class BuildCellTreePrefersFinalLivingLeaves(unittest.TestCase):
         self.assertEqual(depths[11], 1.5)
 
 
+class HybridParentLookup(unittest.TestCase):
+    def test_drops_every_allele_from_one_division(self):
+        signatures = {"ancestor", "7", "7,12:1,12:2"}
+
+        self.assertEqual(plot_muller.find_parent_signature("7,12:1,12:2", signatures), "7")
+        self.assertEqual(plot_phylogeny.find_parent_signature("7,12:1,12:2", signatures), "7")
+
+    def test_does_not_drop_a_single_allele_from_one_division(self):
+        signatures = {"ancestor", "0", "0:1,0:2"}
+
+        self.assertEqual(plot_muller.find_parent_signature("0:1,0:2", signatures), "ancestor")
+        self.assertEqual(plot_phylogeny.find_parent_signature("0:1,0:2", signatures), "ancestor")
+
+
 if __name__ == "__main__":
     unittest.main()

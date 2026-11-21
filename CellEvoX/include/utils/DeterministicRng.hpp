@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include <stdexcept>
 
 namespace CellEvoX::deterministic_rng {
 
@@ -11,12 +12,16 @@ constexpr uint64_t kStreamDeath = 0;
 constexpr uint64_t kStreamBirth = 1;
 constexpr uint64_t kStreamMutation = 2;
 constexpr uint64_t kStreamMutationEffect = 3;
-// ADR-0013: Poisson mutation count and Poisson type selection. Reserved
-// separately from the legacy streams so Bernoulli-only runs stay bit-identical.
-constexpr uint64_t kStreamMutationCount = 4;
-constexpr uint64_t kStreamMutationType = 5;
+// ADR-0013: Poisson mutation count and Poisson type selection. The legacy
+// gamma-effect stream starts at 3 and walks forward one key per draw, so these
+// purposes live far above that range: a low id such as 4/5 would alias the
+// effect sampler's draw indices (and each other) and correlate the count with
+// the selected type. High, sparse keys keep every purpose disjoint while
+// leaving the legacy 0/1/2/3 sequence bit-identical.
+constexpr uint64_t kStreamMutationCount = 1ULL << 56U;
+constexpr uint64_t kStreamMutationType = 1ULL << 57U;
 
-// Substream convention: a stream id below 2^32 is a top-level purpose, and
+// Substream convention: a top-level purpose owns a base stream id, and
 // `substream(base, slot)` moves to an independent slot of that purpose. The
 // low 32 bits stay free for draw indices inside one substream, so adding a
 // slot (e.g. a second mutation per division) never shifts existing draws.
@@ -89,6 +94,16 @@ inline double gamma01(uint64_t seed, uint64_t step, uint64_t cell_id, uint64_t s
   }
 }
 
+// A double below 2^64 is representable as uint64_t; a sample at or above it
+// would make the conversion undefined.
+inline uint64_t poissonSampleToUint64(double k) {
+  constexpr double kUint64Range = 18446744073709551616.0;  // 2^64
+  if (!(k >= 0.0) || k >= kUint64Range) {
+    throw std::overflow_error("poisson01: sample is not representable as uint64_t");
+  }
+  return static_cast<uint64_t>(k);
+}
+
 // Poisson(lambda) draw. Counter-based and reproducible across standard
 // libraries: small rates use inversion by sequential search (one uniform),
 // larger rates use the transformed rejection method (Hörmann PTRS), which
@@ -101,15 +116,30 @@ inline uint64_t poisson01(uint64_t seed, uint64_t step, uint64_t cell_id, uint64
   if (!(lambda > 0.0)) {
     return 0;
   }
+  constexpr double kUint64Range = 18446744073709551616.0;  // 2^64
+  if (lambda >= kUint64Range) {
+    throw std::overflow_error("poisson01: lambda is not representable as uint64_t");
+  }
   if (lambda < 10.0) {
-    const double u = uniform01(seed, step, cell_id, stream);
+    // uniform01 can round up to exactly 1.0, but the Poisson CDF is strictly
+    // below 1, so an unclamped 1.0 would never satisfy the loop condition.
+    double u = uniform01(seed, step, cell_id, stream);
+    if (u >= 1.0) {
+      u = std::nextafter(1.0, 0.0);
+    }
     double term = std::exp(-lambda);
     double cumulative = term;
     uint64_t k = 0;
     while (u > cumulative) {
       ++k;
       term *= lambda / static_cast<double>(k);
-      cumulative += term;
+      const double next = cumulative + term;
+      if (next == cumulative) {
+        // The remaining tail is below one ulp of the running sum, so no later
+        // term can advance it; stop instead of spinning forever.
+        break;
+      }
+      cumulative = next;
     }
     return k;
   }
@@ -127,14 +157,14 @@ inline uint64_t poisson01(uint64_t seed, uint64_t step, uint64_t cell_id, uint64
     const double us = 0.5 - std::fabs(u);
     const double k = std::floor((2.0 * a / us + b) * u + lambda + 0.43);
     if (us >= 0.07 && v <= vr) {
-      return static_cast<uint64_t>(k);
+      return poissonSampleToUint64(k);
     }
     if (k < 0.0 || (us < 0.013 && v > us)) {
       continue;
     }
     if (std::log(v) + std::log(invalpha) - std::log(a / (us * us) + b) <=
         -lambda + k * loglam - std::lgamma(k + 1.0)) {
-      return static_cast<uint64_t>(k);
+      return poissonSampleToUint64(k);
     }
   }
 }
