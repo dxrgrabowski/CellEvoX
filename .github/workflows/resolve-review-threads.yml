@@ -1,0 +1,233 @@
+name: Resolve review threads
+
+# Bookkeeping for the review loop described in AGENTS.md: a thread may be closed
+# only when a reply cites a commit that is part of the pull request and changes
+# the file the thread is anchored to. This job finds such a citation, checks it
+# against the PR's commits and their diffs, and resolves the thread. It never
+# decides that a finding is fixed: anything it cannot verify stays open for the
+# author.
+#
+# Not a gate. It does not check out or execute PR code, and it never turns a PR
+# red: an API hiccup leaves threads open, which is the safe state.
+on:
+  pull_request:
+    types: [synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: resolve-review-threads-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Resolve threads with verified fixes
+    # PR conversations only. The audit comment this job writes is itself an
+    # issue comment, so the body check keeps it from re-triggering a run.
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request != null &&
+       !contains(github.event.comment.body, '<!-- cellevox-resolve-review-threads -->'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Resolve threads whose cited commit touches the flagged path
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = Number(process.env.PR_NUMBER);
+            // `Fixed in <sha>`, `Fixed in commit <sha>`, `Addressed in <sha>`.
+            // Short SHAs are expected: a human writes seven characters.
+            const citedCommit = /(?:fixed|addressed) in (?:commit )?([0-9a-f]{7,40})/i;
+
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber,
+              });
+              // Drafts are still moving and fork PRs get a read-only token, so
+              // neither can be resolved from here. Both stay untouched.
+              if (pr.draft) {
+                core.info('Draft PR: nothing to resolve.');
+                return;
+              }
+              if (pr.head.repo?.full_name !== `${owner}/${repo}`) {
+                core.info('Fork PR: this token cannot resolve threads.');
+                return;
+              }
+
+              // Commits reachable from the head but not the base: exactly the
+              // set a citation may point at. A SHA from before a force-push is
+              // absent here, so its thread stays open.
+              const commits = await github.paginate(github.rest.pulls.listCommits, {
+                owner, repo, pull_number: prNumber, per_page: 100,
+              });
+              const commitShas = commits.map((c) => c.sha);
+              core.info(`PR head ${pr.head.sha} carries ${commitShas.length} commits.`);
+
+              // File lists are fetched at most once per commit. A commit that
+              // changes more than 300 files comes back truncated, so a thread
+              // on one of the later files stays open; that is the safe side.
+              const filesBySha = new Map();
+              const filesFor = async (sha) => {
+                if (!filesBySha.has(sha)) {
+                  const { data } = await github.rest.repos.getCommit({
+                    owner, repo, ref: sha,
+                  });
+                  // A rename shows up as previous_filename; both names count,
+                  // because a thread can be anchored to either.
+                  const files = (data.files || []).flatMap(
+                    (f) => [f.filename, f.previous_filename].filter(Boolean));
+                  filesBySha.set(sha, new Set(files));
+                }
+                return filesBySha.get(sha);
+              };
+
+              const threads = [];
+              let cursor = null;
+              do {
+                const { repository } = await github.graphql(`
+                  query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        reviewThreads(first: 100, after: $cursor) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            isResolved
+                            path
+                            comments(first: 100) {
+                              nodes { body author { login __typename } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }`, { owner, repo, number: prNumber, cursor });
+                const connection = repository.pullRequest.reviewThreads;
+                threads.push(...connection.nodes);
+                cursor = connection.pageInfo.hasNextPage
+                  ? connection.pageInfo.endCursor
+                  : null;
+              } while (cursor);
+
+              // Only bot threads are closed automatically. A human reviewer
+              // decides for themselves whether their finding is answered.
+              const isBot = (author) =>
+                author?.__typename === 'Bot' || /\[bot\]$/i.test(author?.login || '');
+
+              const resolved = [];
+              for (const thread of threads) {
+                if (thread.isResolved) {
+                  continue;
+                }
+                const comments = thread.comments.nodes;
+                if (!isBot(comments[0]?.author)) {
+                  continue;
+                }
+                if (!thread.path) {
+                  core.info(`skip ${thread.id}: thread has no path`);
+                  continue;
+                }
+                // The latest citation wins: a reply that was walked back with a
+                // later "Deferred to #N" leaves the thread open.
+                let citation = null;
+                let author = null;
+                for (const comment of [...comments].reverse()) {
+                  const match = citedCommit.exec(comment.body || '');
+                  if (match) {
+                    citation = match[1].toLowerCase();
+                    author = comment.author?.login;
+                    break;
+                  }
+                }
+                if (!citation) {
+                  core.info(`skip ${thread.path}: no "Fixed in <sha>" marker`);
+                  continue;
+                }
+                // Fail closed on an ambiguous prefix: without a unique commit
+                // there is nothing to verify against.
+                const matches = commitShas.filter(
+                  (sha) => sha.toLowerCase().startsWith(citation));
+                if (matches.length !== 1) {
+                  core.info(`skip ${thread.path}: commit ${citation} is not ` +
+                    `uniquely part of this PR (${matches.length} matches)`);
+                  continue;
+                }
+                const sha = matches[0];
+                const touched = await filesFor(sha);
+                if (!touched.has(thread.path)) {
+                  core.info(`skip ${thread.path}: commit ${citation} does not ` +
+                    'change that file');
+                  continue;
+                }
+                try {
+                  await github.graphql(`
+                    mutation($id: ID!) {
+                      resolveReviewThread(input: { threadId: $id }) {
+                        thread { isResolved }
+                      }
+                    }`, { id: thread.id });
+                  resolved.push({ path: thread.path, sha, author });
+                } catch (err) {
+                  core.info(`skip ${thread.path}: resolve failed (${err.message})`);
+                }
+              }
+
+              if (resolved.length === 0) {
+                core.info('No thread had a verifiable citation.');
+                return;
+              }
+
+              // Sticky audit trail: one comment per PR, rewritten by each run
+              // that actually closes something. Same marker discipline as
+              // ai-review.yml so a quoted marker is not mistaken for ours.
+              const marker = '<!-- cellevox-resolve-review-threads -->';
+              const heading = '### Review thread resolution';
+              const entries = resolved.slice(0, 100).map((entry) =>
+                `- \`${entry.path}\` — ${entry.author ? `${entry.author} ` : ''}` +
+                `cited \`${entry.sha.slice(0, 7)}\`, which changes this file.`);
+              if (resolved.length > entries.length) {
+                entries.push(`- … and ${resolved.length - entries.length} more.`);
+              }
+              const body = [
+                marker,
+                heading,
+                '',
+                `Resolved ${resolved.length} review thread` +
+                  `${resolved.length === 1 ? '' : 's'} whose reply cited a commit ` +
+                  'that is part of this PR and changes the flagged file.',
+                '',
+                ...entries,
+                '',
+                '_Bookkeeping only: this run does not judge whether the fix is ' +
+                'correct. Threads without a verifiable citation stay open for ' +
+                `the author. Run ${new Date().toISOString()}._`,
+              ].join('\n');
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: prNumber, per_page: 100,
+              });
+              const opening = `${marker}\n${heading}`;
+              const previous = comments.find(
+                (c) => c.user?.type === 'Bot' && c.body?.startsWith(opening));
+              if (previous) {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: previous.id, body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: prNumber, body,
+                });
+              }
+            } catch (err) {
+              // Bookkeeping must not turn a PR red; an unverified thread is
+              // already the safe outcome. The log keeps the failure visible.
+              core.warning(`resolve-review-threads: ${err.message}`);
+            }
