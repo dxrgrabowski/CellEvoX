@@ -632,6 +632,51 @@ TEST_CASE("Poisson mutation type selection requires a positive weight",
     }
 }
 
+TEST_CASE("Bernoulli mutation type selection requires a positive probability",
+          "[MutationEffect][Bernoulli][Regression]") {
+    using namespace CellEvoX::deterministic_rng;
+    using CellEvoX::systems::detail::appendMutatedDaughters;
+
+    // The stream-2 draw lands in [0.4, 0.5): below the total probability but at
+    // or above the cumulative probability of the Bernoulli pool, which is the
+    // boundary float rounding can produce.
+    constexpr uint64_t seed = 3;
+    constexpr uint64_t step = 0;
+    constexpr uint32_t cell_id = 1;
+    constexpr float total_probability = 0.5f;
+    const Cell parent(cell_id);
+    REQUIRE(uniform01(seed, step, cell_id, kStreamMutation) ==
+            Catch::Approx(0.45993920526959015));
+
+    MutationType zero_probability{};
+    zero_probability.type_id = 2;
+    zero_probability.count_model = MutationCountModel::Bernoulli;
+    MutationType positive_probability = zero_probability;
+    positive_probability.type_id = 1;
+    positive_probability.probability = 0.4f;
+    std::vector<Cell> daughters;
+
+    SECTION("The fallback skips the trailing zero-probability type") {
+        const std::map<uint8_t, MutationType> types = {
+            {1, positive_probability}, {2, zero_probability}};
+        appendMutatedDaughters(daughters, parent, parent.fitness, types, total_probability, 0.0,
+                               seed, step, cell_id);
+
+        REQUIRE(daughters.size() == 2);
+        REQUIRE(daughters[0].mutations.size() == 1);
+        REQUIRE(daughters[0].mutations[0].mutation_type == positive_probability.type_id);
+        REQUIRE(daughters[1].mutations.empty());
+    }
+
+    SECTION("An inconsistent total probability fails before producing daughters") {
+        const std::map<uint8_t, MutationType> types = {{2, zero_probability}};
+        REQUIRE_THROWS_AS(appendMutatedDaughters(daughters, parent, parent.fitness, types,
+                                                 total_probability, 0.0, seed, step, cell_id),
+                          std::logic_error);
+        REQUIRE(daughters.empty());
+    }
+}
+
 TEST_CASE("Mutation rejects a daughter whose stored float fitness underflows",
           "[MutationEffect][Validation]") {
     Cell parent;

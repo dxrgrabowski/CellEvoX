@@ -48,12 +48,26 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
           break;
         }
       }
-      if (selected != nullptr) {
-        const auto slot = static_cast<uint16_t>(new_mutations.size());
-        const float realized_effect =
-            realizedMutationEffect(*selected, seed, rng_step, cell_id, slot);
-        new_mutations.push_back({0, selected->type_id, slot, realized_effect});
+      if (selected == nullptr) {
+        // Floating-point rounding can leave the draw at or above the cumulative
+        // sum. Fall back to the last Bernoulli type with positive probability so
+        // a drawn mutation is never dropped.
+        for (auto it = available_mutation_types.rbegin();
+             it != available_mutation_types.rend(); ++it) {
+          if (it->second.count_model == MutationCountModel::Bernoulli &&
+              it->second.probability > 0.0f) {
+            selected = &it->second;
+            break;
+          }
+        }
       }
+      if (selected == nullptr) {
+        throw std::logic_error("Bernoulli mutation requires a type with positive probability");
+      }
+      const auto slot = static_cast<uint16_t>(new_mutations.size());
+      const float realized_effect =
+          realizedMutationEffect(*selected, seed, rng_step, cell_id, slot);
+      new_mutations.push_back({0, selected->type_id, slot, realized_effect});
     }
   }
 
