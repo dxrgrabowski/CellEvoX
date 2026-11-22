@@ -309,6 +309,22 @@ class HybridCloneSignatures(unittest.TestCase):
             snapshot_io.find_parent_signature("0:0,0:1", signatures), "ancestor"
         )
 
+    def test_parent_prefers_dropping_the_newest_group(self):
+        # Both "0,1" and "1,2" are valid parents. Newest-first must pick "0,1"
+        # so the CLI scripts and the web backend agree on the same tree.
+        signatures = {"ancestor", "0", "0,1", "1,2", "0,1,2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0,1,2", signatures), "0,1"
+        )
+
+    def test_parent_falls_back_left_to_right(self):
+        # Dropping the newest group is not a known clone, so both "1,2" and
+        # "0,2" are valid parents. The web backend then scans left to right.
+        signatures = {"ancestor", "0", "1,2", "0,2", "0,1,2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0,1,2", signatures), "1,2"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

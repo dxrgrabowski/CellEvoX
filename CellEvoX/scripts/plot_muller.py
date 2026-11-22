@@ -117,11 +117,8 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Handle single generation case (prevents pyfish crash)
     if len(populations) == 1:
         single_gen = list(populations.keys())[0]
-        # Create a second time point slightly after to allow plotting
-        # If gen is 0, make it 1. If gen is 100, make it 101.
-        next_gen = single_gen + (1 if single_gen == 0 else single_gen * 0.1)
-        # Round to integer if possible, but float is fine for keys usually, 
-        # but let's stick to int if the original keys are ints (which they are)
+        # Duplicate the only time point one generation later so the plot has
+        # two points to draw a band between.
         next_gen = single_gen + 1
         
         print(f"WARNING: Only one generation data found ({single_gen}). Duplicating as {next_gen} to enable plotting.")

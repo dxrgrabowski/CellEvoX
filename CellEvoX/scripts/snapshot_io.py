@@ -214,7 +214,12 @@ def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
         groups.setdefault(allele[0], []).append(allele)
 
     group_values = list(groups.values())
-    for group_index in range(len(group_values)):
+    # Mutation ids are monotonic, and rendered signatures sort ascending, so the
+    # final group holds the newest event. Drop the newest group first, then fall
+    # back to left-to-right. This matches ``ResultsParser._muller_parent_signature``
+    # in the web backend so both trees agree when several candidate parents exist.
+    drop_order = [len(group_values) - 1] + list(range(len(group_values) - 1))
+    for group_index in drop_order:
         candidate_alleles = [
             allele
             for index, group in enumerate(group_values)
