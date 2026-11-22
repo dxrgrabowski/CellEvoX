@@ -92,10 +92,27 @@ std::streamoff fileSize(const std::filesystem::path& path) {
 
 TEST_CASE("PopulationSnapshotIO serialized sizes match the ABI contract", "[PopulationSnapshotIO]") {
     REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotFileHeader) == 48);
-    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotRecord) == 36);
+    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotRecord) == 40);
     REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotDriverMutation) == 11);
-    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).record_size == 36);
+    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).record_size == 40);
     REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).mutation_record_size == 11);
+}
+
+TEST_CASE("PopulationSnapshotIO keeps per-cell counts above uint16", "[PopulationSnapshotIO]") {
+    const auto snapshot_path = testTempPath("large_per_cell_count.bin");
+    std::filesystem::create_directories(snapshot_path.parent_path());
+
+    const uint32_t large_count = 70000;
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> records = {
+        {1, 0, 1.0f, 0.0f, 0.0f, 0.0f, large_count, 0, 0, 0, {0, 0, 0}}};
+    REQUIRE(CellEvoX::io::writePopulationSnapshot(snapshot_path, 1.0, 0, records));
+
+    CellEvoX::io::PopulationSnapshotFileHeader header{};
+    std::vector<CellEvoX::io::PopulationSnapshotRecord> loaded;
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
+    REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, loaded, mutations));
+    REQUIRE(loaded.size() == 1);
+    REQUIRE(loaded[0].mutations_count == large_count);
 }
 
 TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[PopulationSnapshotIO]") {
@@ -110,7 +127,7 @@ TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[Popul
                        CellEvoX::io::kPopulationSnapshotMagic.end(),
                        header.magic));
     REQUIRE(header.version == 4);
-    REQUIRE(header.record_size == 36);
+    REQUIRE(header.record_size == 40);
     REQUIRE(header.mutation_record_size == 11);
     REQUIRE(header.tau == Catch::Approx(5.0));
     REQUIRE(header.record_count == 3);
@@ -120,7 +137,7 @@ TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[Popul
     REQUIRE(CellEvoX::io::hasDriverMutationPayload(header));
     REQUIRE_FALSE(CellEvoX::io::hasFullMutationPayload(header));
 
-    REQUIRE(fileSize(snapshot_path) == 48 + 3 * 36 + 4 * 11);
+    REQUIRE(fileSize(snapshot_path) == 48 + 3 * 40 + 4 * 11);
 
     REQUIRE(records.size() == 3);
     REQUIRE(records[0].id == 0);
@@ -177,7 +194,7 @@ TEST_CASE("PopulationSnapshotIO reads the full-payload snapshot fixture", "[Popu
     REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
     REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
 
-    REQUIRE(fileSize(snapshot_path) == 48 + 2 * 36 + 4 * 11);
+    REQUIRE(fileSize(snapshot_path) == 48 + 2 * 40 + 4 * 11);
 
     REQUIRE(records.size() == 2);
     REQUIRE(records[0].id == 7);

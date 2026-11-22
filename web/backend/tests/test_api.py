@@ -321,6 +321,17 @@ def test_batch_start_rejects_bernoulli_probability_sum_above_one(client, valid_c
     assert "total bernoulli" in response.json()["detail"]
 
 
+def test_batch_start_accepts_bernoulli_pool_rounded_to_float32(client, valid_config):
+    # 0.2 and 0.8 become float32 values that sum to 1.0000000149 in the C++
+    # core, which the shared tolerance accepts. The API must agree.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.2},
+        {"id": 1, "is_driver": False, "effect": 0.0, "probability": 0.8},
+    ]
+
+    main._validate_web_batch_outputs([valid_config], "full")
+
+
 @pytest.mark.parametrize("bad_model", [["bernoulli"], {"name": "bernoulli"}])
 def test_batch_start_rejects_non_string_count_model(client, valid_config, bad_model):
     # An unhashable value must produce 400, not a TypeError surfacing as 500.

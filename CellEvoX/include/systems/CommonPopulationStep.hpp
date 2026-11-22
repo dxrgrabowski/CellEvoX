@@ -134,7 +134,7 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
 
   if (Nc > 0 && actual_population > 0) {
     if (!std::isfinite(total_mutation_probability) || total_mutation_probability < 0.0 ||
-        total_mutation_probability > 1.0) {
+        total_mutation_probability > 1.0 + kTotalMutationProbabilityTolerance) {
       throw std::invalid_argument("total_mutation_probability must be finite and in [0, 1]");
     }
     if (!std::isfinite(total_mutation_rate) || total_mutation_rate < 0.0) {

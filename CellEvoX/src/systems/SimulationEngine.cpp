@@ -378,8 +378,7 @@ void SimulationEngine::takePopulationSnapshot() {
       }
     }
     const auto mutation_payload_count =
-        static_cast<uint16_t>(std::min<size_t>(mutation_payload.size() - mutation_payload_offset,
-                                               std::numeric_limits<uint16_t>::max()));
+        static_cast<uint32_t>(mutation_payload.size() - mutation_payload_offset);
 
     snapshot_records.push_back(
         {cell.id,
@@ -388,8 +387,7 @@ void SimulationEngine::takePopulationSnapshot() {
          std::numeric_limits<float>::quiet_NaN(),
          std::numeric_limits<float>::quiet_NaN(),
          std::numeric_limits<float>::quiet_NaN(),
-         static_cast<uint16_t>(
-             std::min<size_t>(cell.mutations.size(), std::numeric_limits<uint16_t>::max())),
+         static_cast<uint32_t>(cell.mutations.size()),
          mutation_payload_count,
          mutation_payload_offset,
          0,

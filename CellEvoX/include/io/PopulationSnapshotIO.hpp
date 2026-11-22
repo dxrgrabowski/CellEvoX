@@ -43,8 +43,11 @@ struct PopulationSnapshotRecord {
   float x;
   float y;
   float z;
-  uint16_t mutations_count;
-  uint16_t driver_mutation_count;
+  // Widened to uint32 in v4: a cell accumulates the mutations of every
+  // division along its lineage, so the per-cell total can exceed the 16-bit
+  // range even though any single division is capped at 65 536 events.
+  uint32_t mutations_count;
+  uint32_t driver_mutation_count;
   uint32_t driver_mutation_offset;
   uint8_t position_valid;
   uint8_t reserved[3];
@@ -60,7 +63,7 @@ struct PopulationSnapshotDriverMutation {
 
 static_assert(sizeof(PopulationSnapshotFileHeader) == 48,
               "PopulationSnapshotFileHeader must stay tightly packed");
-static_assert(sizeof(PopulationSnapshotRecord) == 36,
+static_assert(sizeof(PopulationSnapshotRecord) == 40,
               "PopulationSnapshotRecord must stay tightly packed");
 static_assert(sizeof(PopulationSnapshotDriverMutation) == 11,
               "PopulationSnapshotDriverMutation must stay tightly packed");

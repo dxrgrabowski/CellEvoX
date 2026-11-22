@@ -133,7 +133,7 @@ struct BenchmarkExtendedPopulationSnapshotRecord {
 #pragma pack(pop)
 
 static_assert(sizeof(BenchmarkMutationPayloadRecord) == 11);
-static_assert(sizeof(BenchmarkExtendedPopulationSnapshotRecord) == 40);
+static_assert(sizeof(BenchmarkExtendedPopulationSnapshotRecord) == 44);
 
 struct SyntheticSnapshotInput {
     std::vector<Cell> cells;

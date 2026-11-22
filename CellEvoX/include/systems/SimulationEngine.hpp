@@ -50,6 +50,13 @@ struct SimulationConfig {
   double mutation_effect_neutral_tolerance = std::numeric_limits<float>::epsilon();
 };
 
+// Mutation probabilities are stored as `float`, so summing them (in `double`)
+// can overshoot 1 by a few float ulps: 0.2f + 0.8f == 1.0000000149. The config
+// validator, the runtime guard in CommonPopulationStep and the HTTP API all use
+// this slack so that a pool that sums to exactly 1 in decimal is accepted by
+// every layer instead of being rejected by one of them.
+inline constexpr double kTotalMutationProbabilityTolerance = 1e-5;
+
 struct StatSnapshot {
   double tau;
   double mean_fitness;

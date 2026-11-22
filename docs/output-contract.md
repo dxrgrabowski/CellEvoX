@@ -151,7 +151,11 @@ Current version is **v4**:
 
 - 48-byte header: magic `CELXPOP1`, version, record size, tau, record count,
   mutation payload count, spatial dimensions, mutation record size, flags.
-- 36-byte cell record.
+- 40-byte cell record: id, parent id, fitness, position (`x`/`y`/`z`),
+  `uint32` mutation count, `uint32` driver payload count and offset,
+  position-valid flag, padding. The per-cell counts are 32-bit in v4 because a
+  cell accumulates the mutations of every division along its lineage, so the
+  total can exceed the 65 536 events a single division is capped at.
 - 11-byte mutation payload entry (`mutation_id`, `mutation_type`, `slot`,
   `effect`), addressed by per-record offset/count. `slot` is a little-endian
   `uint16` giving the mutation's 0-based position within its division event;

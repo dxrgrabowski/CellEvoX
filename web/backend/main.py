@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 import os
+import struct
 import sys
 from pathlib import Path
 from typing import Optional
@@ -120,6 +121,17 @@ class RunAnalyzeRequest(BaseModel):
     threads_per_run: Optional[int] = None
 
 
+# Mirrors `kTotalMutationProbabilityTolerance` in
+# CellEvoX/include/systems/SimulationEngine.hpp.
+_TOTAL_MUTATION_PROBABILITY_TOLERANCE = 1e-5
+_FLOAT32 = struct.Struct("<f")
+
+
+def _as_float32(value: float) -> float:
+    """Round a JSON number to the float32 the C++ core stores it as."""
+    return _FLOAT32.unpack(_FLOAT32.pack(value))[0]
+
+
 def _numeric_config_field(config: dict, field: str, run_index: int) -> float:
     value = config.get(field)
     if not isinstance(value, (int, float)) or isinstance(value, bool):
@@ -222,7 +234,9 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
                         f"in [0, 1] for the bernoulli count model"
                     ),
                 )
-            total_bernoulli_probability += probability
+            # Sum the float32 values that the C++ core will actually draw from;
+            # Python doubles would hide the rounding the config validator sees.
+            total_bernoulli_probability += _as_float32(probability)
         if mutation.get("effect_mode", "constant") != "gamma":
             continue
         mean = mutation.get("effect_mean")
@@ -251,7 +265,7 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
 
     # Mirror the C++ check: the Bernoulli pools draw one shared uniform, so the
     # per-type probabilities must sum to at most 1.
-    if total_bernoulli_probability > 1.0 + 1e-9:
+    if total_bernoulli_probability > 1.0 + _TOTAL_MUTATION_PROBABILITY_TOLERANCE:
         raise HTTPException(
             status_code=400,
             detail=(

@@ -14,6 +14,7 @@ Run directly (no pytest dependency required):
 import math
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -32,7 +33,7 @@ FIXTURE_ROOT = os.path.join(
 
 # Mirror of the C++ static_assert values in include/io/PopulationSnapshotIO.hpp.
 HEADER_SIZE = 48
-RECORD_SIZE = 36
+RECORD_SIZE = 40
 MUTATION_RECORD_SIZE = 11
 
 FLAG_DRIVER_PAYLOAD = 0x1
@@ -178,6 +179,53 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
         bin_frame = _load_bin_frame(10, self.path, {1, 2, 3, 4})
         csv_frame = _load_csv_frame(10, _population_data("population_generation_10.csv"), {1, 2, 3, 4})
         pd.testing.assert_frame_equal(bin_frame.data, csv_frame.data, check_dtype=False)
+
+
+class SyntheticSnapshotContract(unittest.TestCase):
+    def _write(self, directory, records, entries, flags, driver_count):
+        header = snapshot_io._HEADER_STRUCT.pack(
+            snapshot_io.SNAPSHOT_MAGIC,
+            snapshot_io.SNAPSHOT_VERSION,
+            RECORD_SIZE,
+            1.0,
+            len(records),
+            driver_count,
+            0,
+            MUTATION_RECORD_SIZE,
+            flags,
+        )
+        body = b"".join(snapshot_io._RECORD_STRUCT.pack(*record) for record in records)
+        payload = b"".join(snapshot_io._DRIVER_MUTATION_STRUCT.pack(*entry) for entry in entries)
+        path = Path(directory) / "population_generation_1.bin"
+        path.write_bytes(header + body + payload)
+        return path
+
+    def test_full_payload_keeps_two_slots_of_one_type_apart(self):
+        # Regression for the binary reader swapping ``slot`` and ``effect`` in
+        # the full-payload path, which collapsed ``12:0,12:1`` into ``12``.
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory,
+                [(42, 0, 1.0, math.nan, math.nan, math.nan, 2, 2, 0, 0)],
+                [(12, 1, 0, 0.0), (12, 1, 1, 0.0)],
+                FLAG_FULL_PAYLOAD,
+                2,
+            )
+            frame = _load_bin_frame(1, str(path), {1})
+        self.assertEqual(frame.data["CloneSignature"].tolist(), ["12:0,12:1"])
+        self.assertEqual(frame.data["Mutations"].tolist(), ["(12,1,0,0) (12,1,0,1)"])
+
+    def test_per_cell_count_above_uint16_round_trips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory,
+                [(42, 0, 1.0, math.nan, math.nan, math.nan, 70000, 0, 0, 0)],
+                [],
+                0,
+                0,
+            )
+            frame = _load_bin_frame(1, str(path), set())
+        self.assertEqual(frame.data["MutationCount"].tolist(), [70000])
 
 
 class InvalidSnapshotFixtures(unittest.TestCase):

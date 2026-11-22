@@ -157,7 +157,7 @@ inline void validateConfig(const SimulationConfig& config) {
         throw std::runtime_error("Invalid simulation config: unknown mutation effect_mode");
     }
   }
-  if (total_mutation_probability > 1.0 + 1e-9) {
+  if (total_mutation_probability > 1.0 + kTotalMutationProbabilityTolerance) {
     throw std::runtime_error(
         "Invalid simulation config: total mutation probability must not exceed 1");
   }

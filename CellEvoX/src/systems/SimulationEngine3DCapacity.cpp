@@ -719,8 +719,7 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
       }
     }
     const auto mutation_payload_count =
-        static_cast<uint16_t>(std::min<size_t>(mutation_payload.size() - mutation_payload_offset,
-                                               std::numeric_limits<uint16_t>::max()));
+        static_cast<uint32_t>(mutation_payload.size() - mutation_payload_offset);
 
     snapshot.push_back({id,
                         cell.parent_id,
@@ -728,9 +727,7 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
                         spatial_state_.pos_x[i],
                         spatial_state_.pos_y[i],
                         spatial_state_.pos_z[i],
-                        static_cast<uint16_t>(std::min<size_t>(
-                            cell.mutations.size(),
-                            std::numeric_limits<uint16_t>::max())),
+                        static_cast<uint32_t>(cell.mutations.size()),
                         mutation_payload_count,
                         mutation_payload_offset,
                         1,

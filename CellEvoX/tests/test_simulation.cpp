@@ -295,6 +295,24 @@ TEST_CASE("SimulationConfig rejects invalid mutation count models",
                         Catch::Matchers::ContainsSubstring("probability"));
 }
 
+TEST_CASE("SimulationConfig tolerates float32 rounding in the Bernoulli pool",
+          "[SimulationConfig][MutationCount][Correctness]") {
+    // The probabilities are stored as float, so 0.2f + 0.8f sums to
+    // 1.0000000149 in double. A pool that is exactly 1 in decimal must still be
+    // accepted, matching the HTTP validator.
+    auto config = mutationCountModelConfig();
+    config["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.2}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 0.8}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_NOTHROW(utils::fromJson(config));
+
+    // A genuinely over-full pool stays rejected.
+    config["mutations"][1]["probability"] = 0.9;
+    REQUIRE_THROWS_WITH(utils::fromJson(config),
+                        Catch::Matchers::ContainsSubstring("probability"));
+}
+
 TEST_CASE("SimulationConfig rejects the removed deterministic RK4 mode",
           "[SimulationConfig][Correctness]") {
     nlohmann::json j = {

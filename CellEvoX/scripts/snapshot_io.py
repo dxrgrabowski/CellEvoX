@@ -30,7 +30,7 @@ _MUTATION_RE = re.compile(
 )
 
 _HEADER_STRUCT = struct.Struct("<8sIIdIIBBB13x")
-_RECORD_STRUCT = struct.Struct("<IIffffHHIB3x")
+_RECORD_STRUCT = struct.Struct("<IIffffIIIB3x")
 _DRIVER_MUTATION_STRUCT = struct.Struct("<IBHf")
 
 
@@ -531,17 +531,29 @@ def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int
         driver_offset,
         position_valid,
     ) in records:
-        mutation_slice = driver_mutations[driver_offset : driver_offset + driver_count] if has_payload else []
+        # The packed entry is ``(id, type, slot, effect)``; normalize it to the
+        # ``(id, type, effect, slot)`` order that ``driver_signature_from_mutations``
+        # and ``parse_mutations`` share before it reaches the signature helpers.
+        mutation_slice = (
+            [
+                (mutation_id, mutation_type, effect, slot)
+                for mutation_id, mutation_type, slot, effect in driver_mutations[
+                    driver_offset : driver_offset + driver_count
+                ]
+            ]
+            if has_payload
+            else []
+        )
         mutations_str = " ".join(
             f"({mutation_id},{mutation_type},{format_effect(effect)},{slot})"
-            for mutation_id, mutation_type, slot, effect in mutation_slice
+            for mutation_id, mutation_type, effect, slot in mutation_slice
         )
         if has_full_payload:
             signature = driver_signature_from_mutations(mutation_slice, driver_type_ids)
         else:
             signature = _render_signature(
                 (mutation_id, slot)
-                for mutation_id, mutation_type, slot, _effect in mutation_slice
+                for mutation_id, mutation_type, _effect, slot in mutation_slice
             )
         rows.append(
             {

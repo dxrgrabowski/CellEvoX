@@ -26,9 +26,10 @@ Constraints that pin the design:
 - `mode-parity`: the dense 2D loop and the 3D `CellMap` loop both delegate to
   `appendMutatedDaughters`, so the new draw sequence and mutation order must be
   identical for both.
-- `snapshot-abi` (ADR-0004): `mutations_count` is a `uint16` and the per-cell
-  mutation payload is already variable-length, so k > 1 needs no new length
-  fields. Version 3 carries `(mutation_id, mutation_type, effect)` but cannot
+- `snapshot-abi` (ADR-0004): the per-cell mutation payload is already
+  variable-length and its counts are widened to `uint32`, so k > 1 needs no new
+  length fields; the per-cell total can exceed the `uint16` cap that applies to a
+  single division. Version 3 carries `(mutation_id, mutation_type, effect)` but cannot
   distinguish two same-type mutations from one division; the payload therefore
   gains an event-order `slot` and becomes version 4. Version 3 files are not
   kept readable (the simulator has no public deployment yet).
@@ -174,8 +175,11 @@ Consumers written for "one mutation per cell per id" break as follows:
 The structural payload stays valid apart from the new identifier:
 `MutationCount` remains the number of records, `mutations_count` /
 `driver_mutation_count` remain counts, and the mutation record grows by one
-`uint16 slot` (9 -> 11 bytes packed, snapshot version 4). The CSV cell payload
-grows from `(id,type,effect)` to `(id,type,effect,slot)`.
+`uint16 slot` (9 -> 11 bytes packed, snapshot version 4). The cell record grows
+from 36 to 40 bytes: its counters become `uint32` because a cell accumulates the
+mutations of every division along its lineage and can exceed the 65 536 events
+one division is capped at. The CSV cell payload grows from `(id,type,effect)` to
+`(id,type,effect,slot)`.
 
 Recommended output rule:
 
@@ -280,8 +284,9 @@ branch. Touch points:
   `CellMutation` between `mutation_type` and `effect` so the struct stays 12
   bytes.
 - `CellEvoX/include/io/PopulationSnapshotIO.hpp` — bump
-  `kPopulationSnapshotVersion` to 4 and add `uint16_t slot` to
-  `PopulationSnapshotDriverMutation` (packed size 11).
+  `kPopulationSnapshotVersion` to 4, add `uint16_t slot` to
+  `PopulationSnapshotDriverMutation` (packed size 11), and widen the per-cell
+  counters to `uint32_t` (record size 40).
 - `CellEvoX/include/utils/SimulationConfig.hpp` — parse `count_model` /
   `lambda`, enforce `probability`/`lambda` exclusivity, sum `Σ p_i` over the
   Bernoulli pool only, compute `Λ`, keep the named-field parsing style it uses
