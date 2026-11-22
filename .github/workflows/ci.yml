@@ -37,11 +37,11 @@ jobs:
 
     # The verdict logic is the only blocking performance signal, so its unit
     # tests run before the expensive builds and fail fast. This step deliberately
-    # runs before "Install Dependencies", so it uses the runner's system python3:
-    # this file and the gate modules it imports must stay stdlib-only, or move
-    # the step after the install.
+    # runs before "Install Dependencies", so the gate-tests stage uses the
+    # runner's system python3: that file and the gate modules it imports must
+    # stay stdlib-only, or move the step after the install.
     - name: Test Instruction Gate Verdict Logic
-      run: python3 head/CellEvoX/tests/benchmarks/test_perf_ir_gate.py
+      run: head/scripts/verify.sh --stage gate-tests
 
     # The Ubuntu mirror occasionally throttles to a few kB/s, which used to
     # stretch this step from ~30 s to 15-38 min. Cache the .deb archives so a
@@ -141,9 +141,14 @@ jobs:
         cmake -B head_build -S head/CellEvoX -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCELLEVOX_WARNINGS_AS_ERRORS=ON -DCELLEVOX_BUILD_PERF_PROBE=ON
         cmake --build head_build --target CellEvoX CellEvoXTests CellEvoXPerfProbe -j$(nproc)
 
+    # The same stage a contributor runs locally, so the CTest invocation and the
+    # ~[benchmark] filter have one definition (issue #54).
     - name: Run Unit Tests (CTest)
-      working-directory: head_build
-      run: ctest --output-on-failure --output-junit "$RUNNER_TEMP/ctest.xml"
+      env:
+        # Absolute: verify.sh cd's to its repo root before using BUILD_DIR.
+        BUILD_DIR: ${{ github.workspace }}/head_build
+        CTEST_JUNIT: ${{ runner.temp }}/ctest.xml
+      run: head/scripts/verify.sh --stage cpp-test
 
     - name: Upload Test Results
       if: always()
@@ -271,9 +276,6 @@ jobs:
     name: Frontend lint and build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: web/frontend
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -285,14 +287,10 @@ jobs:
         cache: npm
         cache-dependency-path: web/frontend/package-lock.json
 
-    - name: Install Dependencies
-      run: npm ci
-
-    - name: Lint
-      run: npm run lint
-
-    - name: Build
-      run: npm run build
+    # Installs with npm ci, then lints and builds — the same commands a
+    # contributor runs with `scripts/verify.sh --stage frontend`.
+    - name: Verify frontend
+      run: scripts/verify.sh --stage frontend
 
   snapshot-abi-python:
     name: Snapshot ABI Python contract
@@ -311,15 +309,12 @@ jobs:
       run: python3 -m pip install --quiet pandas
 
     - name: Run Snapshot IO Contract Tests
-      run: python3 CellEvoX/scripts/test_snapshot_io.py -v
+      run: scripts/verify.sh --stage snapshot
 
   backend-tests:
     name: Backend pytest
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: web/backend
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -334,10 +329,10 @@ jobs:
           web/backend/requirements-dev.txt
 
     - name: Install Dependencies
-      run: python3 -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+      run: python3 -m pip install --quiet -r web/backend/requirements.txt -r web/backend/requirements-dev.txt
 
     - name: Run Tests
-      run: python3 -m pytest -q tests
+      run: scripts/verify.sh --stage backend
 
   review-tools:
     name: Review tooling tests
@@ -358,4 +353,4 @@ jobs:
     # The review tool is stdlib-only; the tests stub the model response, so
     # this job never needs OPENROUTER_API_KEY and never touches the network.
     - name: Run Tests
-      run: python3 -m pytest -q tools/test_ai_review.py
+      run: scripts/verify.sh --stage review

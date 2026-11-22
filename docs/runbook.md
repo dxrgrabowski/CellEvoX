@@ -226,8 +226,37 @@ CSV snapshots, and exports CSV companions from `.bin` files when no CSV exists.
 
 ## Tests
 
+`scripts/verify.sh` is the single local entrypoint; each stage runs the same
+command as the matching CI job, with the same flags, filters, and working
+directory.
+
 ```bash
-./build/bin/CellEvoXTests "~[benchmark]"
+scripts/verify.sh                    # --quick (default): build CellEvoXTests + ctest
+scripts/verify.sh --full             # every stage
+scripts/verify.sh --stage backend    # one stage, repeatable
+scripts/verify.sh --help             # stages, toolchain, per-stage dependencies
+```
+
+`--quick` runs `cpp-build` and `cpp-test`. `--full` runs every stage in order:
+`gate-tests`, `cpp-build`, `cpp-test`, the `quick` benchmark group, the
+visualization and snapshot Python regressions, the frontend lint/build, the
+backend pytest suite, and the review-tooling tests. A stage whose optional
+dependency is missing fails with the install command instead of skipping.
+
+`JOBS` overrides the C++ build parallelism and `BUILD_DIR` the build tree
+(default `build/verify`); `CTEST_JUNIT=<path>` also writes a JUnit report, as CI
+does. Relative paths in `BUILD_DIR` resolve from the repo root, because the script
+`cd`s there before running any stage, so `BUILD_DIR=../out scripts/verify.sh` is
+not relative to your shell's working directory:
+
+```bash
+BUILD_DIR=/tmp/verify-build scripts/verify.sh --quick
+```
+
+Run a single binary directly only when debugging a filter:
+
+```bash
+"${BUILD_DIR:-build/verify}/bin/CellEvoXTests" "~[benchmark]"
 ```
 
 ## Benchmarks
