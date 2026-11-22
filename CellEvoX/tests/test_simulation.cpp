@@ -311,6 +311,16 @@ TEST_CASE("SimulationConfig tolerates float32 rounding in the Bernoulli pool",
     config["mutations"][1]["probability"] = 0.9;
     REQUIRE_THROWS_WITH(utils::fromJson(config),
                         Catch::Matchers::ContainsSubstring("probability"));
+
+    // The tolerance covers float rounding only, not a real overshoot: 5e-6 is
+    // ~42 float ulps above 1 and would let the first mutation claim the whole
+    // nominal draw range.
+    config["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 1.0}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 5e-6}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(config),
+                        Catch::Matchers::ContainsSubstring("probability"));
 }
 
 TEST_CASE("SimulationConfig rejects the removed deterministic RK4 mode",

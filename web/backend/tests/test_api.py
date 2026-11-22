@@ -220,6 +220,24 @@ def test_valid_gamma_mutation_passes_batch_validation(valid_config):
     main._validate_web_batch_outputs([valid_config], "full")
 
 
+def test_batch_start_rejects_overshoot_beyond_float_rounding(client, valid_config):
+    # 1 + 5e-6 is a real sum above 1 (~42 float ulps), not rounding of an
+    # exact-1 pool. Accepting it would let the first mutation claim the whole
+    # nominal draw range.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 1.0},
+        {"id": 1, "is_driver": False, "effect": 0.0, "probability": 5e-6},
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "total bernoulli" in response.json()["detail"]
+
+
 def test_valid_hybrid_count_models_pass_batch_validation(valid_config):
     valid_config["mutations"] = [
         {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.01},

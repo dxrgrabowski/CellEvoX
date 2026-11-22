@@ -62,12 +62,17 @@ compose with the Poisson count in the same division.
 
 ### Parameters
 - Bernoulli types keep `probability`, and only those enter
-  `Σ p_i <= 1 + 1e-9`.
+  `Σ p_i <= 1 + kTotalMutationProbabilityTolerance`. The tolerance is one
+  `float` ulp (2^-23 ≈ 1.19e-7): enough to absorb the float32 rounding of a pool
+  that is exactly 1 in decimal (`0.2f + 0.8f == 1.0000000149`), but far below a
+  real overshoot such as `1 + 5e-6`, which stays rejected.
 - Poisson types use `lambda >= 0` (finite) and contribute `Λ = Σ lambda_i`;
-  the Bernoulli bound does not apply and `Λ` is unbounded. There is no hard
-  cap on `k`: for realistic `Λ` the Poisson tail is negligible, and a cap would
-  need its own clamp-versus-error rule. A typo in `lambda` therefore yields a
-  correspondingly large count, not a validation failure.
+  the Bernoulli bound does not apply and `Λ` is unbounded. `lambda` itself is
+  not capped — for realistic `Λ` the Poisson tail is negligible, and a cap would
+  need its own clamp-versus-error rule — but the realised count `k` is bounded
+  structurally: a division can hold at most 65 536 mutations because `slot` is a
+  `uint16`. A larger draw aborts the run with `std::overflow_error` instead of
+  wrapping two alleles together.
 - Per type exactly one of `probability` / `lambda` must be present, matching
   its `count_model`; the other is rejected rather than ignored.
 
@@ -252,7 +257,10 @@ a Poisson type does not carry `probability` at all.
 - Configs without `count_model` keep the Bernoulli draw and remain
   bit-identical; hybrid and all-Poisson runs are explicit opt-ins.
 - Poisson types require new validation (finite `lambda >= 0`), a Poisson
-  sampler built on `uniform01`, and streams `4`/`5` reserved as above.
+  sampler built on `uniform01`, and the dedicated `kStreamMutationCount`
+  (`1 << 56`) / `kStreamMutationType` (`1 << 57`) streams placed above the
+  contiguous gamma range so a count or type draw cannot alias an effect
+  substream.
 - Changing stream ids, the pool order (Bernoulli then Poisson), the slot
   indexing, the fitness product order, or the "all-mutations-on-A" rule changes
   results and snapshot contents.

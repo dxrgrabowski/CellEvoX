@@ -122,8 +122,9 @@ class RunAnalyzeRequest(BaseModel):
 
 
 # Mirrors `kTotalMutationProbabilityTolerance` in
-# CellEvoX/include/systems/SimulationEngine.hpp.
-_TOTAL_MUTATION_PROBABILITY_TOLERANCE = 1e-5
+# CellEvoX/include/systems/SimulationEngine.hpp: one float ulp (2^-23), the
+# most that rounding an exact-1 decimal pool to float32 can overshoot by.
+_TOTAL_MUTATION_PROBABILITY_TOLERANCE = 2.0 ** -23
 _FLOAT32 = struct.Struct("<f")
 
 
