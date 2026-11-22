@@ -150,16 +150,18 @@ std::string formatMutationEffect(float effect) {
   return stream.str();
 }
 
-std::string formatMutationEntry(uint32_t mutation_id, uint8_t mutation_type, float effect) {
+std::string formatMutationEntry(uint32_t mutation_id, uint8_t mutation_type, float effect,
+                                uint16_t slot) {
   return "(" + std::to_string(mutation_id) + "," + std::to_string(mutation_type) + "," +
-         formatMutationEffect(effect) + ")";
+         formatMutationEffect(effect) + "," + std::to_string(slot) + ")";
 }
 
 std::string formatMutationsForCsv(const Cell& cell) {
   std::string mutations_str;
   for (const auto& mutation : cell.mutations) {
-    mutations_str +=
-        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
+    mutations_str += formatMutationEntry(mutation.mutation_id, mutation.mutation_type,
+                                         mutation.effect, mutation.slot) +
+                     " ";
   }
 
   if (!mutations_str.empty()) {
@@ -181,8 +183,9 @@ std::string formatDriverMutationsForCsv(const Cell& cell,
     if (!isDriverMutationType(mutation_types, mutation.mutation_type)) {
       continue;
     }
-    mutations_str +=
-        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
+    mutations_str += formatMutationEntry(mutation.mutation_id, mutation.mutation_type,
+                                        mutation.effect, mutation.slot) +
+                     " ";
   }
 
   if (!mutations_str.empty()) {
@@ -208,8 +211,9 @@ std::string formatDriverMutationsForCsv(
   std::string mutations_str;
   for (size_t i = start; i < end; ++i) {
     const auto& mutation = driver_mutations[i];
-    mutations_str +=
-        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
+    mutations_str += formatMutationEntry(mutation.mutation_id, mutation.mutation_type,
+                                         mutation.effect, mutation.slot) +
+                     " ";
   }
 
   if (!mutations_str.empty()) {
@@ -235,8 +239,9 @@ std::string formatSnapshotMutationsForCsv(
   std::string mutations_str;
   for (size_t i = start; i < end; ++i) {
     const auto& mutation = mutation_payload[i];
-    mutations_str +=
-        formatMutationEntry(mutation.mutation_id, mutation.mutation_type, mutation.effect) + " ";
+    mutations_str += formatMutationEntry(mutation.mutation_id, mutation.mutation_type,
+                                         mutation.effect, mutation.slot) +
+                     " ";
   }
 
   if (!mutations_str.empty()) {
@@ -950,20 +955,20 @@ void RunDataEngine::plotMutationFrequency() {
   if (run && !run->generational_popul_report.empty()) {
     const bool full_vaf = config && config->full_mutation_payload;
     for (const auto& [generation, cells] : run->generational_popul_report) {
-      std::map<std::pair<uint32_t, uint8_t>, uint32_t> mutation_counts;
+      std::map<std::pair<uint32_t, uint16_t>, uint32_t> mutation_counts;
       uint32_t total_cells = 0;
 
       for (const auto& item : cells) {
         const Cell& cell = item.second;
         ++total_cells;
 
-        std::set<std::pair<uint32_t, uint8_t>> alleles;
+        std::set<std::pair<uint32_t, uint16_t>> alleles;
         for (const auto& mutation : cell.mutations) {
           if (!full_vaf &&
               !isDriverMutationType(run->mutation_id_to_type, mutation.mutation_type)) {
             continue;
           }
-          alleles.emplace(mutation.mutation_id, mutation.mutation_type);
+          alleles.emplace(mutation.mutation_id, mutation.slot);
         }
         for (const auto& allele : alleles) {
           mutation_counts[allele]++;
@@ -1004,7 +1009,7 @@ void RunDataEngine::plotMutationFrequency() {
     }
     const bool full_vaf = CellEvoX::io::hasFullMutationPayload(header);
 
-    std::map<std::pair<uint32_t, uint8_t>, uint32_t> mutation_counts;
+    std::map<std::pair<uint32_t, uint16_t>, uint32_t> mutation_counts;
     const uint32_t total_cells = static_cast<uint32_t>(records.size());
     if (total_cells == 0) {
       continue;
@@ -1016,9 +1021,9 @@ void RunDataEngine::plotMutationFrequency() {
       if (start > mutation_payload.size() || end > mutation_payload.size()) {
         continue;
       }
-      std::set<std::pair<uint32_t, uint8_t>> alleles;
+      std::set<std::pair<uint32_t, uint16_t>> alleles;
       for (size_t i = start; i < end; ++i) {
-        alleles.emplace(mutation_payload[i].mutation_id, mutation_payload[i].mutation_type);
+        alleles.emplace(mutation_payload[i].mutation_id, mutation_payload[i].slot);
       }
       for (const auto& allele : alleles) {
         mutation_counts[allele]++;

@@ -165,12 +165,13 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
             status_code=400,
             detail=f"Run #{run_index}: mutations must be a list",
         )
+    total_bernoulli_probability = 0.0
     for position, mutation in enumerate(mutations):
         if not isinstance(mutation, dict):
             continue
         label = f"mutations[{position}]"
         count_model = mutation.get("count_model", "bernoulli")
-        if count_model not in {"bernoulli", "poisson"}:
+        if not isinstance(count_model, str) or count_model not in {"bernoulli", "poisson"}:
             raise HTTPException(
                 status_code=400,
                 detail=f"Run #{run_index}: {label} count_model must be 'bernoulli' or 'poisson'",
@@ -221,6 +222,7 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
                         f"in [0, 1] for the bernoulli count model"
                     ),
                 )
+            total_bernoulli_probability += probability
         if mutation.get("effect_mode", "constant") != "gamma":
             continue
         mean = mutation.get("effect_mean")
@@ -246,6 +248,17 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
                     f"effect_mean ({mean:g})"
                 ),
             )
+
+    # Mirror the C++ check: the Bernoulli pools draw one shared uniform, so the
+    # per-type probabilities must sum to at most 1.
+    if total_bernoulli_probability > 1.0 + 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Run #{run_index}: total bernoulli mutation probability "
+                f"({total_bernoulli_probability:g}) must not exceed 1"
+            ),
+        )
 
 
 def _validate_web_batch_outputs(configs: list[dict], postprocess: str) -> None:

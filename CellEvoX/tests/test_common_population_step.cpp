@@ -140,7 +140,7 @@ TEST_CASE("CommonPopulationStep reuses slots and optionally returns the same eve
     CellEvoX::systems::DensePopulation base(3), xyz(3);
     for (uint32_t id = 0; id < 3; ++id) {
         base.at(id).fitness = xyz.at(id).fitness = 1.0e20f;
-        base.at(id).mutations = xyz.at(id).mutations = {{100 + id, 7, 0.0f}};
+        base.at(id).mutations = xyz.at(id).mutations = {{100 + id, 7, 0, 0.0f}};
     }
     size_t base_count = 3, xyz_count = 3;
     size_t base_deaths = 0, xyz_deaths = 0;
@@ -317,9 +317,11 @@ TEST_CASE("CommonPopulationStep applies Bernoulli and Poisson mutations in one d
         REQUIRE(cell.fitness == Catch::Approx(expected_fitness).epsilon(1e-6));
         REQUIRE(cell.fitness > 0.0f);
 
-        // Every mutation from one division is stamped with the daughter's new id.
-        for (const auto& mutation : cell.mutations) {
-            REQUIRE(mutation.mutation_id == birth.id);
+        // Every mutation from one division is stamped with the daughter's new id,
+        // and its slot is its index in the realized event list.
+        for (size_t i = 0; i < cell.mutations.size(); ++i) {
+            REQUIRE(cell.mutations[i].mutation_id == birth.id);
+            REQUIRE(cell.mutations[i].slot == static_cast<uint16_t>(i));
         }
         poisson_events += cell.mutations.size() - 1;
     }
@@ -405,6 +407,7 @@ TEST_CASE("CommonPopulationStep keeps the Bernoulli mutation in gamma effect slo
                 gamma_mutation, config.seed, rng_step, birth.parent_id,
                 static_cast<uint32_t>(slot));
             REQUIRE(cell.mutations[slot].mutation_type == kPoissonType);
+            REQUIRE(cell.mutations[slot].slot == static_cast<uint16_t>(slot));
             REQUIRE(cell.mutations[slot].effect == expected);
         }
     }
@@ -465,6 +468,9 @@ TEST_CASE("Poisson count and type draws use disjoint stream keys",
     // from stream 3 one key per draw.
     STATIC_REQUIRE(kStreamMutationCount >= kStreamMutationEffect + (1ULL << 32U));
     STATIC_REQUIRE(kStreamMutationType >= kStreamMutationCount + (1ULL << 32U));
+    // `slot` is a uint16, so the highest reachable effect substream must stay
+    // below the count stream that PTRS draws from.
+    STATIC_REQUIRE(substream(kStreamMutationEffect, 0xFFFFU) < kStreamMutationCount);
 
     constexpr uint64_t kSeed = 42;
     constexpr uint64_t kStep = 1;
@@ -522,4 +528,27 @@ TEST_CASE("Mutation rejects a daughter whose stored float fitness underflows",
         CellEvoX::systems::detail::appendMutatedDaughters(
             daughters, parent, parent.fitness, mutations, 1.0, 0.0, 1, 0, parent.id),
         std::runtime_error);
+}
+
+TEST_CASE("Mutation rejects a division that exceeds the 16-bit allele slot limit",
+          "[MutationEffect][Validation]") {
+    // slot is a uint16; a Poisson count above 65536 would wrap and alias two
+    // alleles of the same id. Such a division must be rejected, not wrapped.
+    Cell parent;
+    parent.id = 3;
+    parent.fitness = 1.0f;
+
+    MutationType mutation{};
+    mutation.type_id = 1;
+    mutation.count_model = MutationCountModel::Poisson;
+    mutation.lambda = 70000.0f;
+    mutation.effect = 0.0f;
+
+    const std::map<uint8_t, MutationType> mutations = {{1, mutation}};
+
+    std::vector<Cell> daughters;
+    REQUIRE_THROWS_AS(
+        CellEvoX::systems::detail::appendMutatedDaughters(
+            daughters, parent, parent.fitness, mutations, 0.0, 70000.0, 1, 0, parent.id),
+        std::overflow_error);
 }

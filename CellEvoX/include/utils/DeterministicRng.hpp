@@ -27,9 +27,16 @@ constexpr uint64_t kStreamMutationType = 1ULL << 57U;
 // slot (e.g. a second mutation per division) never shifts existing draws.
 constexpr uint64_t kSubstreamStride = 1ULL << 32U;
 
-inline uint64_t substream(uint64_t base_stream, uint32_t slot) {
+constexpr uint64_t substream(uint64_t base_stream, uint32_t slot) {
   return base_stream + static_cast<uint64_t>(slot) * kSubstreamStride;
 }
+
+// A division realizes at most 2^16 mutations because `CellMutation::slot` is a
+// `uint16_t`, so the highest effect substream key is `3 + 65535 * 2^32` (~2^48).
+// That must stay below the Poisson count stream; otherwise a gamma effect draw
+// would alias a PTRS count uniform and correlate the count with the type.
+static_assert(substream(kStreamMutationEffect, 0xFFFFU) < kStreamMutationCount,
+              "effect substreams for every representable slot must stay below the count stream");
 
 inline uint64_t splitMix64(uint64_t value) {
   value += 0x9e3779b97f4a7c15ULL;

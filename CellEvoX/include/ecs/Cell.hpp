@@ -59,11 +59,16 @@ struct MutationType {
 
 // One realized mutation occurrence on a cell.
 // `mutation_id` is the id of the parent where the mutation was created,
-// `mutation_type` is the MutationType::type_id, `effect` is the realized
+// `mutation_type` is the MutationType::type_id, `slot` is the mutation's index
+// in that division's event list (ADR-0013: Bernoulli hit -> 0, Poisson-only
+// events -> 0..k-1, after a Bernoulli hit -> 1..k) and `effect` is the realized
 // signed fitness effect applied at the event (constant value or gamma draw).
+// `(mutation_id, slot)` is the allele key: it stays unique within a cell even
+// when one division draws the same type twice.
 struct CellMutation {
   uint32_t mutation_id{0};
   uint8_t mutation_type{0};
+  uint16_t slot{0};
   float effect{0.0f};
 
   bool operator==(const CellMutation&) const = default;

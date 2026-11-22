@@ -19,7 +19,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -32,11 +32,12 @@ except ImportError:
     sys.exit(1)
 
 
-def parse_mutations(mutations_str: str) -> List[Tuple[int, int]]:
+def parse_mutations(mutations_str: str) -> List[Tuple[int, int, int]]:
     """
     Parse mutations string from CSV.
-    Format: "(mutation_id,mutation_type_id) (mutation_id,mutation_type_id) ..."
-    Returns list of (mutation_id, mutation_type_id) tuples.
+    Format: "(mutation_id,mutation_type_id,effect,slot) ..."
+    Returns list of (mutation_id, mutation_type_id, slot) tuples; the realized
+    effect is not needed here. Pre-v4 rows without a slot default it to 0.
     """
     if not mutations_str or mutations_str == '""' or pd.isna(mutations_str):
         return []
@@ -47,12 +48,12 @@ def parse_mutations(mutations_str: str) -> List[Tuple[int, int]]:
         return []
     
     mutations = []
-    # Match pattern (id,type) or (id,type,effect); the effect is not needed here.
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
+    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?(?:,(\d+))?\)'
     for match in re.finditer(pattern, mutations_str):
         mutation_id = int(match.group(1))
         mutation_type_id = int(match.group(2))
-        mutations.append((mutation_id, mutation_type_id))
+        slot = int(match.group(3)) if match.group(3) is not None else 0
+        mutations.append((mutation_id, mutation_type_id, slot))
     
     return mutations
 
@@ -72,43 +73,43 @@ def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
     return driver_ids
 
 
-def _render_signature(alleles: List[Tuple[int, int]]) -> str:
-    """Hybrid token rendering (ADR-0013): bare id unless the id has >1 type."""
+def _render_signature(alleles: List[Tuple[int, Optional[int]]]) -> str:
+    """Hybrid token rendering (ADR-0013): bare id unless the id repeats."""
     unique = sorted(
-        {(int(mid), None if mtype is None else int(mtype)) for mid, mtype in alleles},
+        {(int(mid), None if slot is None else int(slot)) for mid, slot in alleles},
         key=lambda a: (a[0], -1 if a[1] is None else a[1]),
     )
     if not unique:
         return "ancestor"
-    type_counts: Dict[int, int] = {}
+    slot_counts: Dict[int, int] = {}
     for mid, _ in unique:
-        type_counts[mid] = type_counts.get(mid, 0) + 1
+        slot_counts[mid] = slot_counts.get(mid, 0) + 1
     return ",".join(
-        f"{mid}:{mtype}" if mtype is not None and type_counts[mid] > 1 else str(mid)
-        for mid, mtype in unique
+        f"{mid}:{slot}" if slot is not None and slot_counts[mid] > 1 else str(mid)
+        for mid, slot in unique
     )
 
 
-def get_driver_signature(mutations: List[Tuple[int, int]], driver_type_ids: Set[int]) -> str:
+def get_driver_signature(mutations: List[Tuple[int, int, int]], driver_type_ids: Set[int]) -> str:
     """
     Extract driver mutations and return a signature string.
-    Alleles are keyed by (mutation_id, mutation_type); the token is the bare
-    mutation_id unless that id carries several types in the cell.
+    Alleles are keyed by (mutation_id, slot); the token is the bare
+    mutation_id unless that id appears several times in the cell.
     """
     driver_alleles = [
-        (mut_id, mut_type) for mut_id, mut_type in mutations
+        (mut_id, slot) for mut_id, mut_type, slot in mutations
         if mut_type in driver_type_ids
     ]
     return _render_signature(driver_alleles)
 
 
-def _signature_alleles(signature: str) -> List[Tuple[int, int]]:
+def _signature_alleles(signature: str) -> List[Tuple[int, Optional[int]]]:
     if signature == "ancestor":
         return []
     alleles = []
     for part in signature.split(","):
-        mid, _, mtype = part.partition(":")
-        alleles.append((int(mid), int(mtype) if mtype else None))
+        mid, _, slot = part.partition(":")
+        alleles.append((int(mid), int(slot) if slot else None))
     return alleles
 
 
@@ -123,7 +124,7 @@ def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
     alleles = _signature_alleles(signature)
 
     # All alleles acquired in one division share the origin mutation_id
-    # (ADR-0013), so remove the whole id instead of a single id:type token.
+    # (ADR-0013), so remove the whole id instead of a single id:slot token.
     groups = []
     for allele in alleles:
         if groups and groups[-1][0][0] == allele[0]:

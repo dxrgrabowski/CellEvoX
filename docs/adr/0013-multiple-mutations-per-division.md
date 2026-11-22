@@ -27,14 +27,17 @@ Constraints that pin the design:
   `appendMutatedDaughters`, so the new draw sequence and mutation order must be
   identical for both.
 - `snapshot-abi` (ADR-0004): `mutations_count` is a `uint16` and the per-cell
-  mutation payload is already variable-length, so k > 1 needs no new ABI fields.
-  Version 3 already carries `(mutation_id, mutation_type, effect)`.
+  mutation payload is already variable-length, so k > 1 needs no new length
+  fields. Version 3 carries `(mutation_id, mutation_type, effect)` but cannot
+  distinguish two same-type mutations from one division; the payload therefore
+  gains an event-order `slot` and becomes version 4. Version 3 files are not
+  kept readable (the simulator has no public deployment yet).
 - ADR-0012 (merged as #69) owns RNG stream `3` for per-mutation gamma effects,
   adds `kStreamMutationEffect`, and defines
-  `substream(base, slot) = base + slot * 2^32`. `MutationEffect.cpp` currently
-  passes `mutation_slot = 0` and explicitly reserves slot `1+` "for a future
-  second mutation". This ADR fills that reservation and must not reuse stream
-  `3`.
+  `substream(base, slot) = base + slot * 2^32`. Before this ADR,
+  `MutationEffect.cpp` passed `mutation_slot = 0` and explicitly reserved slot
+  `1+` "for a future second mutation". This ADR fills that reservation and must
+  not reuse stream `3`.
 
 ## Decision
 
@@ -82,8 +85,10 @@ For a birth, in this fixed order:
 4. All mutations go to daughter A; daughter B is always an unmutated copy of
    the parent. `k = 0` and no Bernoulli hit means a neutral division with two
    identical daughters, both with fresh ids.
-5. Each mutation's placeholder `{0, type_id, effect}` is appended in list order
-   and rewritten to A's id after id assignment.
+5. Each mutation's placeholder `{0, type_id, slot, effect}` is appended in list
+   order and rewritten to A's id after id assignment, where `slot` is the
+   mutation's index in the event list (Bernoulli `0`, Poisson `1..k`, or
+   `0..k-1` without a Bernoulli hit).
 6. Fitness of daughter A is the sequential product in list order:
    `fitness_A = parent_fitness · Π_m (1 + effect_m)`, where `effect_m` comes
    from `realizedMutationEffect(type, seed, step, cell_id, /*slot=*/m)` — the
@@ -125,55 +130,82 @@ position in the event list (not a count of effect draws), a constant-mode
 mutation never consumes a gamma slot. In a legacy config only `0/1/2` are read
 (plus `3` for a gamma type), so existing runs stay bit-identical.
 
-### Downstream semantics and output impact
-Mutations from one division share `mutation_id` (the origin daughter) but differ
-in `mutation_type` and `effect`. `Cell::mutations` is now
-`std::vector<CellMutation{mutation_id, mutation_type, effect}>`, so duplicates
-are representable, but the consumers were written for "one mutation per cell per
-id" and break in four places:
+`slot` is a `uint16`, so a division can realize at most 65 536 mutations and the
+highest effect substream key is `3 + 65535 * 2^32` (~2^48). A
+`static_assert(substream(kStreamMutationEffect, 0xFFFF) < kStreamMutationCount)`
+pins that bound, so no gamma effect can ever alias the count stream's PTRS
+uniforms. `appendMutatedDaughters` enforces the bound at run time: a Poisson
+count that does not fit the slot range aborts the run with
+`std::overflow_error` instead of wrapping and aliasing two alleles.
+
+### Allele identity and output impact
+Mutations from one division share `mutation_id` (the origin daughter) and differ
+in `mutation_type`, `slot` and `effect`. `Cell::mutations` is now
+`std::vector<CellMutation{mutation_id, mutation_type, slot, effect}>`.
+
+`mutation_type` alone cannot identify an occurrence: two Poisson draws in the
+same division can select the same type, and they are independent alleles
+(different gamma draws, different RNG slots). `slot` is the position in the
+division's event list, so `(mutation_id, slot)` is unique within a cell and
+stable under driver-only filtering; `mutation_type` stays an attribute of the
+allele.
+
+`slot` is stored rather than reconstructed: the same value is already computed
+for the gamma substream in `appendMutatedDaughters`, so persisting it adds no
+RNG bookkeeping and no per-record bytes (see the `CellMutation` layout note
+below). Deriving it from the position in a filtered payload would be fragile.
+
+Consumers written for "one mutation per cell per id" break as follows:
 
 - **VAF inflates.** `RunDataEngine::plotMutationFrequency` increments
   `mutation_counts[mutation_id]` per record, in both the in-memory path and the
-  binary-snapshot path. A cell carrying two copies of one origin id then counts
-  twice, so a VAF can exceed `1`. It must count the *presence* of a key per
-  cell.
+  binary-snapshot path. A cell carrying two occurrences of one origin id then
+  counts twice, so a VAF can exceed `1`. It must count the *presence* of an
+  allele per cell, keyed by `(mutation_id, slot)`.
 - **Clone signatures diverge.** `results_parser._driver_signature` sorts origin
-  ids without deduplicating, so a cell with driver mutations `(5,1)` and `(5,2)`
+  ids without deduplicating, so a cell with driver alleles `(5,0)` and `(5,1)`
   yields `"5,5"`, while `snapshot_io.driver_signature_from_driver_ids` uses a
   set and yields `"5"`. The same run therefore gets different clone labels
   depending on the reader.
 - **Muller parent search is fragile.** `_muller_parent_signature` drops the
-  last comma token and assumes ids are monotonic; duplicate tokens make that
+  last comma token and assumes ids are monotonic; repeated ids make that
   heuristic ambiguous.
-- **`mutation_id` alone is not an allele.** Two mutations from one division can
-  have different types. Keying VAF/clones by `mutation_id` only merges them.
 
-The structural payload stays valid: `MutationCount` remains the number of
-records, `mutations_count` / `driver_mutation_count` remain counts, the flat
-`(mutation_id, mutation_type, effect)` payload already allows duplicates, and no
-new ABI version is needed beyond v3. Only the *interpretation* has to be fixed.
+The structural payload stays valid apart from the new identifier:
+`MutationCount` remains the number of records, `mutations_count` /
+`driver_mutation_count` remain counts, and the mutation record grows by one
+`uint16 slot` (9 -> 11 bytes packed, snapshot version 4). The CSV cell payload
+grows from `(id,type,effect)` to `(id,type,effect,slot)`.
 
 Recommended output rule:
 
-- an allele is `(mutation_id, mutation_type)`; a cell either carries it or not;
+- an allele is `(mutation_id, slot)`; a cell either carries it or not;
 - VAF = cells carrying the allele / total cells (deduplicate per cell);
 - `MutationCount` = occurrences, including two hits of the same allele;
 - clone signatures and Muller ancestry use the deduplicated allele set;
 - `docs/output-contract.md` states that `mutation_id` is not unique within a
-  cell and that duplicates are independent occurrences, not a data error.
+  cell, that `slot` is the position in the division's mutation list, and that
+  duplicates are independent occurrences, not a data error.
 
 Clone-signature labels are hybrid, so existing runs keep their labels while
 hybrid runs lose nothing:
 
-- deduplicate by the allele key `(mutation_id, mutation_type)` in every reader;
-- render a token as the bare `mutation_id` when that id carries exactly one type
-  in the cell (the only case that exists in pre-#59 data);
-- render it as `mutation_id:mutation_type` only when the same id appears with
-  more than one type in that cell;
+- deduplicate by the allele key `(mutation_id, slot)` in every reader;
+- render a token as the bare `mutation_id` when that id carries exactly one
+  allele in the cell (the only case that exists in pre-#59 and in
+  Bernoulli-only data, where every mutation has `slot = 0`);
+- render it as `mutation_id:slot` only when the same id appears more than once
+  in that cell;
 - both `results_parser._driver_signature` and
   `snapshot_io.driver_signature_from_driver_ids` must implement exactly this
-  rule, and `_muller_parent_signature` must drop a whole token, not assume
+  rule, and `_muller_parent_signature` must drop a whole id group, not assume
   every token is a bare integer.
+
+`CellMutation` layout: the pre-#59 fields are `uint32_t mutation_id`,
+`uint8_t mutation_type`, `float effect` (12 bytes including 3 bytes of padding).
+Adding `uint16_t slot` between `mutation_type` and `effect` fills that padding,
+so `sizeof(CellMutation)` stays 12 and per-cell mutation memory does not grow
+for the same mutation count.
 
 ### Configuration sketch
 ```json
@@ -221,12 +253,16 @@ a Poisson type does not carry `probability` at all.
   indexing, the fitness product order, or the "all-mutations-on-A" rule changes
   results and snapshot contents.
 - VAF, `driver_signature`, and any clone definition must be per distinct allele
-  `(mutation_id, mutation_type)`, not per record; both the C++ statistics path
-  and `web/backend/results_parser.py` are in scope. Clone tokens keep the bare
-  id unless one id carries several types in the cell, so pre-#59 outputs are
+  `(mutation_id, slot)`, not per record; both the C++ statistics path and
+  `web/backend/results_parser.py` are in scope. Clone tokens keep the bare id
+  unless one id appears several times in the cell, so pre-#59 outputs are
   unaffected.
+- The mutation payload is version 4: the packed record is
+  `(mutation_id, mutation_type, slot, effect)` (11 bytes) and CSV rows use
+  `(id,type,effect,slot)`. Version 3 snapshots are rejected by the reader.
 - `total_mutations_memory` grows with the average number of mutations per
-  division; no new memory accounting is introduced.
+  division; `sizeof(CellMutation)` itself stays 12 bytes, so no new memory
+  accounting is introduced.
 - `Σ p_i <= 1` describes only the Bernoulli pool; `Λ` is validated separately.
 - ADR-0012's "Multiple mutations per division event remain out of scope" no
   longer holds; ADR-0012's slot-`1+` reservation in `MutationEffect.cpp` is
@@ -240,8 +276,12 @@ branch. Touch points:
 
 - `CellEvoX/include/ecs/Cell.hpp` — extend `MutationType` with `count_model`
   and `lambda`; `effect_mode`, `effect_mean`, `effect_std`, `effect_direction`,
-  `effect_limit` and `CellMutation{mutation_id, mutation_type, effect}` already
-  exist from ADR-0012.
+  `effect_limit` already exist from ADR-0012. Add `uint16_t slot` to
+  `CellMutation` between `mutation_type` and `effect` so the struct stays 12
+  bytes.
+- `CellEvoX/include/io/PopulationSnapshotIO.hpp` — bump
+  `kPopulationSnapshotVersion` to 4 and add `uint16_t slot` to
+  `PopulationSnapshotDriverMutation` (packed size 11).
 - `CellEvoX/include/utils/SimulationConfig.hpp` — parse `count_model` /
   `lambda`, enforce `probability`/`lambda` exclusivity, sum `Σ p_i` over the
   Bernoulli pool only, compute `Λ`, keep the named-field parsing style it uses
@@ -264,38 +304,52 @@ branch. Touch points:
   `driver/positive/neutral/negative_mutations` semantics under k > 1 and the
   neutral-band comparison that ADR-0012 introduced.
 - `web/backend/results_parser.py` — `_driver_signature` deduplicates by
-  `(mutation_id, mutation_type)` and renders the hybrid token; make
-  `_muller_parent_signature` robust to `id:type` tokens and repeated ids;
+  `(mutation_id, slot)` and renders the hybrid token; make
+  `_muller_parent_signature` robust to `id:slot` tokens and repeated ids;
   `web/backend/main.py` schema and
   `web/frontend/src/components/config/MutationEditor.tsx` /
   `web/frontend/src/types/simulation.ts` — per-type `count_model` toggle and
   `lambda` field (the `effect_mode` UI is already there).
 - `CellEvoX/scripts/snapshot_io.py` — `driver_signature_from_driver_ids`
-  currently collapses ids through a `set`; it must key by `(id, type)` and use
-  the same hybrid rendering as the backend.
+  currently collapses ids through a `set`; it must key by `(id, slot)` and use
+  the same hybrid rendering as the backend. `parse_mutations` returns
+  `(id, type, effect, slot)`.
 - `CellEvoX/scripts/plot_muller.py`, `plot_phylogeny.py`,
   `plot_clone_counts.py`, `plot_clone_lifespans.py` — reuse the same hybrid
-  rendering; `plot_clone_counts.py` / `plot_clone_lifespans.py` now return the
-  rendered label (a string) instead of a driver-id tuple.
+  rendering and tolerate the extra CSV field; `plot_clone_counts.py` /
+  `plot_clone_lifespans.py` now return the rendered label (a string) instead of
+  a driver-id tuple.
 - `CellEvoX/tests/fixtures/mini_run/` and
-  `CellEvoX/tests/test_population_snapshot_io.cpp` — v3 fixtures stay valid;
-  add hybrid/duplicate cases.
+  `CellEvoX/tests/test_population_snapshot_io.cpp` — fixtures move to the v4
+  payload; add hybrid/same-type duplicate cases.
 - `docs/output-contract.md` — state that `mutation_id` is not unique within a
-  cell, that duplicates are independent occurrences, and how VAF/clone keys are
-  derived.
+  cell, what `slot` means, that duplicates are independent occurrences, and how
+  VAF/clone keys are derived.
 
 ## Resolved questions (2026-11-20)
 1. **Allele identity in outputs.** Decided: alleles are keyed by
-   `(mutation_id, mutation_type)` everywhere, but the rendered clone token stays
-   the bare `mutation_id` unless that id carries more than one type in the cell,
-   in which case it becomes `mutation_id:mutation_type`. Existing runs are not
-   relabelled; hybrid runs stay lossless. See "Downstream semantics and output
-   impact".
-2. **Cap on k.** Decided: no cap. `lambda` is validated as finite and `>= 0`
-   only; the Poisson tail is left to the sampler.
+   `(mutation_id, slot)` everywhere, where `slot` is the mutation's index in the
+   division's event list (`0` for a Bernoulli hit, `0..k-1` for Poisson-only
+   events, `1..k` after a Bernoulli hit). The rendered clone token stays the
+   bare `mutation_id` unless that id appears more than once in the cell, in
+   which case it becomes `mutation_id:slot`. Existing runs are not relabelled;
+   hybrid runs stay lossless. This supersedes an earlier plan to key alleles by
+   `(mutation_id, mutation_type)`, which merged two same-type Poisson draws from
+   one division.
+2. **Cap on k.** Decided: no cap on `lambda` itself. `lambda` is validated as
+   finite and `>= 0` only; the Poisson tail is left to the sampler. The one hard
+   limit is structural: a realised count must fit the `uint16` slot space, so a
+   division that would exceed 65 536 mutations is rejected at run time rather
+   than silently wrapped.
 3. **Extra observability.** Decided: no `mutations_per_division` histogram in
    this iteration; `MutationCount` is sufficient and a histogram can be a later,
    independent change.
+4. **Snapshot compatibility.** Decided: v3 snapshots need not stay readable. The
+   payload gains `slot` and moves to version 4; the reader rejects version 3
+   with the existing header check.
+5. **Memory.** Decided: `slot` is a `uint16` placed in the struct's existing
+   padding, so `sizeof(CellMutation)` stays 12 bytes and per-cell mutation
+   memory is unchanged for the same mutation count.
 
 ## Evidence
 - `CellEvoX/tests/test_common_population_step.cpp` —
@@ -305,7 +359,12 @@ branch. Touch points:
   "CommonPopulationStep keeps the Bernoulli mutation in gamma effect slot zero"
   (per-slot `substream(3, m)` effects). "Deterministic poisson draws are
   reproducible across both sampling regimes" pins inversion (`lambda < 10`) and
-  PTRS (`lambda >= 10`) reproducibility and means.
+  PTRS (`lambda >= 10`) reproducibility and means, and "Poisson count and type
+  draws use disjoint stream keys" pins the `kStreamMutationCount`/`Type` split
+  and that every reachable effect substream stays below the count stream.
+- `CellEvoX/tests/test_common_population_step.cpp` — "Mutation rejects a division
+  that exceeds the 16-bit allele slot limit" pins the run-time rejection of a
+  Poisson count that cannot fit `uint16` slots.
 - `CellEvoX/tests/test_simulation.cpp` — "SimulationConfig parses hybrid mutation
   count models" and "SimulationConfig rejects invalid mutation count models"
   (missing `count_model` stays Bernoulli, `probability`/`lambda` exclusivity,
@@ -315,9 +374,9 @@ branch. Touch points:
   full `CellEvoXTests "~[benchmark]"` suite passes (58 cases, 237956
   assertions).
 - `CellEvoX/scripts/test_snapshot_io.py` — `HybridCloneSignatures` covers the
-  bare-id render, the `id:type` collision render, deduplication of repeated
-  occurrences, and driver filtering.
+  bare-id render, the `id:slot` collision render (including two same-type draws
+  in one division), deduplication of repeated occurrences, and driver filtering.
 - `web/backend/tests/test_results_parser.py` — clone-signature rendering, parent
-  fallback for `id:type` tokens; `web/backend/tests/test_api.py` — hybrid config
+  fallback for `id:slot` tokens; `web/backend/tests/test_api.py` — hybrid config
   accepted and `count_model`/`probability`/`lambda` validation mirrors C++
   (44 backend tests pass).

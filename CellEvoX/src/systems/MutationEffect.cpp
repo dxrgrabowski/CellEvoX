@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -47,10 +48,10 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
         }
       }
       if (selected != nullptr) {
-        const uint32_t slot = static_cast<uint32_t>(new_mutations.size());
+        const auto slot = static_cast<uint16_t>(new_mutations.size());
         const float realized_effect =
             realizedMutationEffect(*selected, seed, rng_step, cell_id, slot);
-        new_mutations.push_back({0, selected->type_id, realized_effect});
+        new_mutations.push_back({0, selected->type_id, slot, realized_effect});
       }
     }
   }
@@ -63,6 +64,14 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
         CellEvoX::deterministic_rng::substream(
             CellEvoX::deterministic_rng::kStreamMutationCount, 0),
         total_mutation_rate);
+    // `slot` is a uint16 allele key. A count that does not fit would wrap and
+    // collide two alleles of the same id, so reject it instead (ADR-0013).
+    constexpr uint64_t kMaxMutationsPerDivision =
+        static_cast<uint64_t>(std::numeric_limits<uint16_t>::max()) + 1ULL;
+    if (count > kMaxMutationsPerDivision - new_mutations.size()) {
+      throw std::overflow_error(
+          "mutation count per division exceeds the 16-bit allele slot limit (65536)");
+    }
     for (uint64_t j = 0; j < count; ++j) {
       const double type_draw = CellEvoX::deterministic_rng::uniform01(
           seed, rng_step, cell_id,
@@ -96,10 +105,10 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
       if (selected == nullptr) {
         break;
       }
-      const uint32_t slot = static_cast<uint32_t>(new_mutations.size());
+      const auto slot = static_cast<uint16_t>(new_mutations.size());
       const float realized_effect =
           realizedMutationEffect(*selected, seed, rng_step, cell_id, slot);
-      new_mutations.push_back({0, selected->type_id, realized_effect});
+      new_mutations.push_back({0, selected->type_id, slot, realized_effect});
     }
   }
 

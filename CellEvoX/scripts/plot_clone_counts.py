@@ -18,23 +18,24 @@ def parse_mutations(mutations_str):
     if not mutations_str:
         return []
     mutations = []
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
+    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?(?:,(\d+))?\)'
     for match in re.finditer(pattern, mutations_str):
-        mutations.append((int(match.group(1)), int(match.group(2))))
+        slot = int(match.group(3)) if match.group(3) is not None else 0
+        mutations.append((int(match.group(1)), int(match.group(2)), slot))
     return mutations
 
 def get_driver_signature(mutations_list, driver_type_ids):
-    """Hybrid token rendering (ADR-0013): bare id unless the id has >1 type."""
+    """Hybrid token rendering (ADR-0013): bare id unless the id repeats."""
     unique = sorted(
-        {(mut_id, mut_type) for mut_id, mut_type in mutations_list
+        {(mut_id, slot) for mut_id, mut_type, slot in mutations_list
          if mut_type in driver_type_ids}
     )
-    type_counts = {}
+    slot_counts = {}
     for mut_id, _ in unique:
-        type_counts[mut_id] = type_counts.get(mut_id, 0) + 1
+        slot_counts[mut_id] = slot_counts.get(mut_id, 0) + 1
     return ",".join(
-        f"{mut_id}:{mut_type}" if type_counts[mut_id] > 1 else str(mut_id)
-        for mut_id, mut_type in unique
+        f"{mut_id}:{slot}" if slot_counts[mut_id] > 1 else str(mut_id)
+        for mut_id, slot in unique
     )
 
 def get_driver_mutation_type_ids(config_path):

@@ -304,6 +304,39 @@ def test_batch_start_rejects_invalid_lambda(client, valid_config, bad_value):
     assert "lambda" in response.json()["detail"]
 
 
+def test_batch_start_rejects_bernoulli_probability_sum_above_one(client, valid_config):
+    # Two Bernoulli types share one uniform, so their probabilities must sum to
+    # at most 1. The C++ config validator rejects this; the API must too.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.7},
+        {"id": 1, "is_driver": False, "effect": 0.0, "probability": 0.7},
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "total bernoulli" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("bad_model", [["bernoulli"], {"name": "bernoulli"}])
+def test_batch_start_rejects_non_string_count_model(client, valid_config, bad_model):
+    # An unhashable value must produce 400, not a TypeError surfacing as 500.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "probability": 0.01, "count_model": bad_model}
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "count_model" in response.json()["detail"]
+
+
 def test_start_conflicts_when_runner_is_busy(client, monkeypatch, valid_config):
     monkeypatch.setattr(main.runner, "is_running", lambda: True)
 

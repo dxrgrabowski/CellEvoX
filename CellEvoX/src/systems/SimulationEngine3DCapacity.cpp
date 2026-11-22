@@ -715,7 +715,7 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
       if (config->full_mutation_payload ||
           (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
         mutation_payload.push_back(
-            {mutation.mutation_id, mutation.mutation_type, mutation.effect});
+            {mutation.mutation_id, mutation.mutation_type, mutation.slot, mutation.effect});
       }
     }
     const auto mutation_payload_count =

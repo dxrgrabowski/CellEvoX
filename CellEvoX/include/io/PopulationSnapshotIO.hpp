@@ -13,7 +13,7 @@
 namespace CellEvoX::io {
 
 constexpr std::array<char, 8> kPopulationSnapshotMagic = {'C', 'E', 'L', 'X', 'P', 'O', 'P', '1'};
-constexpr uint32_t kPopulationSnapshotVersion = 3;
+constexpr uint32_t kPopulationSnapshotVersion = 4;
 constexpr uint8_t kPopulationSnapshotFlagHasDriverMutationPayload = 0x1;
 constexpr uint8_t kPopulationSnapshotFlagHasFullMutationPayload = 0x2;
 
@@ -53,7 +53,8 @@ struct PopulationSnapshotRecord {
 struct PopulationSnapshotDriverMutation {
   uint32_t mutation_id;
   uint8_t mutation_type;
-  float effect;  // realized signed fitness effect (v3+)
+  uint16_t slot;  // index in the division's event list (v4+)
+  float effect;   // realized signed fitness effect (v3+)
 };
 #pragma pack(pop)
 
@@ -61,7 +62,7 @@ static_assert(sizeof(PopulationSnapshotFileHeader) == 48,
               "PopulationSnapshotFileHeader must stay tightly packed");
 static_assert(sizeof(PopulationSnapshotRecord) == 36,
               "PopulationSnapshotRecord must stay tightly packed");
-static_assert(sizeof(PopulationSnapshotDriverMutation) == 9,
+static_assert(sizeof(PopulationSnapshotDriverMutation) == 11,
               "PopulationSnapshotDriverMutation must stay tightly packed");
 
 inline std::string populationSnapshotPath(const std::string& output_path, int generation) {

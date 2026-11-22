@@ -457,7 +457,7 @@ TEST_CASE("SpatialHashGrid handles large rebuilds through the parallel sort path
 TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
     Cell parent(1);
     parent.fitness = 1.0;
-    parent.mutations.push_back({0, 1, 0.0f}); // Parent has a mutation
+    parent.mutations.push_back({0, 1, 0, 0.0f}); // Parent has a mutation
 
     Cell child(parent, 1.25); // Create child from parent with higher fitness
     
@@ -539,7 +539,7 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
         REQUIRE(accessor->second.parent_id == parent_id);
         REQUIRE(accessor->second.fitness == Catch::Approx(1.0e20f));
         if (mutated) {
-            REQUIRE(accessor->second.mutations == std::vector<CellMutation>{{id, 7, 0.0f}});
+            REQUIRE(accessor->second.mutations == std::vector<CellMutation>{{id, 7, 0, 0.0f}});
         } else {
             REQUIRE(accessor->second.mutations.empty());
         }
@@ -557,27 +557,27 @@ TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]")
     CellMap cells;
 
     Cell first(10);
-    first.mutations = {{100, 1, 0.10f}, {101, 2, -0.20f}};
+    first.mutations = {{100, 1, 0, 0.10f}, {101, 2, 0, -0.20f}};
     REQUIRE(cells.insert({10, std::move(first)}));
 
     Cell second(11);
-    second.mutations = {{102, 3, 0.0f}};
+    second.mutations = {{102, 3, 0, 0.0f}};
     REQUIRE(cells.insert({11, std::move(second)}));
 
     Cell third(12);
-    third.mutations = {{103, 4, 0.05f}};
+    third.mutations = {{103, 4, 0, 0.05f}};
     REQUIRE(cells.insert({12, std::move(third)}));
 
     // A gamma mutation type configured as beneficial that realized a negative
     // draw: classification must follow the realized effect, not the config.
     Cell fourth(13);
-    fourth.mutations = {{104, 5, -0.15f}};
+    fourth.mutations = {{104, 5, 0, -0.15f}};
     REQUIRE(cells.insert({13, std::move(fourth)}));
 
     // A non-zero effect inside the default neutral band (one float epsilon) is
     // rounding noise of `Cell::fitness` and must not count as beneficial.
     Cell fifth(14);
-    fifth.mutations = {{105, 6, 5.0e-8f}};
+    fifth.mutations = {{105, 6, 0, 5.0e-8f}};
     REQUIRE(cells.insert({14, std::move(fifth)}));
 
     std::map<uint8_t, MutationType> mutation_types;
@@ -603,7 +603,7 @@ TEST_CASE("Run neutral band is configurable and overridable", "[Run][Correctness
     auto build_run = [](double tolerance) {
         CellMap cells;
         Cell cell(10);
-        cell.mutations = {{100, 1, 0.0005f}, {101, 2, 0.002f}, {102, 3, -0.0005f}};
+        cell.mutations = {{100, 1, 0, 0.0005f}, {101, 2, 0, 0.002f}, {102, 3, 0, -0.0005f}};
         REQUIRE(cells.insert({10, std::move(cell)}));
 
         std::map<uint8_t, MutationType> mutation_types;
@@ -1017,9 +1017,9 @@ TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnap
         {2, 1, 1.1f, 4.0f, 5.0f, 6.0f, 2, 2, 1, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations = {
-        {101, 1, 0.3f},
-        {202, 1, -0.25f},
-        {303, 2, 0.0f}
+        {101, 1, 0, 0.3f},
+        {202, 1, 0, -0.25f},
+        {303, 2, 0, 0.0f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -1058,8 +1058,8 @@ TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[Populat
         {1, 0, 1.0f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1, 0.5f},
-        {202, 3, -0.25f}
+        {101, 1, 0, 0.5f},
+        {202, 3, 0, -0.25f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -1095,8 +1095,8 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
         {7, 3, 1.25f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1, 0.5f},
-        {202, 3, -0.25f}
+        {101, 1, 0, 0.5f},
+        {202, 3, 0, -0.25f}
     };
     const auto snapshot_path = population_dir / "population_generation_5.bin";
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -1120,7 +1120,7 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
     std::string row_line;
     REQUIRE(std::getline(file, header_line));
     REQUIRE(std::getline(file, row_line));
-    REQUIRE(row_line.find("\"(101,1,0.5) (202,3,-0.25)\"") != std::string::npos);
+    REQUIRE(row_line.find("\"(101,1,0.5,0) (202,3,-0.25,0)\"") != std::string::npos);
 }
 
 TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV snapshots", "[RunDataEngine]") {
@@ -1164,12 +1164,12 @@ TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV sna
 
     const auto driver_only_csv =
         export_csv(make_config(testTempString("test_run_data_engine_driver_only_ram_csv"), false));
-    // Mutation entries are "(id,type,effect)"; the configured effect here is 0.
-    REQUIRE(driver_only_csv.find(",2,0)") == std::string::npos);
+    // Mutation entries are "(id,type,effect,slot)"; the configured effect here is 0.
+    REQUIRE(driver_only_csv.find(",2,0,0)") == std::string::npos);
 
     const auto full_payload_csv =
         export_csv(make_config(testTempString("test_run_data_engine_full_ram_csv"), true));
-    REQUIRE(full_payload_csv.find(",2,0)") != std::string::npos);
+    REQUIRE(full_payload_csv.find(",2,0,0)") != std::string::npos);
 }
 
 TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D", "[SimulationEngine][PopulationSnapshotIO]") {

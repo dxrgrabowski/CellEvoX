@@ -33,7 +33,7 @@ FIXTURE_ROOT = os.path.join(
 # Mirror of the C++ static_assert values in include/io/PopulationSnapshotIO.hpp.
 HEADER_SIZE = 48
 RECORD_SIZE = 36
-MUTATION_RECORD_SIZE = 9
+MUTATION_RECORD_SIZE = 11
 
 FLAG_DRIVER_PAYLOAD = 0x1
 FLAG_FULL_PAYLOAD = 0x2
@@ -111,7 +111,7 @@ class DriverOnlySnapshotFixture(unittest.TestCase):
         self.assertEqual(data["MutationCount"].tolist(), [1, 2, 1])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(0,1,0.5)", "(0,1,0.5) (1,2,0.25)", "(0,1,0.5)"],
+            ["(0,1,0.5,0)", "(0,1,0.5,0) (1,2,0.25,0)", "(0,1,0.5,0)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [0, 0, 0])
         self.assertTrue(all(math.isnan(value) for value in data["X"]))
@@ -166,7 +166,7 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
         self.assertEqual(data["Fitness"].tolist(), [1.5, 0.875])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(3,1,0.125) (7,3,0.25)", "(3,1,0.125) (8,4,-0.25)"],
+            ["(3,1,0.125,0) (7,3,0.25,0)", "(3,1,0.125,0) (8,4,-0.25,0)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [1, 1])
         self.assertEqual(data["X"].tolist(), [1.5, 4.0])
@@ -181,8 +181,8 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
 
 
 class InvalidSnapshotFixtures(unittest.TestCase):
-    def test_truncated_v3_is_rejected(self):
-        path = _invalid("truncated_v3.bin")
+    def test_truncated_v4_is_rejected(self):
+        path = _invalid("truncated_v4.bin")
         self.assertEqual(os.path.getsize(path), HEADER_SIZE)
         with self.assertRaises(ValueError):
             _load_bin_frame(5, path, set())
@@ -209,25 +209,25 @@ class FixtureDiscovery(unittest.TestCase):
 
 
 class HybridCloneSignatures(unittest.TestCase):
-    def test_renders_bare_ids_without_type_collision(self):
+    def test_renders_bare_ids_without_slot_collision(self):
         self.assertEqual(snapshot_io._render_signature([]), "ancestor")
-        self.assertEqual(snapshot_io._render_signature([(0, 1)]), "0")
-        self.assertEqual(snapshot_io._render_signature([(3, 7), (1, 2)]), "1,3")
+        self.assertEqual(snapshot_io._render_signature([(0, 0)]), "0")
+        self.assertEqual(snapshot_io._render_signature([(3, 0), (1, 0)]), "1,3")
 
-    def test_switches_to_id_type_on_collision(self):
+    def test_switches_to_id_slot_on_collision(self):
         self.assertEqual(
-            snapshot_io._render_signature([(0, 1), (0, 2)]), "0:1,0:2"
+            snapshot_io._render_signature([(0, 0), (0, 1)]), "0:0,0:1"
         )
         self.assertEqual(
             snapshot_io._render_signature([(3, 5), (0, 2), (0, 1)]), "0:1,0:2,3"
         )
 
     def test_deduplicates_repeated_occurrences_of_one_allele(self):
-        # Multiple Poisson occurrences of the same (id, type) are one allele.
-        self.assertEqual(snapshot_io._render_signature([(0, 1), (0, 1)]), "0")
+        # Two identical (id, slot) entries are one allele.
+        self.assertEqual(snapshot_io._render_signature([(0, 0), (0, 0)]), "0")
 
     def test_driver_signature_filters_and_deduplicates(self):
-        mutations = [(101, 1, 0.0), (102, 1, 0.0), (102, 1, 0.0), (103, 2, 0.0)]
+        mutations = [(101, 1, 0.0, 0), (102, 1, 0.0, 0), (102, 1, 0.0, 0), (103, 2, 0.0, 0)]
         self.assertEqual(
             snapshot_io.driver_signature_from_mutations(mutations, {1, 2}), "101,102,103"
         )
@@ -235,24 +235,30 @@ class HybridCloneSignatures(unittest.TestCase):
             snapshot_io.driver_signature_from_mutations(mutations, {1}), "101,102"
         )
 
+    def test_driver_signature_keeps_same_type_poisson_draws_apart(self):
+        mutations = [(101, 1, 0.1, 0), (101, 1, 0.2, 1)]
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1}), "101:0,101:1"
+        )
+
     def test_signature_round_trips_through_alleles(self):
         self.assertEqual(
-            snapshot_io.signature_to_alleles("0:1,0:2,3"), ((0, 1), (0, 2), (3, None))
+            snapshot_io.signature_to_alleles("0:0,0:1,3"), ((0, 0), (0, 1), (3, None))
         )
         self.assertEqual(
-            snapshot_io.signature_to_driver_ids("0:1,0:2,3"), (0, 3)
+            snapshot_io.signature_to_driver_ids("0:0,0:1,3"), (0, 3)
         )
 
     def test_parent_drops_every_allele_from_one_division(self):
-        signatures = {"ancestor", "7", "7,12:1,12:2"}
+        signatures = {"ancestor", "7", "7,12:0,12:1"}
         self.assertEqual(
-            snapshot_io.find_parent_signature("7,12:1,12:2", signatures), "7"
+            snapshot_io.find_parent_signature("7,12:0,12:1", signatures), "7"
         )
 
     def test_parent_does_not_drop_a_single_allele_from_one_division(self):
-        signatures = {"ancestor", "0", "0:1,0:2"}
+        signatures = {"ancestor", "0", "0:0,0:1"}
         self.assertEqual(
-            snapshot_io.find_parent_signature("0:1,0:2", signatures), "ancestor"
+            snapshot_io.find_parent_signature("0:0,0:1", signatures), "ancestor"
         )
 
 

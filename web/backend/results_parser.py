@@ -14,48 +14,49 @@ import numpy as np
 
 
 def render_clone_signature(alleles) -> str:
-    """Render ``(mutation_id, mutation_type)`` alleles with the ADR-0013 rule.
+    """Render ``(mutation_id, slot)`` alleles with the ADR-0013 rule.
 
-    A token is the bare ``mutation_id`` unless that id carries more than one
-    type in the set, in which case every token for that id becomes
-    ``mutation_id:mutation_type``. Pre-#59 cells have no such collision, so
-    their labels are unchanged.
+    A token is the bare ``mutation_id`` unless that id appears more than once in
+    the set, in which case every token for that id becomes
+    ``mutation_id:slot``. Bernoulli-only cells carry a single slot (0) per id,
+    so their labels are unchanged.
     """
     unique = sorted(
-        {(int(mutation_id), None if mutation_type is None else int(mutation_type))
-         for mutation_id, mutation_type in alleles},
+        {(int(mutation_id), None if slot is None else int(slot))
+         for mutation_id, slot in alleles},
         key=lambda allele: (allele[0], -1 if allele[1] is None else allele[1]),
     )
     if not unique:
         return "ancestor"
-    type_counts: dict[int, int] = {}
+    slot_counts: dict[int, int] = {}
     for mutation_id, _ in unique:
-        type_counts[mutation_id] = type_counts.get(mutation_id, 0) + 1
+        slot_counts[mutation_id] = slot_counts.get(mutation_id, 0) + 1
     tokens = []
-    for mutation_id, mutation_type in unique:
-        if mutation_type is not None and type_counts[mutation_id] > 1:
-            tokens.append(f"{mutation_id}:{mutation_type}")
+    for mutation_id, slot in unique:
+        if slot is not None and slot_counts[mutation_id] > 1:
+            tokens.append(f"{mutation_id}:{slot}")
         else:
             tokens.append(str(mutation_id))
     return ",".join(tokens)
 
 
 def parse_clone_signature(signature: str) -> list[tuple[int, Optional[int]]]:
-    """Parse a clone signature into ``(mutation_id, mutation_type)`` alleles."""
+    """Parse a clone signature into ``(mutation_id, slot)`` alleles."""
     if not signature or signature == "ancestor":
         return []
     alleles = []
     for part in signature.split(","):
-        mutation_id, _, mutation_type = part.partition(":")
-        alleles.append((int(mutation_id), int(mutation_type) if mutation_type else None))
+        mutation_id, _, slot = part.partition(":")
+        alleles.append((int(mutation_id), int(slot) if slot else None))
     return alleles
 
 
 class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
-    # Matches "(id,type)" and the v3 "(id,type,effect)" form.
-    MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)")
+    # Matches "(id,type)", v3 "(id,type,effect)" and v4 "(id,type,effect,slot)".
+    # Groups: 1 id, 2 type, 3 optional effect, 4 optional slot.
+    MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,([-+0-9.eE]+))?(?:,(\d+))?\)")
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -337,7 +338,8 @@ class ResultsParser:
             except ValueError:
                 continue
             if mutation_type_id in driver_type_ids:
-                driver_alleles.append((int(match.group(1)), mutation_type_id))
+                slot = int(match.group(4)) if match.group(4) is not None else 0
+                driver_alleles.append((int(match.group(1)), slot))
 
         signature = render_clone_signature(driver_alleles)
 
@@ -355,7 +357,7 @@ class ResultsParser:
         # left-to-right fallback for older or hand-authored outputs. All alleles
         # acquired in one division share the origin ``mutation_id`` (ADR-0013),
         # so removing a parent means dropping that whole id, not one
-        # ``id:type`` token. Candidates are re-rendered instead of sliced.
+        # ``id:slot`` token. Candidates are re-rendered instead of sliced.
         alleles = parse_clone_signature(signature)
         groups: list[list[tuple[int, Optional[int]]]] = []
         for allele in alleles:

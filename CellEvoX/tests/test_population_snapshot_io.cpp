@@ -49,7 +49,7 @@ TEST_CASE("PopulationSnapshotIO clears outputs and fails for missing files", "[P
     std::vector<CellEvoX::io::PopulationSnapshotRecord> records = {
         {1, 0, 1.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0, {0, 0, 0}}
     };
-    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {{11, 2, 0.0f}};
+    std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {{11, 2, 0, 0.0f}};
 
     REQUIRE_FALSE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
     REQUIRE(records.empty());
@@ -93,9 +93,9 @@ std::streamoff fileSize(const std::filesystem::path& path) {
 TEST_CASE("PopulationSnapshotIO serialized sizes match the ABI contract", "[PopulationSnapshotIO]") {
     REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotFileHeader) == 48);
     REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotRecord) == 36);
-    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotDriverMutation) == 9);
+    REQUIRE(sizeof(CellEvoX::io::PopulationSnapshotDriverMutation) == 11);
     REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).record_size == 36);
-    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).mutation_record_size == 9);
+    REQUIRE(CellEvoX::io::makePopulationSnapshotHeader(1.0, 0, 0, 0).mutation_record_size == 11);
 }
 
 TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[PopulationSnapshotIO]") {
@@ -109,9 +109,9 @@ TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[Popul
     REQUIRE(std::equal(CellEvoX::io::kPopulationSnapshotMagic.begin(),
                        CellEvoX::io::kPopulationSnapshotMagic.end(),
                        header.magic));
-    REQUIRE(header.version == 3);
+    REQUIRE(header.version == 4);
     REQUIRE(header.record_size == 36);
-    REQUIRE(header.mutation_record_size == 9);
+    REQUIRE(header.mutation_record_size == 11);
     REQUIRE(header.tau == Catch::Approx(5.0));
     REQUIRE(header.record_count == 3);
     REQUIRE(header.driver_mutation_count == 4);
@@ -120,7 +120,7 @@ TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[Popul
     REQUIRE(CellEvoX::io::hasDriverMutationPayload(header));
     REQUIRE_FALSE(CellEvoX::io::hasFullMutationPayload(header));
 
-    REQUIRE(fileSize(snapshot_path) == 48 + 3 * 36 + 4 * 9);
+    REQUIRE(fileSize(snapshot_path) == 48 + 3 * 36 + 4 * 11);
 
     REQUIRE(records.size() == 3);
     REQUIRE(records[0].id == 0);
@@ -149,9 +149,11 @@ TEST_CASE("PopulationSnapshotIO reads the driver-only snapshot fixture", "[Popul
     REQUIRE(mutations.size() == 4);
     REQUIRE(mutations[0].mutation_id == 0);
     REQUIRE(mutations[0].mutation_type == 1);
+    REQUIRE(mutations[0].slot == 0);
     REQUIRE(mutations[0].effect == Catch::Approx(0.5f));
     REQUIRE(mutations[2].mutation_id == 1);
     REQUIRE(mutations[2].mutation_type == 2);
+    REQUIRE(mutations[2].slot == 0);
     REQUIRE(mutations[2].effect == Catch::Approx(0.25f));
 
     REQUIRE(records[2].driver_mutation_offset + records[2].driver_mutation_count ==
@@ -166,7 +168,7 @@ TEST_CASE("PopulationSnapshotIO reads the full-payload snapshot fixture", "[Popu
     std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations;
     REQUIRE(CellEvoX::io::readPopulationSnapshot(snapshot_path, header, records, mutations));
 
-    REQUIRE(header.version == 3);
+    REQUIRE(header.version == 4);
     REQUIRE(header.tau == Catch::Approx(10.0));
     REQUIRE(header.record_count == 2);
     REQUIRE(header.driver_mutation_count == 4);
@@ -175,7 +177,7 @@ TEST_CASE("PopulationSnapshotIO reads the full-payload snapshot fixture", "[Popu
     REQUIRE(CellEvoX::io::hasFullMutationPayload(header));
     REQUIRE_FALSE(CellEvoX::io::hasDriverMutationPayload(header));
 
-    REQUIRE(fileSize(snapshot_path) == 48 + 2 * 36 + 4 * 9);
+    REQUIRE(fileSize(snapshot_path) == 48 + 2 * 36 + 4 * 11);
 
     REQUIRE(records.size() == 2);
     REQUIRE(records[0].id == 7);
@@ -196,14 +198,16 @@ TEST_CASE("PopulationSnapshotIO reads the full-payload snapshot fixture", "[Popu
     REQUIRE(records[1].driver_mutation_offset == 2);
 
     REQUIRE(mutations.size() == 4);
+    REQUIRE(mutations[0].slot == 0);
     REQUIRE(mutations[0].effect == Catch::Approx(0.125f));
     REQUIRE(mutations[3].mutation_id == 8);
     REQUIRE(mutations[3].mutation_type == 4);
+    REQUIRE(mutations[3].slot == 0);
     REQUIRE(mutations[3].effect == Catch::Approx(-0.25f));
 }
 
 TEST_CASE("PopulationSnapshotIO rejects the invalid snapshot fixtures", "[PopulationSnapshotIO]") {
-    for (const std::string_view name : {"truncated_v3.bin", "unknown_version.bin"}) {
+    for (const std::string_view name : {"truncated_v4.bin", "unknown_version.bin"}) {
         const auto snapshot_path = fixturePath(std::string("invalid/") + std::string(name));
 
         CellEvoX::io::PopulationSnapshotFileHeader header{};

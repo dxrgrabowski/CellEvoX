@@ -9,28 +9,29 @@ import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 import pandas as pd
 
 
 ANCESTOR_SIGNATURE = "ancestor"
 SNAPSHOT_MAGIC = b"CELXPOP1"
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 
 _POPULATION_CSV_RE = re.compile(r"population_generation_(\d+)\.csv$")
 _POPULATION_BIN_RE = re.compile(r"population_generation_(\d+)\.bin$")
-# v3 adds an optional realized effect; the third group stays optional so older
-# two-field exports remain parseable. The effect group is a full float pattern
-# rather than a character class so a malformed entry such as "(1,2,-)" is
-# skipped instead of matching and failing `float(...)`.
+# v3 adds an optional realized effect, v4 an optional event-list slot; the
+# groups stay optional so older two-field exports remain parseable. The effect
+# group is a full float pattern rather than a character class so a malformed
+# entry such as "(1,2,-)" is skipped instead of matching and failing
+# `float(...)`.
 _MUTATION_RE = re.compile(
-    r"\((\d+),(\d+)(?:,([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))?\)"
+    r"\((\d+),(\d+)(?:,([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))?(?:,(\d+))?\)"
 )
 
 _HEADER_STRUCT = struct.Struct("<8sIIdIIBBB13x")
 _RECORD_STRUCT = struct.Struct("<IIffffHHIB3x")
-_DRIVER_MUTATION_STRUCT = struct.Struct("<IBf")
+_DRIVER_MUTATION_STRUCT = struct.Struct("<IBHf")
 
 
 def format_effect(effect: float) -> str:
@@ -111,60 +112,62 @@ def phylogeny_death_times(phylogeny: Optional[pd.DataFrame]) -> Dict[int, float]
     }
 
 
-def parse_mutations(mutations_str: object) -> List[Tuple[int, int, float]]:
-    """Parse ``Mutations`` entries into ``(mutation_id, mutation_type, effect)``.
+def parse_mutations(mutations_str: object) -> List[Tuple[int, int, float, int]]:
+    """Parse ``Mutations`` entries into ``(mutation_id, mutation_type, effect, slot)``.
 
-    The effect is absent from pre-v3 payloads, in which case it defaults to 0.0.
+    The effect is absent from pre-v3 payloads and the slot from pre-v4 payloads;
+    both default to 0 in that case.
     """
     if mutations_str is None or mutations_str == "" or mutations_str == '""' or pd.isna(mutations_str):
         return []
-    mutations: List[Tuple[int, int, float]] = []
+    mutations: List[Tuple[int, int, float, int]] = []
     for match in _MUTATION_RE.finditer(str(mutations_str).strip('"')):
         effect = float(match.group(3)) if match.group(3) is not None else 0.0
-        mutations.append((int(match.group(1)), int(match.group(2)), effect))
+        slot = int(match.group(4)) if match.group(4) is not None else 0
+        mutations.append((int(match.group(1)), int(match.group(2)), effect, slot))
     return mutations
 
 
 def _render_signature(alleles: Iterable[Tuple[int, Optional[int]]]) -> str:
-    """Render allele tokens with the hybrid rule from ADR-0013.
+    """Render ``(mutation_id, slot)`` allele tokens with the ADR-0013 rule.
 
-    A token is the bare ``mutation_id`` unless that id carries more than one
-    ``mutation_type`` in this set, in which case every token for that id becomes
-    ``mutation_id:mutation_type``. Pre-#59 runs never hit the collision branch,
-    so their labels are unchanged.
+    A token is the bare ``mutation_id`` unless that id appears more than once in
+    this set, in which case every token for that id becomes ``mutation_id:slot``.
+    Bernoulli-only runs carry a single slot (0) per id, so their labels are
+    unchanged.
     """
     unique = sorted(
-        {(int(mutation_id), None if mutation_type is None else int(mutation_type))
-         for mutation_id, mutation_type in alleles},
+        {(int(mutation_id), None if slot is None else int(slot))
+         for mutation_id, slot in alleles},
         key=lambda allele: (allele[0], -1 if allele[1] is None else allele[1]),
     )
     if not unique:
         return ANCESTOR_SIGNATURE
 
-    type_counts: Dict[int, int] = {}
-    for mutation_id, _mutation_type in unique:
-        type_counts[mutation_id] = type_counts.get(mutation_id, 0) + 1
+    slot_counts: Dict[int, int] = {}
+    for mutation_id, _slot in unique:
+        slot_counts[mutation_id] = slot_counts.get(mutation_id, 0) + 1
 
     tokens: List[str] = []
-    for mutation_id, mutation_type in unique:
-        if mutation_type is not None and type_counts[mutation_id] > 1:
-            tokens.append(f"{mutation_id}:{mutation_type}")
+    for mutation_id, slot in unique:
+        if slot is not None and slot_counts[mutation_id] > 1:
+            tokens.append(f"{mutation_id}:{slot}")
         else:
             tokens.append(str(mutation_id))
     return ",".join(tokens)
 
 
 def signature_to_alleles(signature: str) -> Tuple[Tuple[int, Optional[int]], ...]:
-    """Parse a clone signature back into ``(mutation_id, mutation_type)`` tokens.
+    """Parse a clone signature back into ``(mutation_id, slot)`` tokens.
 
-    Bare tokens carry ``None`` as the type (legacy signatures).
+    Bare tokens carry ``None`` as the slot (legacy signatures).
     """
     if not signature or signature == ANCESTOR_SIGNATURE:
         return ()
     alleles: List[Tuple[int, Optional[int]]] = []
     for part in signature.split(","):
-        mutation_id, _, mutation_type = part.partition(":")
-        alleles.append((int(mutation_id), int(mutation_type) if mutation_type else None))
+        mutation_id, _, slot = part.partition(":")
+        alleles.append((int(mutation_id), int(slot) if slot else None))
     return tuple(alleles)
 
 
@@ -175,11 +178,11 @@ def signature_to_driver_ids(signature: str) -> Tuple[int, ...]:
 
 
 def driver_signature_from_mutations(
-    mutations: Sequence[Tuple[int, int, float]], driver_type_ids: Set[int]
+    mutations: Iterable[Tuple[int, int, float, int]], driver_type_ids: Set[int]
 ) -> str:
     alleles = [
-        (mutation_id, mutation_type)
-        for mutation_id, mutation_type, _effect in mutations
+        (mutation_id, slot)
+        for mutation_id, mutation_type, _effect, slot in mutations
         if mutation_type in driver_type_ids
     ]
     return _render_signature(alleles)
@@ -196,7 +199,7 @@ def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
 
     alleles = list(signature_to_alleles(signature))
     # All alleles acquired in one division share the origin ``mutation_id``
-    # (ADR-0013), so a parent drops a whole id, not a single ``id:type`` token.
+    # (ADR-0013), so a parent drops a whole id, not a single ``id:slot`` token.
     groups: List[List[Tuple[int, Optional[int]]]] = []
     for allele in alleles:
         if groups and groups[-1][0][0] == allele[0]:
@@ -530,15 +533,15 @@ def _load_population_bin(source: PopulationFrameSource, driver_type_ids: Set[int
     ) in records:
         mutation_slice = driver_mutations[driver_offset : driver_offset + driver_count] if has_payload else []
         mutations_str = " ".join(
-            f"({mutation_id},{mutation_type},{format_effect(effect)})"
-            for mutation_id, mutation_type, effect in mutation_slice
+            f"({mutation_id},{mutation_type},{format_effect(effect)},{slot})"
+            for mutation_id, mutation_type, slot, effect in mutation_slice
         )
         if has_full_payload:
             signature = driver_signature_from_mutations(mutation_slice, driver_type_ids)
         else:
             signature = _render_signature(
-                (mutation_id, mutation_type)
-                for mutation_id, mutation_type, _effect in mutation_slice
+                (mutation_id, slot)
+                for mutation_id, mutation_type, slot, _effect in mutation_slice
             )
         rows.append(
             {
