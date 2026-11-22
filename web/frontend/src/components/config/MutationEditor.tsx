@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { MutationCountModel, MutationEffectMode, MutationType } from '../../types/simulation';
+import { DEFAULT_MUTATION_LAMBDA, DEFAULT_MUTATION_PROBABILITY } from '../../types/simulation';
 import { useConfigStore } from '../../stores';
 import InlineNumberValue from './InlineNumberValue';
 import SmoothSlider from './SmoothSlider';
@@ -23,11 +24,9 @@ const GAMMA_DEFAULTS = {
   effect_direction: 'positive' as const,
 };
 
-const DEFAULT_PROBABILITY = 0.01;
-const DEFAULT_LAMBDA = 0.01;
-
 export default function MutationEditor({ mutations }: Props) {
   const setConfig = useConfigStore(s => s.setConfig);
+  const setMutationCountModel = useConfigStore(s => s.setMutationCountModel);
 
   const update = (idx: number, patch: Partial<MutationType>) => {
     const next = mutations.map((m, i) => i === idx ? { ...m, ...patch } : m);
@@ -41,7 +40,7 @@ export default function MutationEditor({ mutations }: Props) {
         id: nextId,
         is_driver: false,
         effect: 0,
-        probability: DEFAULT_PROBABILITY,
+        probability: DEFAULT_MUTATION_PROBABILITY,
         count_model: 'bernoulli',
         effect_mode: 'constant',
       }]
@@ -134,12 +133,7 @@ export default function MutationEditor({ mutations }: Props) {
                       type="button"
                       className={`badge ${isSelected ? 'badge--driver' : 'badge--passenger'}`}
                       style={{ cursor: 'pointer', border: 'none' }}
-                      onClick={() => update(idx, {
-                        count_model: model.value,
-                        ...(model.value === 'poisson'
-                          ? { lambda: mut.lambda ?? DEFAULT_LAMBDA, probability: undefined }
-                          : { probability: mut.probability ?? DEFAULT_PROBABILITY, lambda: undefined }),
-                      })}
+                      onClick={() => setMutationCountModel(mut.id, model.value)}
                     >
                       {model.label}
                     </button>
@@ -213,7 +207,7 @@ export default function MutationEditor({ mutations }: Props) {
                     Probability
                     <InlineNumberValue
                       ariaLabel={`Mutation ${mut.id} probability`}
-                      value={mut.probability ?? DEFAULT_PROBABILITY}
+                      value={mut.probability ?? DEFAULT_MUTATION_PROBABILITY}
                       min={0.00001}
                       max={0.5}
                       decimals={5}
@@ -225,7 +219,7 @@ export default function MutationEditor({ mutations }: Props) {
                     id={`mut-${idx}-prob`}
                     min={0.00001} max={0.5} step={0.00001}
                     aria-label={`Mutation ${mut.id} probability slider`}
-                    value={mut.probability ?? DEFAULT_PROBABILITY}
+                    value={mut.probability ?? DEFAULT_MUTATION_PROBABILITY}
                     onValueChange={value => update(idx, { probability: value })}
                   />
                   <span className="field-hint">Per-cell per-step mutation chance</span>
@@ -236,7 +230,7 @@ export default function MutationEditor({ mutations }: Props) {
                     Lambda (λ)
                     <InlineNumberValue
                       ariaLabel={`Mutation ${mut.id} lambda`}
-                      value={mut.lambda ?? DEFAULT_LAMBDA}
+                      value={mut.lambda ?? DEFAULT_MUTATION_LAMBDA}
                       min={0}
                       max={10}
                       decimals={4}
@@ -248,7 +242,7 @@ export default function MutationEditor({ mutations }: Props) {
                     id={`mut-${idx}-lambda`}
                     min={0} max={10} step={0.0001}
                     aria-label={`Mutation ${mut.id} lambda slider`}
-                    value={mut.lambda ?? DEFAULT_LAMBDA}
+                    value={mut.lambda ?? DEFAULT_MUTATION_LAMBDA}
                     onValueChange={value => update(idx, { lambda: value })}
                   />
                   <span className="field-hint">Mean mutation events per division (Poisson)</span>

@@ -8,6 +8,9 @@ export type MutationEffectMode = 'constant' | 'gamma';
 export type MutationEffectDirection = 'positive' | 'negative';
 export type MutationCountModel = 'bernoulli' | 'poisson';
 
+export const DEFAULT_MUTATION_PROBABILITY = 0.01;
+export const DEFAULT_MUTATION_LAMBDA = 0.01;
+
 export interface MutationType {
   id: number;
   is_driver: boolean;
