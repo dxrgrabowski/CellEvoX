@@ -588,6 +588,50 @@ TEST_CASE("Poisson count and type draws use disjoint stream keys",
     REQUIRE(share == Catch::Approx(0.5).margin(0.03));
 }
 
+TEST_CASE("Poisson mutation type selection requires a positive weight",
+          "[MutationEffect][Poisson][Regression]") {
+    using namespace CellEvoX::deterministic_rng;
+    using CellEvoX::systems::detail::appendMutatedDaughters;
+
+    constexpr uint64_t seed = 8457334760786401693ULL;
+    constexpr uint64_t step = 0;
+    constexpr uint32_t cell_id = 1;
+    constexpr float lambda = 20.0f;
+    const Cell parent(cell_id);
+    REQUIRE(uniform01(seed, step, cell_id, kStreamMutationType) == 1.0);
+    const auto count = poisson01(seed, step, cell_id, kStreamMutationCount, lambda);
+    REQUIRE(count > 0);
+
+    MutationType zero_rate{};
+    zero_rate.type_id = 2;
+    zero_rate.count_model = MutationCountModel::Poisson;
+    MutationType positive_rate = zero_rate;
+    positive_rate.type_id = 1;
+    positive_rate.lambda = lambda;
+    std::vector<Cell> daughters;
+
+    SECTION("The fallback skips the trailing zero-rate type") {
+        const std::map<uint8_t, MutationType> types = {{1, positive_rate}, {2, zero_rate}};
+        appendMutatedDaughters(daughters, parent, parent.fitness, types, 0.0, lambda,
+                               seed, step, cell_id);
+
+        REQUIRE(daughters.size() == 2);
+        REQUIRE(daughters[0].mutations.size() == count);
+        for (const auto& mutation : daughters[0].mutations) {
+            REQUIRE(mutation.mutation_type == positive_rate.type_id);
+        }
+        REQUIRE(daughters[1].mutations.empty());
+    }
+
+    SECTION("An inconsistent total rate fails before producing daughters") {
+        const std::map<uint8_t, MutationType> types = {{2, zero_rate}};
+        REQUIRE_THROWS_AS(appendMutatedDaughters(daughters, parent, parent.fitness, types,
+                                                0.0, lambda, seed, step, cell_id),
+                          std::logic_error);
+        REQUIRE(daughters.empty());
+    }
+}
+
 TEST_CASE("Mutation rejects a daughter whose stored float fitness underflows",
           "[MutationEffect][Validation]") {
     Cell parent;

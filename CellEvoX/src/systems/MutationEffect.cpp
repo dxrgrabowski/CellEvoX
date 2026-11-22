@@ -96,22 +96,18 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
       }
       if (selected == nullptr) {
         // Floating-point rounding can leave target at or above the cumulative
-        // sum; fall back to the last Poisson type so a count is never dropped.
+        // sum. Fall back to the last Poisson type with positive weight.
         for (auto it = available_mutation_types.rbegin();
              it != available_mutation_types.rend(); ++it) {
-          if (it->second.count_model == MutationCountModel::Poisson) {
+          if (it->second.count_model == MutationCountModel::Poisson &&
+              it->second.lambda > 0.0f) {
             selected = &it->second;
             break;
           }
         }
       }
       if (selected == nullptr) {
-        // A non-empty Poisson pool always selects a type here: the fallback
-        // above covers float rounding, and reaching this point means the pool
-        // is inconsistent with `total_mutation_rate`. Dropping the event would
-        // silently lose a drawn mutation, so fail loudly instead.
-        throw std::logic_error(
-            "Poisson mutation type selection failed with a non-empty Poisson pool");
+        throw std::logic_error("Poisson mutation count requires a type with positive lambda");
       }
       const auto slot = static_cast<uint16_t>(new_mutations.size());
       const float realized_effect =
