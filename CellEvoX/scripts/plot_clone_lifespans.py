@@ -10,32 +10,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-def parse_mutations(mutations_str):
-    if not mutations_str or pd.isna(mutations_str) or mutations_str == '""':
-        return []
-    mutations_str = str(mutations_str).strip('"')
-    if not mutations_str:
-        return []
-    mutations = []
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?(?:,(\d+))?\)'
-    for match in re.finditer(pattern, mutations_str):
-        slot = int(match.group(3)) if match.group(3) is not None else 0
-        mutations.append((int(match.group(1)), int(match.group(2)), slot))
-    return mutations
-
-def get_driver_signature(mutations_list, driver_type_ids):
-    """Hybrid token rendering (ADR-0013): bare id unless the id repeats."""
-    unique = sorted(
-        {(mut_id, slot) for mut_id, mut_type, slot in mutations_list
-         if mut_type in driver_type_ids}
-    )
-    slot_counts = {}
-    for mut_id, _ in unique:
-        slot_counts[mut_id] = slot_counts.get(mut_id, 0) + 1
-    return ",".join(
-        f"{mut_id}:{slot}" if slot_counts[mut_id] > 1 else str(mut_id)
-        for mut_id, slot in unique
-    )
+from snapshot_io import (
+    driver_signature_from_mutations as get_driver_signature,
+    parse_mutations,
+)
 
 def get_config_options(config_path):
     driver_ids = set()

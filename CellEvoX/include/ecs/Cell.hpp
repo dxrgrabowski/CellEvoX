@@ -74,6 +74,12 @@ struct CellMutation {
   bool operator==(const CellMutation&) const = default;
 };
 
+// ADR-0013: the v4 snapshot packs (mutation_id, mutation_type, slot, effect)
+// into 11 bytes, while the in-memory struct pads to 12. Changing the layout is
+// a snapshot-ABI break, so pin it here.
+static_assert(sizeof(CellMutation) == 12,
+              "CellMutation layout must stay 12 bytes for the v4 snapshot accounting");
+
 class Cell {
  public:
   uint32_t parent_id{0};

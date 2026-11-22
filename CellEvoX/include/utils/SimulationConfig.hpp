@@ -13,6 +13,7 @@
 
 #include "ecs/Cell.hpp"
 #include "systems/SimulationEngine.hpp"
+#include "utils/DeterministicRng.hpp"
 
 namespace utils {
 
@@ -95,6 +96,7 @@ inline void validateConfig(const SimulationConfig& config) {
   }
 
   double total_mutation_probability = 0.0;
+  double total_poisson_lambda = 0.0;
   std::unordered_set<uint8_t> mutation_ids;
   for (const auto& mutation : config.mutations) {
     if (mutation.count_model == MutationCountModel::Bernoulli) {
@@ -110,6 +112,12 @@ inline void validateConfig(const SimulationConfig& config) {
         throw std::runtime_error(
             "Invalid simulation config: mutation lambda must be non-negative");
       }
+      if (mutation.lambda > CellEvoX::deterministic_rng::kMaxPoissonLambda) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation lambda must not exceed the 16-bit allele "
+            "slot limit (65536)");
+      }
+      total_poisson_lambda += mutation.lambda;
     } else {
       throw std::runtime_error("Invalid simulation config: unknown mutation count_model");
     }
@@ -160,6 +168,14 @@ inline void validateConfig(const SimulationConfig& config) {
   if (total_mutation_probability > 1.0 + kTotalMutationProbabilityTolerance) {
     throw std::runtime_error(
         "Invalid simulation config: total mutation probability must not exceed 1");
+  }
+  // A division draws one Poisson count with rate Lambda = sum(lambda_i), so the
+  // aggregate rate the sampler receives must respect the same 16-bit slot cap
+  // as an individual rate.
+  if (total_poisson_lambda > CellEvoX::deterministic_rng::kMaxPoissonLambda) {
+    throw std::runtime_error(
+        "Invalid simulation config: the summed Poisson lambda must not exceed the 16-bit "
+        "allele slot limit (65536)");
   }
 }
 
@@ -256,8 +272,14 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
       mutation_type.is_driver = mut.at("is_driver").get<bool>();
 
       // A missing count_model means "bernoulli" so existing configs keep working.
-      const std::string count_model =
-          mut.contains("count_model") ? mut.at("count_model").get<std::string>() : "bernoulli";
+      std::string count_model = "bernoulli";
+      if (mut.contains("count_model")) {
+        if (!mut.at("count_model").is_string()) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation count_model must be a string");
+        }
+        count_model = mut.at("count_model").get<std::string>();
+      }
       if (count_model == "bernoulli") {
         if (mut.contains("lambda")) {
           throw std::runtime_error(
@@ -271,15 +293,30 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
               "Invalid simulation config: poisson mutation must not carry 'probability'");
         }
         mutation_type.count_model = MutationCountModel::Poisson;
-        mutation_type.lambda = mut.at("lambda").get<float>();
+        // Validate the JSON number before the float cast. A tiny negative
+        // double such as -1e-50 becomes -0.0f, which would silently pass the
+        // post-cast non-negative check even though the API rejects it.
+        const double lambda = mut.at("lambda").get<double>();
+        if (!std::isfinite(lambda) || lambda < 0.0 ||
+            lambda > static_cast<double>(CellEvoX::deterministic_rng::kMaxPoissonLambda)) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation lambda must be finite and in [0, 65536]");
+        }
+        mutation_type.lambda = static_cast<float>(lambda);
       } else {
         throw std::runtime_error(
             "Invalid simulation config: mutation count_model must be 'bernoulli' or 'poisson'");
       }
 
       // A missing effect_mode means "constant" so existing configs keep working.
-      const std::string effect_mode =
-          mut.contains("effect_mode") ? mut.at("effect_mode").get<std::string>() : "constant";
+      std::string effect_mode = "constant";
+      if (mut.contains("effect_mode")) {
+        if (!mut.at("effect_mode").is_string()) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_mode must be a string");
+        }
+        effect_mode = mut.at("effect_mode").get<std::string>();
+      }
       if (effect_mode == "constant") {
         mutation_type.effect_mode = MutationEffectMode::Constant;
         mutation_type.effect = mut.at("effect").get<float>();

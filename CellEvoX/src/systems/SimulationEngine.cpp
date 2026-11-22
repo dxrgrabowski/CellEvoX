@@ -377,6 +377,13 @@ void SimulationEngine::takePopulationSnapshot() {
             {mutation.mutation_id, mutation.mutation_type, mutation.slot, mutation.effect});
       }
     }
+    // Re-check after appending: the offset was checked before the loop, but the
+    // pushes above can still cross the uint32_t payload space, and the cast
+    // below must not wrap.
+    if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
+      spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
+      return;
+    }
     const auto mutation_payload_count =
         static_cast<uint32_t>(mutation_payload.size() - mutation_payload_offset);
 

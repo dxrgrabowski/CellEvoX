@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -70,7 +71,9 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
         static_cast<uint64_t>(std::numeric_limits<uint16_t>::max()) + 1ULL;
     if (count > kMaxMutationsPerDivision - new_mutations.size()) {
       throw std::overflow_error(
-          "mutation count per division exceeds the 16-bit allele slot limit (65536)");
+          "mutation count per division exceeds the 16-bit allele slot limit (65536) for cell " +
+          std::to_string(cell_id) + " with total_mutation_rate " +
+          std::to_string(total_mutation_rate));
     }
     for (uint64_t j = 0; j < count; ++j) {
       const double type_draw = CellEvoX::deterministic_rng::uniform01(
@@ -103,7 +106,12 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
         }
       }
       if (selected == nullptr) {
-        break;
+        // A non-empty Poisson pool always selects a type here: the fallback
+        // above covers float rounding, and reaching this point means the pool
+        // is inconsistent with `total_mutation_rate`. Dropping the event would
+        // silently lose a drawn mutation, so fail loudly instead.
+        throw std::logic_error(
+            "Poisson mutation type selection failed with a non-empty Poisson pool");
       }
       const auto slot = static_cast<uint16_t>(new_mutations.size());
       const float realized_effect =
@@ -133,7 +141,7 @@ void appendMutatedDaughters(std::vector<Cell>& new_cells, const Cell& cell, doub
     throw std::runtime_error("Mutation produced invalid daughter fitness");
   }
 
-  Cell daughter_cell1 = Cell(cell, daughter_fitness);
+  Cell daughter_cell1 = Cell(cell, stored_fitness);
   daughter_cell1.mutations.insert(daughter_cell1.mutations.end(),
                                   new_mutations.begin(),
                                   new_mutations.end());

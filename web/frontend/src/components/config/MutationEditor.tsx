@@ -134,12 +134,27 @@ export default function MutationEditor({ mutations }: Props) {
                       type="button"
                       className={`badge ${isSelected ? 'badge--driver' : 'badge--passenger'}`}
                       style={{ cursor: 'pointer', border: 'none' }}
-                      onClick={() => update(idx, {
-                        count_model: model.value,
-                        ...(model.value === 'poisson'
-                          ? { lambda: mut.lambda ?? DEFAULT_LAMBDA, probability: undefined }
-                          : { probability: mut.probability ?? DEFAULT_PROBABILITY, lambda: undefined }),
-                      })}
+                      onClick={() => {
+                        // Drop the unused key entirely instead of setting it to
+                        // `undefined`: the backend rejects a poisson mutation
+                        // that carries `probability` (and vice versa), and a
+                        // serialized `null` would trip that check. Build the
+                        // replacement object directly, because `update` merges
+                        // the patch and would keep the old key.
+                        const next = mutations.map((m, i) => {
+                          if (i !== idx) return m;
+                          const copy: MutationType = { ...m, count_model: model.value };
+                          if (model.value === 'poisson') {
+                            delete copy.probability;
+                            copy.lambda = m.lambda ?? DEFAULT_LAMBDA;
+                          } else {
+                            delete copy.lambda;
+                            copy.probability = m.probability ?? DEFAULT_PROBABILITY;
+                          }
+                          return copy;
+                        });
+                        setConfig({ mutations: next });
+                      }}
                     >
                       {model.label}
                     </button>

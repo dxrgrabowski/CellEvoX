@@ -33,6 +33,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plot_muller
 import plot_phylogeny
 
+try:
+    import pyfish  # noqa: F401
+    _HAVE_PYFISH = True
+except ImportError:
+    # pyfish is an optional visualization dependency; the data-building tests
+    # below still run without it, only the actual PNG rendering is skipped.
+    _HAVE_PYFISH = False
+
 
 def _write_no_driver_fixture(root: str, num_generations: int = 3, cells_per_gen: int = 5) -> None:
     """Creates a minimal on-disk run fixture with no driver mutations defined.
@@ -137,6 +145,9 @@ class BuildPyfishDataTrivialClone(unittest.TestCase):
 
         self.assertEqual(list(parent_tree_df.columns), ["ParentId", "ChildId"])
         self.assertEqual(len(parent_tree_df), 1)  # one driver clone parented by "ancestor"
+
+        if not _HAVE_PYFISH:
+            self.skipTest("pyfish is not installed; skipping the PNG rendering step")
 
         output_file = os.path.join(self.tmpdir2, "muller_plot.png")
         plot_muller.plot_muller_diagram(self.tmpdir2, output_file=output_file)

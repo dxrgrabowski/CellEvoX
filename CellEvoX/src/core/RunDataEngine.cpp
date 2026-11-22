@@ -19,7 +19,6 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
-#include <set>
 #include <sstream>
 #include <string_view>
 #include <system_error>
@@ -962,14 +961,19 @@ void RunDataEngine::plotMutationFrequency() {
         const Cell& cell = item.second;
         ++total_cells;
 
-        std::set<std::pair<uint32_t, uint16_t>> alleles;
+        // One count per distinct allele (mutation_id, slot) in this cell. A
+        // small sorted vector avoids building a tree for every cell.
+        std::vector<std::pair<uint32_t, uint16_t>> alleles;
+        alleles.reserve(cell.mutations.size());
         for (const auto& mutation : cell.mutations) {
           if (!full_vaf &&
               !isDriverMutationType(run->mutation_id_to_type, mutation.mutation_type)) {
             continue;
           }
-          alleles.emplace(mutation.mutation_id, mutation.slot);
+          alleles.emplace_back(mutation.mutation_id, mutation.slot);
         }
+        std::sort(alleles.begin(), alleles.end());
+        alleles.erase(std::unique(alleles.begin(), alleles.end()), alleles.end());
         for (const auto& allele : alleles) {
           mutation_counts[allele]++;
         }
@@ -1021,10 +1025,13 @@ void RunDataEngine::plotMutationFrequency() {
       if (start > mutation_payload.size() || end > mutation_payload.size()) {
         continue;
       }
-      std::set<std::pair<uint32_t, uint16_t>> alleles;
+      std::vector<std::pair<uint32_t, uint16_t>> alleles;
+      alleles.reserve(static_cast<size_t>(end - start));
       for (size_t i = start; i < end; ++i) {
-        alleles.emplace(mutation_payload[i].mutation_id, mutation_payload[i].slot);
+        alleles.emplace_back(mutation_payload[i].mutation_id, mutation_payload[i].slot);
       }
+      std::sort(alleles.begin(), alleles.end());
+      alleles.erase(std::unique(alleles.begin(), alleles.end()), alleles.end());
       for (const auto& allele : alleles) {
         mutation_counts[allele]++;
       }

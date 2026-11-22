@@ -47,7 +47,14 @@ def parse_clone_signature(signature: str) -> list[tuple[int, Optional[int]]]:
     alleles = []
     for part in signature.split(","):
         mutation_id, _, slot = part.partition(":")
-        alleles.append((int(mutation_id), int(slot) if slot else None))
+        try:
+            parsed_id = int(mutation_id)
+            parsed_slot = int(slot) if slot else None
+        except ValueError:
+            # Skip a malformed token (e.g. "1:abc") instead of aborting the
+            # whole signature; callers only read signatures we rendered.
+            continue
+        alleles.append((parsed_id, parsed_slot))
     return alleles
 
 
@@ -55,8 +62,12 @@ class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
     # Matches "(id,type)", v3 "(id,type,effect)" and v4 "(id,type,effect,slot)".
-    # Groups: 1 id, 2 type, 3 optional effect, 4 optional slot.
-    MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,([-+0-9.eE]+))?(?:,(\d+))?\)")
+    # Groups: 1 id, 2 type, 3 optional effect, 4 optional slot. The effect group
+    # is a full float pattern rather than a character class so a malformed entry
+    # such as "(1,2,-)" is skipped instead of matching and failing `float(...)`.
+    MUTATION_RE = re.compile(
+        r"\((\d+),(\d+)(?:,([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))?(?:,(\d+))?\)"
+    )
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -359,17 +370,19 @@ class ResultsParser:
         # so removing a parent means dropping that whole id, not one
         # ``id:slot`` token. Candidates are re-rendered instead of sliced.
         alleles = parse_clone_signature(signature)
-        groups: list[list[tuple[int, Optional[int]]]] = []
+        # Group by mutation id rather than by neighbours: all alleles acquired
+        # in one division share the origin id, and the result must not depend on
+        # the token order inside the signature. The newest id is usually the
+        # final group, so try dropping it first.
+        groups: dict[int, list[tuple[int, Optional[int]]]] = {}
         for allele in alleles:
-            if groups and groups[-1][0][0] == allele[0]:
-                groups[-1].append(allele)
-            else:
-                groups.append([allele])
-        drop_order = [len(groups) - 1] + list(range(len(groups) - 1))
+            groups.setdefault(allele[0], []).append(allele)
+        group_values = list(groups.values())
+        drop_order = [len(group_values) - 1] + list(range(len(group_values) - 1))
         for group_index in drop_order:
             candidate_alleles = [
                 allele
-                for index, group in enumerate(groups)
+                for index, group in enumerate(group_values)
                 if index != group_index
                 for allele in group
             ]

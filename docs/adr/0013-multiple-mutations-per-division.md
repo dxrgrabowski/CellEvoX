@@ -1,6 +1,7 @@
 # ADR-0013: Poisson-counted multiple mutations per division
-Status: Proposed
+Status: Accepted · 2026-11-23
 Date: 2026-11-20
+Evidence: owner decision, 2026-11-23
 
 ## Context
 A division currently carries at most one mutation. The event loop draws a single
@@ -66,13 +67,15 @@ compose with the Poisson count in the same division.
   `float` ulp (2^-23 ≈ 1.19e-7): enough to absorb the float32 rounding of a pool
   that is exactly 1 in decimal (`0.2f + 0.8f == 1.0000000149`), but far below a
   real overshoot such as `1 + 5e-6`, which stays rejected.
-- Poisson types use `lambda >= 0` (finite) and contribute `Λ = Σ lambda_i`;
-  the Bernoulli bound does not apply and `Λ` is unbounded. `lambda` itself is
-  not capped — for realistic `Λ` the Poisson tail is negligible, and a cap would
-  need its own clamp-versus-error rule — but the realised count `k` is bounded
-  structurally: a division can hold at most 65 536 mutations because `slot` is a
-  `uint16`. A larger draw aborts the run with `std::overflow_error` instead of
-  wrapping two alleles together.
+- Poisson types use `lambda ∈ [0, 65 536]` (finite) and contribute
+  `Λ = Σ lambda_i`; the Bernoulli bound does not apply, but `Λ` is capped at
+  65 536 as well because a division draws one Poisson count at rate `Λ`. An
+  individual `lambda` is capped at 65 536, the largest count a division can
+  store (`slot` is a `uint16`): a larger rate would almost always draw a count
+  that cannot fit, so the cap turns a near-certain run-time abort into a config
+  error. A realised count that still exceeds the slot space aborts the run with
+  `std::overflow_error` instead of wrapping two alleles together, and the
+  sampler bounds its rejection attempts so a pathological rate cannot hang.
 - Per type exactly one of `probability` / `lambda` must be present, matching
   its `count_model`; the other is rejected rather than ignored.
 
@@ -241,8 +244,8 @@ a Poisson type does not carry `probability` at all.
   mixed run; rejected in favour of a per-type field that also covers both
   extremes.
 - **Binomial count on Σ p_i.** Bounded by 1, so it cannot express k > 1 for
-  small per-division windows; Poisson matches the requested model and the
-  `λ` scale is unbounded by construction.
+  small per-division windows; Poisson matches the requested model and its rate
+  is not confined to `[0, 1]`.
 - **Split mutations between daughter A and B.** Would break the single-daughter
   lineage rule and complicate VAF interpretation for no requested benefit.
 - **Draw k unconditionally per cell per step.** Would change the RNG stream
@@ -256,7 +259,7 @@ a Poisson type does not carry `probability` at all.
 ## Consequences
 - Configs without `count_model` keep the Bernoulli draw and remain
   bit-identical; hybrid and all-Poisson runs are explicit opt-ins.
-- Poisson types require new validation (finite `lambda >= 0`), a Poisson
+- Poisson types require new validation (finite `lambda` in `[0, 65 536]`), a Poisson
   sampler built on `uniform01`, and the dedicated `kStreamMutationCount`
   (`1 << 56`) / `kStreamMutationType` (`1 << 57`) streams placed above the
   contiguous gamma range so a count or type draw cannot alias an effect
@@ -349,11 +352,13 @@ branch. Touch points:
    hybrid runs stay lossless. This supersedes an earlier plan to key alleles by
    `(mutation_id, mutation_type)`, which merged two same-type Poisson draws from
    one division.
-2. **Cap on k.** Decided: no cap on `lambda` itself. `lambda` is validated as
-   finite and `>= 0` only; the Poisson tail is left to the sampler. The one hard
-   limit is structural: a realised count must fit the `uint16` slot space, so a
-   division that would exceed 65 536 mutations is rejected at run time rather
-   than silently wrapped.
+2. **Cap on k.** Decided: `lambda` is validated as finite and in
+   `[0, 65 536]`, and so is the summed rate `Λ` that the sampler actually
+   receives; 65 536 is the structural per-division slot limit, so a larger
+   rate would only produce counts that must be rejected anyway. A realised count
+   that exceeds the `uint16` slot space is still rejected at run time with
+   `std::overflow_error` rather than silently wrapped, and the PTRS sampler
+   bounds its rejection attempts so a bad rate cannot spin forever.
 3. **Extra observability.** Decided: no `mutations_per_division` histogram in
    this iteration; `MutationCount` is sufficient and a histogram can be a later,
    independent change.

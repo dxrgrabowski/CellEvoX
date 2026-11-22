@@ -310,7 +310,7 @@ def test_batch_start_rejects_unknown_count_model(client, valid_config):
     assert "count_model" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), -0.1])
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), -0.1, -1e-50, 1e39])
 def test_batch_start_rejects_invalid_lambda(client, valid_config, bad_value):
     valid_config["mutations"] = [
         {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson", "lambda": bad_value}
@@ -320,6 +320,47 @@ def test_batch_start_rejects_invalid_lambda(client, valid_config, bad_value):
 
     assert response.status_code == 400
     assert "lambda" in response.json()["detail"]
+
+
+def test_batch_start_rejects_lambda_above_slot_cap(client, valid_config):
+    # slot is a uint16, so a rate above 65536 could draw a count the snapshot
+    # cannot store. Mirrors `kMaxPoissonLambda` in the C++ core.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson", "lambda": 65536.0 + 1.0}
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "lambda" in response.json()["detail"]
+
+
+def test_batch_start_rejects_total_poisson_rate_above_slot_cap(client, valid_config):
+    # A division draws one count at the summed rate, so Lambda is capped too.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson", "lambda": 40000.0},
+        {"id": 1, "is_driver": False, "effect": 0.0, "count_model": "poisson", "lambda": 40000.0},
+    ]
+
+    response = client.post(
+        "/api/simulation/batch/start",
+        json={"configs": [valid_config], "postprocess": "full"},
+    )
+
+    assert response.status_code == 400
+    assert "poisson" in response.json()["detail"]
+
+
+def test_valid_poisson_at_slot_cap_passes_batch_validation(valid_config):
+    # The boundary itself is inclusive, matching the C++ validator.
+    valid_config["mutations"] = [
+        {"id": 0, "is_driver": True, "effect": 0.1, "count_model": "poisson", "lambda": 65536.0}
+    ]
+
+    main._validate_web_batch_outputs([valid_config], "full")
 
 
 def test_batch_start_rejects_bernoulli_probability_sum_above_one(client, valid_config):

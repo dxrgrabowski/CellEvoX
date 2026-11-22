@@ -143,7 +143,7 @@ export default function RunSummary({ runId }: Props) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
             <thead>
               <tr style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                {['ID', 'Type', 'Effect', 'Rate'].map(h => (
+                {['ID', 'Type', 'Effect', 'Probability / λ'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)' }}>{h}</th>
                 ))}
               </tr>

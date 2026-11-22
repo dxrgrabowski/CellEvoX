@@ -19,43 +19,34 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Set, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-try:
-    from pyfish import fish_plot, process_data, setup_figure
-except ImportError:
-    print("Error: pyfish not installed. Run: pip install pyfish")
-    sys.exit(1)
+from snapshot_io import (
+    driver_signature_from_mutations as get_driver_signature,
+    find_parent_signature,
+    parse_mutations,
+)
 
 
-def parse_mutations(mutations_str: str) -> List[Tuple[int, int, int]]:
+def _load_pyfish():
+    """Import pyfish lazily, only when a Müller plot is actually rendered.
+
+    Importing at module scope used to call ``sys.exit`` when the optional
+    visualization dependency was missing, which aborted test collection for the
+    whole ``scripts`` package. Keeping the import lazy lets the module (and its
+    helper functions) be imported without pyfish installed.
     """
-    Parse mutations string from CSV.
-    Format: "(mutation_id,mutation_type_id,effect,slot) ..."
-    Returns list of (mutation_id, mutation_type_id, slot) tuples; the realized
-    effect is not needed here. Pre-v4 rows without a slot default it to 0.
-    """
-    if not mutations_str or mutations_str == '""' or pd.isna(mutations_str):
-        return []
-    
-    # Remove surrounding quotes if present
-    mutations_str = mutations_str.strip('"')
-    if not mutations_str:
-        return []
-    
-    mutations = []
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?(?:,(\d+))?\)'
-    for match in re.finditer(pattern, mutations_str):
-        mutation_id = int(match.group(1))
-        mutation_type_id = int(match.group(2))
-        slot = int(match.group(3)) if match.group(3) is not None else 0
-        mutations.append((mutation_id, mutation_type_id, slot))
-    
-    return mutations
+    try:
+        from pyfish import fish_plot, process_data
+    except ImportError as exc:
+        raise ImportError(
+            "pyfish is required for Müller plots. Install it with: pip install pyfish"
+        ) from exc
+    return process_data, fish_plot
 
 
 def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
@@ -71,81 +62,6 @@ def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
             driver_ids.add(mut.get('id'))
     
     return driver_ids
-
-
-def _render_signature(alleles: List[Tuple[int, Optional[int]]]) -> str:
-    """Hybrid token rendering (ADR-0013): bare id unless the id repeats."""
-    unique = sorted(
-        {(int(mid), None if slot is None else int(slot)) for mid, slot in alleles},
-        key=lambda a: (a[0], -1 if a[1] is None else a[1]),
-    )
-    if not unique:
-        return "ancestor"
-    slot_counts: Dict[int, int] = {}
-    for mid, _ in unique:
-        slot_counts[mid] = slot_counts.get(mid, 0) + 1
-    return ",".join(
-        f"{mid}:{slot}" if slot is not None and slot_counts[mid] > 1 else str(mid)
-        for mid, slot in unique
-    )
-
-
-def get_driver_signature(mutations: List[Tuple[int, int, int]], driver_type_ids: Set[int]) -> str:
-    """
-    Extract driver mutations and return a signature string.
-    Alleles are keyed by (mutation_id, slot); the token is the bare
-    mutation_id unless that id appears several times in the cell.
-    """
-    driver_alleles = [
-        (mut_id, slot) for mut_id, mut_type, slot in mutations
-        if mut_type in driver_type_ids
-    ]
-    return _render_signature(driver_alleles)
-
-
-def _signature_alleles(signature: str) -> List[Tuple[int, Optional[int]]]:
-    if signature == "ancestor":
-        return []
-    alleles = []
-    for part in signature.split(","):
-        mid, _, slot = part.partition(":")
-        alleles.append((int(mid), int(slot) if slot else None))
-    return alleles
-
-
-def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
-    """
-    Find the parent clone signature.
-    Parent is the signature with one event (mutation id) removed.
-    """
-    if signature == "ancestor":
-        return ""
-
-    alleles = _signature_alleles(signature)
-
-    # All alleles acquired in one division share the origin mutation_id
-    # (ADR-0013), so remove the whole id instead of a single id:slot token.
-    groups = []
-    for allele in alleles:
-        if groups and groups[-1][0][0] == allele[0]:
-            groups[-1].append(allele)
-        else:
-            groups.append([allele])
-
-    # Try removing each event to find a valid parent
-    for group_index in range(len(groups)):
-        candidate_alleles = [
-            allele
-            for index, group in enumerate(groups)
-            if index != group_index
-            for allele in group
-        ]
-        candidate = _render_signature(candidate_alleles)
-        if candidate in all_signatures:
-            return candidate
-
-    # If no subset found, parent is ancestor
-    return "ancestor"
 
 
 def load_population_files(output_dir: str) -> Dict[int, pd.DataFrame]:
@@ -355,6 +271,10 @@ def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool
     print(f"Image Resolution: {dpi} DPI")
     print(f"Logic: {num_gens} generations -> Figure Width: {dynamic_width:.2f} inches (approx {int(dynamic_width*dpi)} pixels)")
 
+    # Import here rather than at module scope so the single-clone early return above
+    # never requires pyfish, and importing this module never terminates the process.
+    process_data, fish_plot = _load_pyfish()
+
     # Generate Müller plot using pyfish
     try:
         print(f"Populations DataFrame shape: {populations_df.shape}")
@@ -447,7 +367,13 @@ def main():
         print(f"Error: Input directory does not exist: {args.input}")
         sys.exit(1)
     
-    plot_muller_diagram(args.input, args.output, args.absolute, args.dpi, args.width, args.height)
+    try:
+        plot_muller_diagram(args.input, args.output, args.absolute, args.dpi, args.width, args.height)
+    except ImportError as exc:
+        # Keep the previous CLI contract: a missing optional dependency is a clean
+        # error with a non-zero exit code, not a traceback.
+        print(f"Error: {exc}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

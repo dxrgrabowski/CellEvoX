@@ -135,10 +135,16 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
   if (Nc > 0 && actual_population > 0) {
     if (!std::isfinite(total_mutation_probability) || total_mutation_probability < 0.0 ||
         total_mutation_probability > 1.0 + kTotalMutationProbabilityTolerance) {
-      throw std::invalid_argument("total_mutation_probability must be finite and in [0, 1]");
+      throw std::invalid_argument(
+          "total_mutation_probability must be finite and at most 1 (plus float rounding "
+          "tolerance)");
     }
     if (!std::isfinite(total_mutation_rate) || total_mutation_rate < 0.0) {
       throw std::invalid_argument("total_mutation_rate must be finite and non-negative");
+    }
+    if (total_mutation_rate > CellEvoX::deterministic_rng::kMaxPoissonLambda) {
+      throw std::invalid_argument(
+          "total_mutation_rate must not exceed the 16-bit allele slot limit (65536)");
     }
 
     const size_t N = actual_population;
@@ -186,7 +192,7 @@ inline CommonPopulationStepResult applyCommonPopulationStep(
               buffers.dead_cells.push_back({idx, cell.parent_id});
 
               // Both mutation pools are empty: two identical daughters and no
-              // RNG reads, exactly like the previous no-mutation fast path.
+              // mutation RNG reads beyond the death and birth draws above.
               if (total_mutation_probability <= 0.0 && total_mutation_rate <= 0.0) {
                 buffers.new_cells.emplace_back(cell, cell.fitness);
                 buffers.new_cells.emplace_back(cell, cell.fitness);

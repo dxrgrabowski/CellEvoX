@@ -85,16 +85,20 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
   `ParentID`. Do not treat `mutation_id` as a unique ancestor discriminator.
   With `full_mutation_payload: false` the column contains driver mutations only;
   setting it to `true` exports the full payload and also widens the VAF
-  histograms to all mutations. Readers that predate `slot` may see 2- or
-  3-field entries; a missing `slot` is read as `0`.
+  histograms to all mutations. The Python tooling tolerates 2- or 3-field
+  entries and reads a missing `slot` as `0`, but the C++ reader does not: it
+  rejects any snapshot whose header version predates v4 instead of inferring a
+  slot.
 - `mutation_id` is **not unique within a cell**. Under the Poisson count model
   (ADR-0013) one division can acquire several mutations, all stamped with the
-  same origin cell ID and distinguished only by `slot`. Repeated
-  `(mutation_id,slot)` entries are independent occurrences, not a data error,
-  and `MutationCount` counts occurrences. The allele key for VAF and clone
-  signatures is `(mutation_id,slot)`: a cell either carries an allele or not, so
-  VAF is cells carrying the allele over all cells. `mutation_type` is an
-  attribute of the allele, not part of its key. Clone labels render the bare
+  same origin cell ID and distinguished by `slot`. Independent events in the
+  same cell always receive distinct slots, so `(mutation_id,slot)` identifies
+  one allele. `MutationCount` counts stored mutation entries (occurrences),
+  whereas VAF and clone signatures add each cell at most once per
+  `(mutation_id,slot)` allele. A repeated `(mutation_id,slot)` entry would
+  therefore be the same allele recorded twice, not a second independent event;
+  the simulator and exporters do not emit such duplicates. `mutation_type` is
+  an attribute of the allele, not part of its key. Clone labels render the bare
   `mutation_id` unless that id appears more than once in the cell, in which case
   every token for that id becomes `mutation_id:slot`. For `bernoulli` runs every
   slot is `0`, so the labels collapse to the bare `mutation_id`.

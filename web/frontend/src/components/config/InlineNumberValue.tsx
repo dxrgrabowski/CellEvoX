@@ -27,13 +27,15 @@ export default function InlineNumberValue({
 }: InlineNumberValueProps) {
   const [draft, setDraft] = useState(() => formatInlineValue(value, decimals, signed));
   const [editing, setEditing] = useState(false);
-  const displayValue = editing ? draft : formatInlineValue(value, decimals, signed);
+  const formattedValue = formatInlineValue(value, decimals, signed);
+  const displayValue = editing ? draft : formattedValue;
 
   const commit = (raw: string) => {
     const next = Number(raw.trim().replace(',', '.'));
     if (!Number.isFinite(next)) return false;
     const clamped = Math.max(min, Math.min(max, next));
-    onChange(Number(clamped.toFixed(decimals)));
+    const rounded = Number(clamped.toFixed(decimals));
+    if (rounded !== value) onChange(rounded);
     return true;
   };
 
@@ -47,7 +49,7 @@ export default function InlineNumberValue({
       style={{ color }}
       onFocus={e => {
         setEditing(true);
-        setDraft(formatInlineValue(value, decimals, signed));
+        setDraft(formattedValue);
         e.currentTarget.select();
       }}
       onChange={e => {
@@ -56,12 +58,13 @@ export default function InlineNumberValue({
       }}
       onBlur={() => {
         setEditing(false);
-        if (!commit(draft)) setDraft(formatInlineValue(value, decimals, signed));
+        if (draft.trim() === formattedValue.trim()) return;
+        if (!commit(draft)) setDraft(formattedValue);
       }}
       onKeyDown={e => {
         if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') {
-          setDraft(formatInlineValue(value, decimals, signed));
+          setDraft(formattedValue);
           e.currentTarget.blur();
         }
       }}

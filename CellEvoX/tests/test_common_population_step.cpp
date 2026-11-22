@@ -325,8 +325,10 @@ TEST_CASE("CommonPopulationStep applies Bernoulli and Poisson mutations in one d
         }
         poisson_events += cell.mutations.size() - 1;
     }
-    // With lambda = 2 over 16 divisions the Poisson pool must fire.
-    REQUIRE(poisson_events > 0);
+    // With lambda = 2 over 16 divisions the Poisson pool must fire. The RNG is
+    // counter-based and the seed is fixed, so pin the exact total (42 draws)
+    // rather than merely requiring at least one event.
+    REQUIRE(poisson_events == 42);
 
     // Same seed, step, and cell ids reproduce the same event payload.
     const auto replay_events = step(replay);
@@ -338,6 +340,78 @@ TEST_CASE("CommonPopulationStep applies Bernoulli and Poisson mutations in one d
         REQUIRE(lhs.fitness == rhs.fitness);
         REQUIRE(lhs.mutations == rhs.mutations);
     }
+}
+
+TEST_CASE("Poisson occupies slot zero when the Bernoulli mutation is not drawn",
+          "[CommonPopulationStep][Hybrid][Determinism]") {
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    constexpr uint32_t kCells = 64;
+    constexpr float kBaseFitness = 1.0e20f;
+    constexpr uint8_t kBernoulliType = 4;
+    constexpr uint8_t kPoissonType = 9;
+    // p = 0.5 leaves roughly half the divisions without the Bernoulli event.
+    constexpr double kBernoulliProbability = 0.5;
+    constexpr double kPoissonRate = 2.0;
+
+    SimulationConfig config;
+    config.tau_step = 1.0;
+    config.seed = 424242;
+    config.env_capacity = 1'000'000'000;
+
+    MutationType bernoulli_mutation{};
+    bernoulli_mutation.probability = static_cast<float>(kBernoulliProbability);
+    bernoulli_mutation.type_id = kBernoulliType;
+    bernoulli_mutation.count_model = MutationCountModel::Bernoulli;
+    bernoulli_mutation.effect = 0.1f;
+
+    MutationType poisson_mutation{};
+    poisson_mutation.type_id = kPoissonType;
+    poisson_mutation.count_model = MutationCountModel::Poisson;
+    poisson_mutation.lambda = static_cast<float>(kPoissonRate);
+    poisson_mutation.effect = 0.05f;
+
+    const std::map<uint8_t, MutationType> mutations = {
+        {kBernoulliType, bernoulli_mutation},
+        {kPoissonType, poisson_mutation},
+    };
+
+    CellEvoX::systems::DensePopulation population(kCells);
+    for (uint32_t id = 0; id < kCells; ++id) {
+        population.at(id).fitness = kBaseFitness;
+    }
+    size_t actual_population = kCells;
+    size_t total_deaths = 0;
+    const auto events = CellEvoX::systems::applyCommonPopulationStep(
+        population, config, mutations, kBernoulliProbability, kPoissonRate, actual_population,
+        total_deaths, 6.0);
+    REQUIRE(events.births.size() == 2 * kCells);
+
+    size_t poisson_first = 0;
+    size_t bernoulli_only = 0;
+    for (const auto& birth : events.births) {
+        const auto& cell = population.at(birth.id);
+        if (cell.mutations.empty()) {
+            continue;
+        }
+        // The slot is the realized event index, whichever pool fired.
+        for (size_t slot = 0; slot < cell.mutations.size(); ++slot) {
+            REQUIRE(cell.mutations[slot].slot == static_cast<uint16_t>(slot));
+        }
+        if (cell.mutations.front().mutation_type == kPoissonType) {
+            ++poisson_first;
+        } else {
+            REQUIRE(cell.mutations.front().mutation_type == kBernoulliType);
+            if (cell.mutations.size() == 1) {
+                ++bernoulli_only;
+            }
+        }
+    }
+    // Both cases must actually occur for this seed: a division whose Bernoulli
+    // draw missed starts its Poisson events at slot 0, while a Bernoulli-only
+    // division keeps its single event at slot 0.
+    REQUIRE(poisson_first > 0);
+    REQUIRE(bernoulli_only > 0);
 }
 
 TEST_CASE("CommonPopulationStep keeps the Bernoulli mutation in gamma effect slot zero",
@@ -434,6 +508,9 @@ TEST_CASE("Deterministic poisson draws are reproducible across both sampling reg
     // Inversion for lambda < 10 and PTRS above it; both must match the mean.
     REQUIRE(sample_mean(3.0, 4000) == Catch::Approx(3.0).margin(0.3));
     REQUIRE(sample_mean(25.0, 4000) == Catch::Approx(25.0).margin(1.0));
+    // The regime switch sits at exactly 10; both sides must agree on the mean.
+    REQUIRE(sample_mean(9.999, 4000) == Catch::Approx(9.999).margin(0.6));
+    REQUIRE(sample_mean(10.0, 4000) == Catch::Approx(10.0).margin(0.6));
 }
 
 TEST_CASE("Poisson inversion terminates when the uniform rounds up to one",
@@ -451,12 +528,19 @@ TEST_CASE("Poisson inversion terminates when the uniform rounds up to one",
     }
 }
 
-TEST_CASE("Poisson rejects rates that cannot be represented as uint64_t",
-          "[DeterministicRng][Poisson]") {
+TEST_CASE("Poisson rejects rates above the 16-bit allele slot limit",
+          "[DeterministicRng][Poisson][Validation]") {
     using CellEvoX::deterministic_rng::poisson01;
 
+    // `slot` is a uint16, so a rate above 65536 could draw a count the snapshot
+    // cannot store. The cap also keeps PTRS well inside double precision, so
+    // rates that used to reach the uint64_t guard now fail here instead.
+    REQUIRE_THROWS_AS(poisson01(1, 0, 0, 0, 65536.0 + 1.0), std::overflow_error);
     REQUIRE_THROWS_AS(poisson01(1, 0, 0, 0, 1e20), std::overflow_error);
     REQUIRE_THROWS_AS(poisson01(1, 0, 0, 0, 18446744073709551616.0), std::overflow_error);
+
+    // The boundary itself is inclusive.
+    REQUIRE_NOTHROW(poisson01(1, 0, 0, 0, 65536.0));
 }
 
 TEST_CASE("Poisson count and type draws use disjoint stream keys",
@@ -530,10 +614,11 @@ TEST_CASE("Mutation rejects a daughter whose stored float fitness underflows",
         std::runtime_error);
 }
 
-TEST_CASE("Mutation rejects a division that exceeds the 16-bit allele slot limit",
+TEST_CASE("Mutation rejects a division rate above the 16-bit allele slot limit",
           "[MutationEffect][Validation]") {
-    // slot is a uint16; a Poisson count above 65536 would wrap and alias two
-    // alleles of the same id. Such a division must be rejected, not wrapped.
+    // slot is a uint16; a rate above 65536 would draw counts that cannot be
+    // stored as alleles. `poisson01` rejects the rate before sampling, so the
+    // division fails instead of wrapping or aliasing two alleles of one id.
     Cell parent;
     parent.id = 3;
     parent.fitness = 1.0f;

@@ -167,7 +167,14 @@ def signature_to_alleles(signature: str) -> Tuple[Tuple[int, Optional[int]], ...
     alleles: List[Tuple[int, Optional[int]]] = []
     for part in signature.split(","):
         mutation_id, _, slot = part.partition(":")
-        alleles.append((int(mutation_id), int(slot) if slot else None))
+        try:
+            parsed_id = int(mutation_id)
+            parsed_slot = int(slot) if slot else None
+        except ValueError:
+            # Skip a malformed token (e.g. "1:abc") instead of aborting the
+            # whole signature; callers only read signatures we rendered.
+            continue
+        alleles.append((parsed_id, parsed_slot))
     return tuple(alleles)
 
 
@@ -200,17 +207,17 @@ def find_parent_signature(signature: str, all_signatures: Iterable[str]) -> str:
     alleles = list(signature_to_alleles(signature))
     # All alleles acquired in one division share the origin ``mutation_id``
     # (ADR-0013), so a parent drops a whole id, not a single ``id:slot`` token.
-    groups: List[List[Tuple[int, Optional[int]]]] = []
+    # Group by id rather than by neighbours so the result never depends on the
+    # token order inside the signature.
+    groups: Dict[int, List[Tuple[int, Optional[int]]]] = {}
     for allele in alleles:
-        if groups and groups[-1][0][0] == allele[0]:
-            groups[-1].append(allele)
-        else:
-            groups.append([allele])
+        groups.setdefault(allele[0], []).append(allele)
 
-    for group_index in range(len(groups)):
+    group_values = list(groups.values())
+    for group_index in range(len(group_values)):
         candidate_alleles = [
             allele
-            for index, group in enumerate(groups)
+            for index, group in enumerate(group_values)
             if index != group_index
             for allele in group
         ]
@@ -383,17 +390,26 @@ def build_clone_metadata(
             last_generation = float(active_generations.index.max())
 
         driver_ids = signature_to_driver_ids(signature)
-        added_driver_id = driver_ids[-1] if driver_ids else None
+        parent_signature = find_parent_signature(signature, all_signatures)
+        # Drivers this clone acquired relative to its parent, not merely the
+        # highest id it carries (ADR-0013).
+        added_driver_ids = sorted(
+            set(driver_ids) - set(signature_to_driver_ids(parent_signature))
+        )
+        added_driver_id = added_driver_ids[0] if added_driver_ids else None
         metadata_rows.append(
             {
                 "CloneSignature": signature,
-                "ParentSignature": find_parent_signature(signature, all_signatures),
+                "ParentSignature": parent_signature,
                 "CloneDepth": signature_depth(signature),
                 "FirstGeneration": first_generation,
                 "LastGeneration": last_generation,
                 "PeakCells": float(series.max()),
                 "TotalCells": float(series.sum()),
-                "BirthTime": max((death_times.get(driver_id, 0.0) for driver_id in driver_ids), default=0.0),
+                "BirthTime": max(
+                    (death_times.get(driver_id, 0.0) for driver_id in added_driver_ids),
+                    default=0.0,
+                ),
                 "AddedDriverId": added_driver_id,
                 "CloneLabel": clone_label(signature),
                 "CloneColorHex": clone_hex(signature),

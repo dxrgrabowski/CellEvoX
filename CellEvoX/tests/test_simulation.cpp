@@ -285,6 +285,22 @@ TEST_CASE("SimulationConfig rejects invalid mutation count models",
     REQUIRE_THROWS_WITH(utils::fromJson(invalid),
                         Catch::Matchers::ContainsSubstring("lambda"));
 
+    // A tiny negative double becomes -0.0f in the float cast, so the sign must
+    // be checked before conversion; otherwise the CLI accepts a rate the API
+    // rejects.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = -1e-50;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // A finite double above the range must be rejected before the float cast
+    // turns it into infinity.
+    invalid["mutations"][0]["lambda"] = 1e39;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
     // Bernoulli probabilities share one pool and must not exceed one.
     invalid = mutationCountModelConfig();
     invalid["mutations"] = nlohmann::json::array({
@@ -293,6 +309,37 @@ TEST_CASE("SimulationConfig rejects invalid mutation count models",
     });
     REQUIRE_THROWS_WITH(utils::fromJson(invalid),
                         Catch::Matchers::ContainsSubstring("probability"));
+
+    // slot is a uint16, so a single rate above 65536 cannot be stored.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = 70000.0;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // A division draws one count at the summed rate, so Lambda is capped too.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"count_model", "poisson"}, {"lambda", 40000.0}, {"id", 1},
+         {"is_driver", false}},
+        {{"effect", 0.0}, {"count_model", "poisson"}, {"lambda", 40000.0}, {"id", 2},
+         {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // count_model must be a string; a non-string must not surface as a raw
+    // nlohmann type_error.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = 1;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("count_model"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["effect_mode"] = 1;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("effect_mode"));
 }
 
 TEST_CASE("SimulationConfig tolerates float32 rounding in the Bernoulli pool",

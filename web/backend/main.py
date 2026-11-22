@@ -85,7 +85,10 @@ async def get_config_schema():
                 "default": "bernoulli",
             },
             "probability": {"type": "float", "min": 0.0001, "max": 0.5, "step": 0.0001},
-            "lambda": {"type": "float", "min": 0.0, "max": 10.0, "step": 0.0001},
+            # Mirrors `kMaxPoissonLambda` in DeterministicRng.hpp: the largest
+            # count a division can store (the allele slot is a uint16). The UI
+            # slider offers a narrower, practical range on top of this bound.
+            "lambda": {"type": "float", "min": 0.0, "max": 65536.0, "step": 0.0001},
             "effect_mode": {
                 "type": "enum",
                 "values": ["constant", "gamma"],
@@ -125,6 +128,10 @@ class RunAnalyzeRequest(BaseModel):
 # CellEvoX/include/systems/SimulationEngine.hpp: one float ulp (2^-23), the
 # most that rounding an exact-1 decimal pool to float32 can overshoot by.
 _TOTAL_MUTATION_PROBABILITY_TOLERANCE = 2.0 ** -23
+# Mirrors `kMaxPoissonLambda` in CellEvoX/include/utils/DeterministicRng.hpp: a
+# division stores its event count in a uint16 allele slot, so neither one rate
+# nor the summed rate `Λ = Σ lambda_i` the sampler draws with may exceed this.
+_MAX_POISSON_LAMBDA = 65536.0
 _FLOAT32 = struct.Struct("<f")
 
 
@@ -179,6 +186,7 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
             detail=f"Run #{run_index}: mutations must be a list",
         )
     total_bernoulli_probability = 0.0
+    total_poisson_lambda = 0.0
     for position, mutation in enumerate(mutations):
         if not isinstance(mutation, dict):
             continue
@@ -203,15 +211,17 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
                 isinstance(lam, (int, float))
                 and not isinstance(lam, bool)
                 and math.isfinite(lam)
-                and lam >= 0
+                and 0 <= lam <= _MAX_POISSON_LAMBDA
             ):
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Run #{run_index}: {label} requires a finite lambda >= 0 "
-                        f"for the poisson count model"
+                        f"Run #{run_index}: {label} requires a finite lambda in "
+                        f"[0, {_MAX_POISSON_LAMBDA:g}] for the poisson count model"
                     ),
                 )
+            # Accumulate the float32 rates the C++ core actually samples with.
+            total_poisson_lambda += _as_float32(lam)
         else:
             if "lambda" in mutation:
                 raise HTTPException(
@@ -272,6 +282,17 @@ def _validate_mutation_fields(config: dict, run_index: int) -> None:
             detail=(
                 f"Run #{run_index}: total bernoulli mutation probability "
                 f"({total_bernoulli_probability:g}) must not exceed 1"
+            ),
+        )
+
+    # Mirror the C++ check: a division draws one Poisson count at the summed
+    # rate, which must respect the same uint16 slot cap as an individual rate.
+    if total_poisson_lambda > _MAX_POISSON_LAMBDA:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Run #{run_index}: total poisson mutation rate "
+                f"({total_poisson_lambda:g}) must not exceed {_MAX_POISSON_LAMBDA:g}"
             ),
         )
 
