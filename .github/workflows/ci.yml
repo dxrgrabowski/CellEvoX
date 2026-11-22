@@ -37,11 +37,11 @@ jobs:
 
     # The verdict logic is the only blocking performance signal, so its unit
     # tests run before the expensive builds and fail fast. This step deliberately
-    # runs before "Install Dependencies", so it uses the runner's system python3:
-    # this file and the gate modules it imports must stay stdlib-only, or move
-    # the step after the install.
+    # runs before "Install Dependencies", so the gate-tests stage uses the
+    # runner's system python3: that file and the gate modules it imports must
+    # stay stdlib-only, or move the step after the install.
     - name: Test Instruction Gate Verdict Logic
-      run: python3 head/CellEvoX/tests/benchmarks/test_perf_ir_gate.py
+      run: head/scripts/verify.sh --stage gate-tests
 
     # The Ubuntu mirror occasionally throttles to a few kB/s, which used to
     # stretch this step from ~30 s to 15-38 min. Cache the .deb archives so a
@@ -145,7 +145,8 @@ jobs:
     # ~[benchmark] filter have one definition (issue #54).
     - name: Run Unit Tests (CTest)
       env:
-        BUILD_DIR: ../head_build
+        # Absolute: verify.sh cd's to its repo root before using BUILD_DIR.
+        BUILD_DIR: ${{ github.workspace }}/head_build
         CTEST_JUNIT: ${{ runner.temp }}/ctest.xml
       run: head/scripts/verify.sh --stage cpp-test
 

@@ -33,7 +33,8 @@ Usage: scripts/verify.sh [--quick | --full] [--stage STAGE]...
 Stages:
   gate-tests     stdlib unit tests for the instruction-gate verdict logic
   cpp-build      cmake configure + build CellEvoX and CellEvoXTests
-                 (Release, warnings as errors)
+                 (Release, warnings as errors; the perf probe is configured
+                 for the CI-only instruction gate but not built)
   cpp-test       ctest --output-on-failure (~[benchmark] Catch2 cases)
   bench          the CI "quick" benchmark group, head binary only
   viz            Python visualization regression test
@@ -54,8 +55,9 @@ immediately with the install command instead of skipping.
 
 Environment:
   JOBS           parallelism for the C++ build (default: detected core count).
-  BUILD_DIR      CMake build directory (default: build/verify). CI points this
-                 at its own build tree.
+  BUILD_DIR      CMake build directory (default: build/verify). Relative paths
+                 resolve from the repo root, because the script cd's there
+                 first. CI passes an absolute path to its own build tree.
   CTEST_JUNIT    when set, also write a JUnit report to this path (as CI does).
 EOF
 }
@@ -86,7 +88,7 @@ require() {
 }
 
 python_has() {
-  python3 -c "import $1" >/dev/null 2>&1
+  python3 -c 'import importlib, sys; importlib.import_module(sys.argv[1])' "$1" >/dev/null 2>&1
 }
 
 while (($#)); do
@@ -148,17 +150,22 @@ stage_gate_tests() {
 
 stage_cpp_build() {
   require cmake
-  # Same configure flags as CI's head build. CI additionally builds
-  # CellEvoXPerfProbe for the paired instruction gate, which needs a base tree
-  # and has no local stage (see docs/runbook.md "CI notes").
+  # Same configure flags as CI's head build. The perf probe target is configured
+  # for the paired instruction gate, which needs a base tree and therefore has no
+  # local stage (see docs/runbook.md "CI notes").
   local cmake_args=(
     -B "$BUILD_DIR"
     -S CellEvoX
     -DCMAKE_BUILD_TYPE=Release
     -DCELLEVOX_WARNINGS_AS_ERRORS=ON
+    -DCELLEVOX_BUILD_PERF_PROBE=ON
   )
   if command -v ccache >/dev/null 2>&1; then
     cmake_args+=(-DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+  else
+    # Clear a launcher cached by an earlier run: a missing ccache would
+    # otherwise fail the required compilation.
+    cmake_args+=(-DCMAKE_CXX_COMPILER_LAUNCHER=)
   fi
   run cmake "${cmake_args[@]}"
   run cmake --build "$BUILD_DIR" --target CellEvoX CellEvoXTests --parallel "$JOBS"
@@ -176,15 +183,35 @@ stage_cpp_test() {
 }
 
 stage_bench() {
+  require python3
   local binary="$BUILD_DIR/bin/CellEvoXTests"
   [[ -x "$binary" ]] || die "no test binary at $binary; run --stage cpp-build first"
-  # Same test case and benchmark options the CI gate uses for the "quick"
-  # group (CellEvoX/tests/benchmarks/ci_benchmark_gate.py GROUP_FILTERS).
-  run "$binary" "Simulation: High-Performance Regression" \
-    --benchmark-samples 3 \
-    --benchmark-warmup-time 200 \
-    --benchmark-resamples 20000 \
-    --benchmark-confidence-interval 0.95
+  # Read the filters from the gate module itself instead of copying them, so a
+  # renamed or added "quick" test case cannot drift between this stage and CI.
+  # The benchmark options below are the ones the "Paired Performance Gate" step
+  # in .github/workflows/ci.yml passes to ci_benchmark_gate.py.
+  local filters
+  filters=$(python3 - <<'PY'
+import sys
+
+sys.path.insert(0, "CellEvoX/tests/benchmarks")
+from ci_benchmark_gate import GROUP_FILTERS
+
+print("\n".join(GROUP_FILTERS["quick"]))
+PY
+)
+  # Catch2 fails on a filter that matches nothing, but an empty group would run
+  # no command at all and still exit 0.
+  [[ -n "$filters" ]] || die "the \"quick\" benchmark group in ci_benchmark_gate.py is empty"
+  local filter
+  while IFS= read -r filter; do
+    [[ -n "$filter" ]] || continue
+    run "$binary" "$filter" \
+      --benchmark-samples 3 \
+      --benchmark-warmup-time 200 \
+      --benchmark-resamples 20000 \
+      --benchmark-confidence-interval 0.95
+  done <<< "$filters"
 }
 
 stage_viz() {
