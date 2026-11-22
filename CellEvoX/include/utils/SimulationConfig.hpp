@@ -13,6 +13,7 @@
 
 #include "ecs/Cell.hpp"
 #include "systems/SimulationEngine.hpp"
+#include "utils/DeterministicRng.hpp"
 
 namespace utils {
 
@@ -95,12 +96,30 @@ inline void validateConfig(const SimulationConfig& config) {
   }
 
   double total_mutation_probability = 0.0;
+  double total_poisson_lambda = 0.0;
   std::unordered_set<uint8_t> mutation_ids;
   for (const auto& mutation : config.mutations) {
-    requireFinite(mutation.probability, "mutations[].probability");
-    if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
-      throw std::runtime_error(
-          "Invalid simulation config: mutation probability must be in [0, 1]");
+    if (mutation.count_model == MutationCountModel::Bernoulli) {
+      requireFinite(mutation.probability, "mutations[].probability");
+      if (mutation.probability < 0.0f || mutation.probability > 1.0f) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation probability must be in [0, 1]");
+      }
+      total_mutation_probability += mutation.probability;
+    } else if (mutation.count_model == MutationCountModel::Poisson) {
+      requireFinite(mutation.lambda, "mutations[].lambda");
+      if (mutation.lambda < 0.0f) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation lambda must be non-negative");
+      }
+      if (mutation.lambda > CellEvoX::deterministic_rng::kMaxPoissonLambda) {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation lambda must not exceed the 16-bit allele "
+            "slot limit (65536)");
+      }
+      total_poisson_lambda += mutation.lambda;
+    } else {
+      throw std::runtime_error("Invalid simulation config: unknown mutation count_model");
     }
     if (!mutation_ids.insert(mutation.type_id).second) {
       throw std::runtime_error("Invalid simulation config: duplicate mutation id");
@@ -145,12 +164,18 @@ inline void validateConfig(const SimulationConfig& config) {
       default:
         throw std::runtime_error("Invalid simulation config: unknown mutation effect_mode");
     }
-
-    total_mutation_probability += mutation.probability;
   }
-  if (total_mutation_probability > 1.0 + 1e-9) {
+  if (total_mutation_probability > 1.0 + kTotalMutationProbabilityTolerance) {
     throw std::runtime_error(
         "Invalid simulation config: total mutation probability must not exceed 1");
+  }
+  // A division draws one Poisson count with rate Lambda = sum(lambda_i), so the
+  // aggregate rate the sampler receives must respect the same 16-bit slot cap
+  // as an individual rate.
+  if (total_poisson_lambda > CellEvoX::deterministic_rng::kMaxPoissonLambda) {
+    throw std::runtime_error(
+        "Invalid simulation config: the summed Poisson lambda must not exceed the 16-bit "
+        "allele slot limit (65536)");
   }
 }
 
@@ -243,13 +268,55 @@ inline SimulationConfig fromJson(const nlohmann::json& j) {
         throw std::runtime_error("Invalid simulation config: mutation id must fit in uint8_t");
       }
       MutationType mutation_type{};
-      mutation_type.probability = mut.at("probability").get<float>();
       mutation_type.type_id = static_cast<uint8_t>(mutation_id);
       mutation_type.is_driver = mut.at("is_driver").get<bool>();
 
+      // A missing count_model means "bernoulli" so existing configs keep working.
+      std::string count_model = "bernoulli";
+      if (mut.contains("count_model")) {
+        if (!mut.at("count_model").is_string()) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation count_model must be a string");
+        }
+        count_model = mut.at("count_model").get<std::string>();
+      }
+      if (count_model == "bernoulli") {
+        if (mut.contains("lambda")) {
+          throw std::runtime_error(
+              "Invalid simulation config: bernoulli mutation must not carry 'lambda'");
+        }
+        mutation_type.count_model = MutationCountModel::Bernoulli;
+        mutation_type.probability = mut.at("probability").get<float>();
+      } else if (count_model == "poisson") {
+        if (mut.contains("probability")) {
+          throw std::runtime_error(
+              "Invalid simulation config: poisson mutation must not carry 'probability'");
+        }
+        mutation_type.count_model = MutationCountModel::Poisson;
+        // Validate the JSON number before the float cast. A tiny negative
+        // double such as -1e-50 becomes -0.0f, which would silently pass the
+        // post-cast non-negative check even though the API rejects it.
+        const double lambda = mut.at("lambda").get<double>();
+        if (!std::isfinite(lambda) || lambda < 0.0 ||
+            lambda > static_cast<double>(CellEvoX::deterministic_rng::kMaxPoissonLambda)) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation lambda must be finite and in [0, 65536]");
+        }
+        mutation_type.lambda = static_cast<float>(lambda);
+      } else {
+        throw std::runtime_error(
+            "Invalid simulation config: mutation count_model must be 'bernoulli' or 'poisson'");
+      }
+
       // A missing effect_mode means "constant" so existing configs keep working.
-      const std::string effect_mode =
-          mut.contains("effect_mode") ? mut.at("effect_mode").get<std::string>() : "constant";
+      std::string effect_mode = "constant";
+      if (mut.contains("effect_mode")) {
+        if (!mut.at("effect_mode").is_string()) {
+          throw std::runtime_error(
+              "Invalid simulation config: mutation effect_mode must be a string");
+        }
+        effect_mode = mut.at("effect_mode").get<std::string>();
+      }
       if (effect_mode == "constant") {
         mutation_type.effect_mode = MutationEffectMode::Constant;
         mutation_type.effect = mut.at("effect").get<float>();
@@ -317,11 +384,19 @@ inline void printConfig(const SimulationConfig& config) {
   }
   spdlog::info("Mutations:");
   for (const auto& mut : config.mutations) {
-    spdlog::info("    {}mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
-                 mut.is_driver ? "DRIVER " : "",
-                 mut.type_id,
-                 mut.effect,
-                 mut.probability);
+    if (mut.count_model == MutationCountModel::Poisson) {
+      spdlog::info("    {}poisson mutation with id: {}, effect: {:.2f}, lambda: {:.3f}",
+                   mut.is_driver ? "DRIVER " : "",
+                   mut.type_id,
+                   mut.effect,
+                   mut.lambda);
+    } else {
+      spdlog::info("    {}bernoulli mutation with id: {}, effect: {:.2f}, probability: {:.3f}",
+                   mut.is_driver ? "DRIVER " : "",
+                   mut.type_id,
+                   mut.effect,
+                   mut.probability);
+    }
   }
 }
 

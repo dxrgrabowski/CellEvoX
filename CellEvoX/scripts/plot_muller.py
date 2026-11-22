@@ -19,42 +19,34 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Set, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-try:
-    from pyfish import fish_plot, process_data, setup_figure
-except ImportError:
-    print("Error: pyfish not installed. Run: pip install pyfish")
-    sys.exit(1)
+from snapshot_io import (
+    driver_signature_from_mutations as get_driver_signature,
+    find_parent_signature,
+    parse_mutations,
+)
 
 
-def parse_mutations(mutations_str: str) -> List[Tuple[int, int]]:
+def _load_pyfish():
+    """Import pyfish lazily, only when a Müller plot is actually rendered.
+
+    Importing at module scope used to call ``sys.exit`` when the optional
+    visualization dependency was missing, which aborted test collection for the
+    whole ``scripts`` package. Keeping the import lazy lets the module (and its
+    helper functions) be imported without pyfish installed.
     """
-    Parse mutations string from CSV.
-    Format: "(mutation_id,mutation_type_id) (mutation_id,mutation_type_id) ..."
-    Returns list of (mutation_id, mutation_type_id) tuples.
-    """
-    if not mutations_str or mutations_str == '""' or pd.isna(mutations_str):
-        return []
-    
-    # Remove surrounding quotes if present
-    mutations_str = mutations_str.strip('"')
-    if not mutations_str:
-        return []
-    
-    mutations = []
-    # Match pattern (id,type) or (id,type,effect); the effect is not needed here.
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
-    for match in re.finditer(pattern, mutations_str):
-        mutation_id = int(match.group(1))
-        mutation_type_id = int(match.group(2))
-        mutations.append((mutation_id, mutation_type_id))
-    
-    return mutations
+    try:
+        from pyfish import fish_plot, process_data
+    except ImportError as exc:
+        raise ImportError(
+            "pyfish is required for Müller plots. Install it with: pip install pyfish"
+        ) from exc
+    return process_data, fish_plot
 
 
 def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
@@ -70,47 +62,6 @@ def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
             driver_ids.add(mut.get('id'))
     
     return driver_ids
-
-
-def get_driver_signature(mutations: List[Tuple[int, int]], driver_type_ids: Set[int]) -> str:
-    """
-    Extract driver mutations and return a signature string.
-    Returns sorted, comma-separated mutation_ids for driver mutations only.
-    """
-    driver_mutation_ids = sorted([
-        mut_id for mut_id, mut_type in mutations 
-        if mut_type in driver_type_ids
-    ])
-    
-    if not driver_mutation_ids:
-        return "ancestor"  # No driver mutations = ancestral clone
-    
-    return ",".join(str(m) for m in driver_mutation_ids)
-
-
-def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
-    """
-    Find the parent clone signature.
-    Parent is the signature with one less driver mutation that is a subset.
-    """
-    if signature == "ancestor":
-        return ""
-    
-    parts = [int(x) for x in signature.split(",")]
-    
-    # Try removing each mutation to find a valid parent
-    for i in range(len(parts)):
-        candidate_parts = parts[:i] + parts[i+1:]
-        if not candidate_parts:
-            candidate = "ancestor"
-        else:
-            candidate = ",".join(str(m) for m in candidate_parts)
-        
-        if candidate in all_signatures:
-            return candidate
-    
-    # If no subset found, parent is ancestor
-    return "ancestor"
 
 
 def load_population_files(output_dir: str) -> Dict[int, pd.DataFrame]:
@@ -166,11 +117,8 @@ def build_pyfish_data(output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Handle single generation case (prevents pyfish crash)
     if len(populations) == 1:
         single_gen = list(populations.keys())[0]
-        # Create a second time point slightly after to allow plotting
-        # If gen is 0, make it 1. If gen is 100, make it 101.
-        next_gen = single_gen + (1 if single_gen == 0 else single_gen * 0.1)
-        # Round to integer if possible, but float is fine for keys usually, 
-        # but let's stick to int if the original keys are ints (which they are)
+        # Duplicate the only time point one generation later so the plot has
+        # two points to draw a band between.
         next_gen = single_gen + 1
         
         print(f"WARNING: Only one generation data found ({single_gen}). Duplicating as {next_gen} to enable plotting.")
@@ -320,6 +268,10 @@ def plot_muller_diagram(output_dir: str, output_file: str = None, absolute: bool
     print(f"Image Resolution: {dpi} DPI")
     print(f"Logic: {num_gens} generations -> Figure Width: {dynamic_width:.2f} inches (approx {int(dynamic_width*dpi)} pixels)")
 
+    # Import here rather than at module scope so the single-clone early return above
+    # never requires pyfish, and importing this module never terminates the process.
+    process_data, fish_plot = _load_pyfish()
+
     # Generate Müller plot using pyfish
     try:
         print(f"Populations DataFrame shape: {populations_df.shape}")
@@ -412,7 +364,13 @@ def main():
         print(f"Error: Input directory does not exist: {args.input}")
         sys.exit(1)
     
-    plot_muller_diagram(args.input, args.output, args.absolute, args.dpi, args.width, args.height)
+    try:
+        plot_muller_diagram(args.input, args.output, args.absolute, args.dpi, args.width, args.height)
+    except ImportError as exc:
+        # Keep the previous CLI contract: a missing optional dependency is a clean
+        # error with a non-zero exit code, not a traceback.
+        print(f"Error: {exc}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -6,7 +6,11 @@ import json
 
 import pytest
 
-from results_parser import ResultsParser
+from results_parser import (
+    ResultsParser,
+    parse_clone_signature,
+    render_clone_signature,
+)
 
 
 def test_list_runs_reports_available_outputs(make_run, tmp_path):
@@ -109,3 +113,64 @@ def test_node_modules_config_is_not_discovered(tmp_path):
     (vendored / "config.json").write_text(json.dumps({"simulation_mode": "stochastic"}))
 
     assert ResultsParser(repo_root=tmp_path).list_runs() == []
+
+
+def test_clone_signature_keeps_legacy_labels_without_collision():
+    assert render_clone_signature([]) == "ancestor"
+    assert render_clone_signature([(0, 0)]) == "0"
+    assert render_clone_signature([(3, 7), (1, 2)]) == "1,3"
+
+
+def test_clone_signature_switches_to_id_slot_on_collision():
+    assert render_clone_signature([(0, 0), (0, 1)]) == "0:0,0:1"
+    assert render_clone_signature([(3, 5), (0, 2), (0, 1)]) == "0:1,0:2,3"
+
+
+def test_clone_signature_deduplicates_repeated_alleles():
+    assert render_clone_signature([(0, 0), (0, 0)]) == "0"
+
+
+def test_parse_clone_signature_round_trips_rendered_labels():
+    assert parse_clone_signature("ancestor") == []
+    assert parse_clone_signature("1,3") == [(1, None), (3, None)]
+    assert parse_clone_signature("0:0,0:1,3") == [(0, 0), (0, 1), (3, None)]
+
+
+def test_driver_signature_keeps_same_type_poisson_draws_apart(tmp_path):
+    parser = ResultsParser(repo_root=tmp_path)
+
+    signature = parser._driver_signature("(5,2,0.1,0)(5,2,0.2,1)", {2}, {})
+
+    assert signature == "5:0,5:1"
+
+
+def test_muller_parent_drops_newest_allele(tmp_path):
+    parser = ResultsParser(repo_root=tmp_path)
+    signatures = {"ancestor", "0", "0,1", "0,1,2"}
+
+    assert parser._muller_parent_signature("0,1,2", signatures) == "0,1"
+    assert parser._muller_parent_signature("0,1", signatures) == "0"
+    assert parser._muller_parent_signature("0", signatures) == "ancestor"
+
+
+def test_muller_parent_drops_all_alleles_from_one_division(tmp_path):
+    """Alleles sharing a mutation id came from one division and drop together."""
+    parser = ResultsParser(repo_root=tmp_path)
+    signatures = {"ancestor", "7", "7,12:0,12:1"}
+
+    assert parser._muller_parent_signature("7,12:0,12:1", signatures) == "7"
+
+
+def test_muller_parent_does_not_drop_a_single_allele_from_one_division(tmp_path):
+    parser = ResultsParser(repo_root=tmp_path)
+    # Dropping only one of the two same-id alleles would fabricate the
+    # unrelated "0" label; both alleles belong to the same event.
+    signatures = {"ancestor", "0", "0:0,0:1"}
+
+    assert parser._muller_parent_signature("0:0,0:1", signatures) == "ancestor"
+
+
+def test_muller_parent_falls_back_to_ancestor_without_known_parent(tmp_path):
+    parser = ResultsParser(repo_root=tmp_path)
+
+    assert parser._muller_parent_signature("0,1", {"ancestor", "0,1"}) == "ancestor"

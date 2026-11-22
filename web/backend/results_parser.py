@@ -13,11 +13,61 @@ import pandas as pd
 import numpy as np
 
 
+def render_clone_signature(alleles) -> str:
+    """Render ``(mutation_id, slot)`` alleles with the ADR-0013 rule.
+
+    A token is the bare ``mutation_id`` unless that id appears more than once in
+    the set, in which case every token for that id becomes
+    ``mutation_id:slot``. Bernoulli-only cells carry a single slot (0) per id,
+    so their labels are unchanged.
+    """
+    unique = sorted(
+        {(int(mutation_id), None if slot is None else int(slot))
+         for mutation_id, slot in alleles},
+        key=lambda allele: (allele[0], -1 if allele[1] is None else allele[1]),
+    )
+    if not unique:
+        return "ancestor"
+    slot_counts: dict[int, int] = {}
+    for mutation_id, _ in unique:
+        slot_counts[mutation_id] = slot_counts.get(mutation_id, 0) + 1
+    tokens = []
+    for mutation_id, slot in unique:
+        if slot is not None and slot_counts[mutation_id] > 1:
+            tokens.append(f"{mutation_id}:{slot}")
+        else:
+            tokens.append(str(mutation_id))
+    return ",".join(tokens)
+
+
+def parse_clone_signature(signature: str) -> list[tuple[int, Optional[int]]]:
+    """Parse a clone signature into ``(mutation_id, slot)`` alleles."""
+    if not signature or signature == "ancestor":
+        return []
+    alleles = []
+    for part in signature.split(","):
+        mutation_id, _, slot = part.partition(":")
+        try:
+            parsed_id = int(mutation_id)
+            parsed_slot = int(slot) if slot else None
+        except ValueError:
+            # Skip a malformed token (e.g. "1:abc") instead of aborting the
+            # whole signature; callers only read signatures we rendered.
+            continue
+        alleles.append((parsed_id, parsed_slot))
+    return alleles
+
+
 class ResultsParser:
     # Directories scanned for run outputs (relative to repo root)
     SCAN_DIRS = ["output*", "build/**/", "build/"]
-    # Matches "(id,type)" and the v3 "(id,type,effect)" form.
-    MUTATION_RE = re.compile(r"\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)")
+    # Matches "(id,type)", v3 "(id,type,effect)" and v4 "(id,type,effect,slot)".
+    # Groups: 1 id, 2 type, 3 optional effect, 4 optional slot. The effect group
+    # is a full float pattern rather than a character class so a malformed entry
+    # such as "(1,2,-)" is skipped instead of matching and failing `float(...)`.
+    MUTATION_RE = re.compile(
+        r"\((\d+),(\d+)(?:,([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))?(?:,(\d+))?\)"
+    )
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -292,19 +342,17 @@ class ResultsParser:
         if cached is not None:
             return cached
 
-        driver_mutation_ids = []
+        driver_alleles = []
         for match in self.MUTATION_RE.finditer(mutations_str):
             try:
                 mutation_type_id = int(match.group(2))
             except ValueError:
                 continue
             if mutation_type_id in driver_type_ids:
-                driver_mutation_ids.append(int(match.group(1)))
+                slot = int(match.group(4)) if match.group(4) is not None else 0
+                driver_alleles.append((int(match.group(1)), slot))
 
-        if driver_mutation_ids:
-            signature = ",".join(str(mutation_id) for mutation_id in sorted(driver_mutation_ids))
-        else:
-            signature = "ancestor"
+        signature = render_clone_signature(driver_alleles)
 
         signature_cache[mutations_str] = signature
         return signature
@@ -316,16 +364,29 @@ class ResultsParser:
             return "ancestor"
 
         # Mutation IDs are monotonic in CellEvoX outputs, so the newest driver is
-        # usually the final token. Try that parent first and keep a fallback for
-        # older or hand-authored outputs.
-        newest_parent = signature.rsplit(",", 1)[0]
-        if newest_parent in all_signatures:
-            return newest_parent
-
-        parts = signature.split(",")
-        for idx in range(len(parts)):
-            candidate_parts = parts[:idx] + parts[idx + 1:]
-            candidate = "ancestor" if not candidate_parts else ",".join(candidate_parts)
+        # usually the final token. Try that parent first and keep the legacy
+        # left-to-right fallback for older or hand-authored outputs. All alleles
+        # acquired in one division share the origin ``mutation_id`` (ADR-0013),
+        # so removing a parent means dropping that whole id, not one
+        # ``id:slot`` token. Candidates are re-rendered instead of sliced.
+        alleles = parse_clone_signature(signature)
+        # Group by mutation id rather than by neighbours: all alleles acquired
+        # in one division share the origin id, and the result must not depend on
+        # the token order inside the signature. The newest id is usually the
+        # final group, so try dropping it first.
+        groups: dict[int, list[tuple[int, Optional[int]]]] = {}
+        for allele in alleles:
+            groups.setdefault(allele[0], []).append(allele)
+        group_values = list(groups.values())
+        drop_order = [len(group_values) - 1] + list(range(len(group_values) - 1))
+        for group_index in drop_order:
+            candidate_alleles = [
+                allele
+                for index, group in enumerate(group_values)
+                if index != group_index
+                for allele in group
+            ]
+            candidate = render_clone_signature(candidate_alleles)
             if candidate in all_signatures:
                 return candidate
         return "ancestor"

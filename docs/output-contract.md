@@ -73,17 +73,35 @@ CellID,ParentID,Fitness,MutationCount,Mutations,X,Y,Z,PositionValid,SpatialDimen
 - `MutationCount` is the full number of mutations carried by the cell, even when
   the `Mutations` column is filtered.
 - `Mutations` is a space-separated list of
-  `(mutation_id,mutation_type,effect)` triples. `effect` is the *realized*
+  `(mutation_id,mutation_type,effect,slot)` entries. `effect` is the *realized*
   signed fitness effect of that mutation (the constant `effect` for constant
   mutations, the sampled gamma value for gamma mutations) formatted with
-  `float` round-trip precision; it is not the configured sign. `mutation_id` is
-  the cell in which that mutation was created: a newly acquired
-  mutation is stamped with the daughter's `CellID`, so it **can** equal the
-  current cell ID, and an inherited mutation can equal the current `ParentID`.
-  Do not treat `mutation_id` as a unique ancestor discriminator. With
-  `full_mutation_payload: false` the column contains driver mutations only;
+  `float` round-trip precision; it is not the configured sign. `slot` is the
+  0-based position of the mutation within the division event that created it;
+  under the `bernoulli` count model every mutation is its own event, so every
+  `slot` is `0`. `mutation_id` is the cell in which that mutation was created: a
+  newly acquired mutation is stamped with the daughter's `CellID`, so it **can**
+  equal the current cell ID, and an inherited mutation can equal the current
+  `ParentID`. Do not treat `mutation_id` as a unique ancestor discriminator.
+  With `full_mutation_payload: false` the column contains driver mutations only;
   setting it to `true` exports the full payload and also widens the VAF
-  histograms to all mutations.
+  histograms to all mutations. The Python tooling tolerates 2- or 3-field
+  entries and reads a missing `slot` as `0`, but the C++ reader does not: it
+  rejects any snapshot whose header version predates v4 instead of inferring a
+  slot.
+- `mutation_id` is **not unique within a cell**. Under the Poisson count model
+  (ADR-0013) one division can acquire several mutations, all stamped with the
+  same origin cell ID and distinguished by `slot`. Independent events in the
+  same cell always receive distinct slots, so `(mutation_id,slot)` identifies
+  one allele. `MutationCount` counts stored mutation entries (occurrences),
+  whereas VAF and clone signatures add each cell at most once per
+  `(mutation_id,slot)` allele. A repeated `(mutation_id,slot)` entry would
+  therefore be the same allele recorded twice, not a second independent event;
+  the simulator and exporters do not emit such duplicates. `mutation_type` is
+  an attribute of the allele, not part of its key. Clone labels render the bare
+  `mutation_id` unless that id appears more than once in the cell, in which case
+  every token for that id becomes `mutation_id:slot`. For `bernoulli` runs every
+  slot is `0`, so the labels collapse to the bare `mutation_id`.
 - Non-spatial runs leave `X,Y,Z` **empty** (`,,` in the CSV, `NaN` in the binary snapshot)
   with `PositionValid = 0` and `SpatialDimensions = 0`; a CSV reader such as
   pandas loads them as `NaN`, not `0`. 3D runs emit real coordinates with
@@ -133,14 +151,19 @@ It is GEXF 1.3 with directed edges from parent to child and node attributes
 
 ## Binary snapshot ABI (`CELXPOP1`)
 
-Current version is **v3**:
+Current version is **v4**:
 
 - 48-byte header: magic `CELXPOP1`, version, record size, tau, record count,
   mutation payload count, spatial dimensions, mutation record size, flags.
-- 36-byte cell record.
-- 9-byte mutation payload entry (`mutation_id`, `mutation_type`, `effect`),
-  addressed by per-record offset/count. `effect` is the realized signed fitness
-  effect as a little-endian `float`.
+- 40-byte cell record: id, parent id, fitness, position (`x`/`y`/`z`),
+  `uint32` mutation count, `uint32` driver payload count and offset,
+  position-valid flag, padding. The per-cell counts are 32-bit in v4 because a
+  cell accumulates the mutations of every division along its lineage, so the
+  total can exceed the 65 536 events a single division is capped at.
+- 11-byte mutation payload entry (`mutation_id`, `mutation_type`, `slot`,
+  `effect`), addressed by per-record offset/count. `slot` is a little-endian
+  `uint16` giving the mutation's 0-based position within its division event;
+  `effect` is the realized signed fitness effect as a little-endian `float`.
 
 Payload flags distinguish driver-only (`0x1`) from full (`0x2`) payloads. The
 same records are materialized as CSV; CSV is the interchange format for
@@ -150,8 +173,8 @@ analysis and for the web backend.
 
 | Reader | Accepts |
 | --- | --- |
-| C++ (`PopulationSnapshotIO.hpp`) | v3 only |
-| Python (`CellEvoX/scripts/snapshot_io.py`) | v3 only; prefers CSV when both exist |
+| C++ (`PopulationSnapshotIO.hpp`) | v4 only |
+| Python (`CellEvoX/scripts/snapshot_io.py`) | v4 only; prefers CSV when both exist |
 | Web backend (`web/backend/results_parser.py`) | population CSV only |
 
 The contract is pinned by the canonical fixtures in

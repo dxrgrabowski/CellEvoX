@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { BatchQueueItem, SimulationConfig, SimulationStatus } from '../types/simulation';
-import { DEFAULT_CONFIG } from '../types/simulation';
+import type { BatchQueueItem, MutationCountModel, SimulationConfig, SimulationStatus } from '../types/simulation';
+import { DEFAULT_CONFIG, DEFAULT_MUTATION_LAMBDA, DEFAULT_MUTATION_PROBABILITY } from '../types/simulation';
 import { createBatchQueueItem } from '../utils/batchQueue';
 
 // ── Config Store ──────────────────────────────────────────────────────────────
@@ -10,7 +10,9 @@ type ImportedSimulationConfig = Partial<SimulationConfig> & {
 
 interface ConfigStore {
   config: SimulationConfig;
+  inactiveMutationCountValues: ReadonlyMap<number, number>;
   setConfig: (patch: Partial<SimulationConfig>) => void;
+  setMutationCountModel: (id: number, model: MutationCountModel) => void;
   setFullConfig: (config: ImportedSimulationConfig) => void;
   resetConfig: () => void;
 }
@@ -37,9 +39,48 @@ function normalizeConfig(config: ImportedSimulationConfig): SimulationConfig {
 
 export const useConfigStore = create<ConfigStore>((set) => ({
   config: DEFAULT_CONFIG,
-  setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
-  setFullConfig: (config) => set({ config: normalizeConfig(config) }),
-  resetConfig: () => set({ config: DEFAULT_CONFIG }),
+  inactiveMutationCountValues: new Map(),
+  setConfig: (patch) => set((state) => {
+    const config = { ...state.config, ...patch };
+    if (!patch.mutations || state.inactiveMutationCountValues.size === 0) return { config };
+
+    const ids = new Set(patch.mutations.map(mutation => mutation.id));
+    return {
+      config,
+      inactiveMutationCountValues: new Map(
+        [...state.inactiveMutationCountValues].filter(([id]) => ids.has(id)),
+      ),
+    };
+  }),
+  setMutationCountModel: (id, model) => set((state) => {
+    const mutation = state.config.mutations.find(entry => entry.id === id);
+    if (!mutation || (mutation.count_model ?? 'bernoulli') === model) return state;
+
+    // Keep the inactive parameter outside the serialized configuration.
+    const { probability, lambda, ...fields } = mutation;
+    const inactiveMutationCountValues = new Map(state.inactiveMutationCountValues);
+    const savedValue = inactiveMutationCountValues.get(id);
+    const nextMutation = model === 'poisson'
+      ? { ...fields, count_model: model, lambda: savedValue ?? DEFAULT_MUTATION_LAMBDA }
+      : { ...fields, count_model: model, probability: savedValue ?? DEFAULT_MUTATION_PROBABILITY };
+
+    const previousValue = model === 'poisson' ? probability : lambda;
+    if (previousValue === undefined) {
+      inactiveMutationCountValues.delete(id);
+    } else {
+      inactiveMutationCountValues.set(id, previousValue);
+    }
+
+    return {
+      config: {
+        ...state.config,
+        mutations: state.config.mutations.map(entry => entry === mutation ? nextMutation : entry),
+      },
+      inactiveMutationCountValues,
+    };
+  }),
+  setFullConfig: (config) => set({ config: normalizeConfig(config), inactiveMutationCountValues: new Map() }),
+  resetConfig: () => set({ config: DEFAULT_CONFIG, inactiveMutationCountValues: new Map() }),
 }));
 
 // ── Simulation Status Store ───────────────────────────────────────────────────

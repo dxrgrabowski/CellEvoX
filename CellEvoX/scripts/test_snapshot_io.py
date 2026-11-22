@@ -14,6 +14,7 @@ Run directly (no pytest dependency required):
 import math
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -32,8 +33,8 @@ FIXTURE_ROOT = os.path.join(
 
 # Mirror of the C++ static_assert values in include/io/PopulationSnapshotIO.hpp.
 HEADER_SIZE = 48
-RECORD_SIZE = 36
-MUTATION_RECORD_SIZE = 9
+RECORD_SIZE = 40
+MUTATION_RECORD_SIZE = 11
 
 FLAG_DRIVER_PAYLOAD = 0x1
 FLAG_FULL_PAYLOAD = 0x2
@@ -111,7 +112,7 @@ class DriverOnlySnapshotFixture(unittest.TestCase):
         self.assertEqual(data["MutationCount"].tolist(), [1, 2, 1])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(0,1,0.5)", "(0,1,0.5) (1,2,0.25)", "(0,1,0.5)"],
+            ["(0,1,0.5,0)", "(0,1,0.5,0) (1,2,0.25,0)", "(0,1,0.5,0)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [0, 0, 0])
         self.assertTrue(all(math.isnan(value) for value in data["X"]))
@@ -166,7 +167,7 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
         self.assertEqual(data["Fitness"].tolist(), [1.5, 0.875])
         self.assertEqual(
             data["Mutations"].tolist(),
-            ["(3,1,0.125) (7,3,0.25)", "(3,1,0.125) (8,4,-0.25)"],
+            ["(3,1,0.125,0) (7,3,0.25,0)", "(3,1,0.125,0) (8,4,-0.25,0)"],
         )
         self.assertEqual(data["PositionValid"].tolist(), [1, 1])
         self.assertEqual(data["X"].tolist(), [1.5, 4.0])
@@ -180,9 +181,56 @@ class FullPayloadSnapshotFixture(unittest.TestCase):
         pd.testing.assert_frame_equal(bin_frame.data, csv_frame.data, check_dtype=False)
 
 
+class SyntheticSnapshotContract(unittest.TestCase):
+    def _write(self, directory, records, entries, flags, driver_count):
+        header = snapshot_io._HEADER_STRUCT.pack(
+            snapshot_io.SNAPSHOT_MAGIC,
+            snapshot_io.SNAPSHOT_VERSION,
+            RECORD_SIZE,
+            1.0,
+            len(records),
+            driver_count,
+            0,
+            MUTATION_RECORD_SIZE,
+            flags,
+        )
+        body = b"".join(snapshot_io._RECORD_STRUCT.pack(*record) for record in records)
+        payload = b"".join(snapshot_io._DRIVER_MUTATION_STRUCT.pack(*entry) for entry in entries)
+        path = Path(directory) / "population_generation_1.bin"
+        path.write_bytes(header + body + payload)
+        return path
+
+    def test_full_payload_keeps_two_slots_of_one_type_apart(self):
+        # Regression for the binary reader swapping ``slot`` and ``effect`` in
+        # the full-payload path, which collapsed ``12:0,12:1`` into ``12``.
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory,
+                [(42, 0, 1.0, math.nan, math.nan, math.nan, 2, 2, 0, 0)],
+                [(12, 1, 0, 0.0), (12, 1, 1, 0.0)],
+                FLAG_FULL_PAYLOAD,
+                2,
+            )
+            frame = _load_bin_frame(1, str(path), {1})
+        self.assertEqual(frame.data["CloneSignature"].tolist(), ["12:0,12:1"])
+        self.assertEqual(frame.data["Mutations"].tolist(), ["(12,1,0,0) (12,1,0,1)"])
+
+    def test_per_cell_count_above_uint16_round_trips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory,
+                [(42, 0, 1.0, math.nan, math.nan, math.nan, 70000, 0, 0, 0)],
+                [],
+                0,
+                0,
+            )
+            frame = _load_bin_frame(1, str(path), set())
+        self.assertEqual(frame.data["MutationCount"].tolist(), [70000])
+
+
 class InvalidSnapshotFixtures(unittest.TestCase):
-    def test_truncated_v3_is_rejected(self):
-        path = _invalid("truncated_v3.bin")
+    def test_truncated_v4_is_rejected(self):
+        path = _invalid("truncated_v4.bin")
         self.assertEqual(os.path.getsize(path), HEADER_SIZE)
         with self.assertRaises(ValueError):
             _load_bin_frame(5, path, set())
@@ -206,6 +254,76 @@ class FixtureDiscovery(unittest.TestCase):
         bin_sources = snapshot_io.discover_population_sources(FIXTURE_ROOT, prefer_bin=True)
         self.assertEqual([source.kind for source in bin_sources], ["bin", "bin"])
         self.assertEqual([source.generation for source in bin_sources], [5, 10])
+
+
+class HybridCloneSignatures(unittest.TestCase):
+    def test_renders_bare_ids_without_slot_collision(self):
+        self.assertEqual(snapshot_io._render_signature([]), "ancestor")
+        self.assertEqual(snapshot_io._render_signature([(0, 0)]), "0")
+        self.assertEqual(snapshot_io._render_signature([(3, 0), (1, 0)]), "1,3")
+
+    def test_switches_to_id_slot_on_collision(self):
+        self.assertEqual(
+            snapshot_io._render_signature([(0, 0), (0, 1)]), "0:0,0:1"
+        )
+        self.assertEqual(
+            snapshot_io._render_signature([(3, 5), (0, 2), (0, 1)]), "0:1,0:2,3"
+        )
+
+    def test_deduplicates_repeated_occurrences_of_one_allele(self):
+        # Two identical (id, slot) entries are one allele.
+        self.assertEqual(snapshot_io._render_signature([(0, 0), (0, 0)]), "0")
+
+    def test_driver_signature_filters_and_deduplicates(self):
+        mutations = [(101, 1, 0.0, 0), (102, 1, 0.0, 0), (102, 1, 0.0, 0), (103, 2, 0.0, 0)]
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1, 2}), "101,102,103"
+        )
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1}), "101,102"
+        )
+
+    def test_driver_signature_keeps_same_type_poisson_draws_apart(self):
+        mutations = [(101, 1, 0.1, 0), (101, 1, 0.2, 1)]
+        self.assertEqual(
+            snapshot_io.driver_signature_from_mutations(mutations, {1}), "101:0,101:1"
+        )
+
+    def test_signature_round_trips_through_alleles(self):
+        self.assertEqual(
+            snapshot_io.signature_to_alleles("0:0,0:1,3"), ((0, 0), (0, 1), (3, None))
+        )
+        self.assertEqual(
+            snapshot_io.signature_to_driver_ids("0:0,0:1,3"), (0, 3)
+        )
+
+    def test_parent_drops_every_allele_from_one_division(self):
+        signatures = {"ancestor", "7", "7,12:0,12:1"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("7,12:0,12:1", signatures), "7"
+        )
+
+    def test_parent_does_not_drop_a_single_allele_from_one_division(self):
+        signatures = {"ancestor", "0", "0:0,0:1"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0:0,0:1", signatures), "ancestor"
+        )
+
+    def test_parent_prefers_dropping_the_newest_group(self):
+        # Both "0,1" and "1,2" are valid parents. Newest-first must pick "0,1"
+        # so the CLI scripts and the web backend agree on the same tree.
+        signatures = {"ancestor", "0", "0,1", "1,2", "0,1,2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0,1,2", signatures), "0,1"
+        )
+
+    def test_parent_falls_back_left_to_right(self):
+        # Dropping the newest group is not a known clone, so both "1,2" and
+        # "0,2" are valid parents. The web backend then scans left to right.
+        signatures = {"ancestor", "0", "1,2", "0,2", "0,1,2"}
+        self.assertEqual(
+            snapshot_io.find_parent_signature("0,1,2", signatures), "1,2"
+        )
 
 
 if __name__ == "__main__":

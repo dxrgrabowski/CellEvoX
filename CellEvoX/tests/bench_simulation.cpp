@@ -96,9 +96,14 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
     CellEvoX::systems::DensePopulation cells(population);
     std::map<uint8_t, MutationType> available_mutation_types;
     double total_mutation_probability = 0.0;
+    double total_mutation_rate = 0.0;
     for (const auto& mutation : mutations) {
         available_mutation_types[mutation.type_id] = mutation;
-        total_mutation_probability += mutation.probability;
+        if (mutation.count_model == MutationCountModel::Poisson) {
+            total_mutation_rate += mutation.lambda;
+        } else {
+            total_mutation_probability += mutation.probability;
+        }
     }
 
     size_t actual_population = population;
@@ -107,6 +112,7 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
                                                         *cfg,
                                                         available_mutation_types,
                                                         total_mutation_probability,
+                                                        total_mutation_rate,
                                                         actual_population,
                                                         total_deaths,
                                                         cfg->tau_step);
@@ -116,6 +122,7 @@ static CellEvoX::systems::CommonPopulationStepResult runCommonPopulationStepHarn
 struct BenchmarkMutationPayloadRecord {
     uint32_t mutation_id;
     uint8_t mutation_type;
+    uint16_t slot;
     float effect;
 };
 
@@ -125,8 +132,8 @@ struct BenchmarkExtendedPopulationSnapshotRecord {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(BenchmarkMutationPayloadRecord) == 9);
-static_assert(sizeof(BenchmarkExtendedPopulationSnapshotRecord) == 40);
+static_assert(sizeof(BenchmarkMutationPayloadRecord) == 11);
+static_assert(sizeof(BenchmarkExtendedPopulationSnapshotRecord) == 44);
 
 struct SyntheticSnapshotInput {
     std::vector<Cell> cells;
@@ -159,6 +166,7 @@ static SyntheticSnapshotInput makeSyntheticSnapshotInput(
             cell.mutations.push_back(
                 {static_cast<uint32_t>(1'000'000ull + i * mutations_per_cell + j),
                  static_cast<uint8_t>(j % 8),
+                 static_cast<uint16_t>(0),
                  0.0f});
         }
 
@@ -219,8 +227,8 @@ buildExtendedSnapshot(const SyntheticSnapshotInput& input) {
     for (size_t i = 0; i < input.cells.size(); ++i) {
         const auto& cell = input.cells[i];
         const uint32_t mutation_offset = static_cast<uint32_t>(mutation_payload.size());
-        for (const auto& [mutation_id, mutation_type, effect] : cell.mutations) {
-            mutation_payload.push_back({mutation_id, mutation_type, effect});
+        for (const auto& [mutation_id, mutation_type, slot, effect] : cell.mutations) {
+            mutation_payload.push_back({mutation_id, mutation_type, slot, effect});
         }
 
         snapshot.push_back({
@@ -365,12 +373,12 @@ TEST_CASE("Dense population step with optional event results", "[benchmark][popu
         for (int run = 0; run < meter.runs(); ++run) {
             states.emplace_back(population);
             CellEvoX::systems::applyCommonPopulationStep<collect_events>(
-                states.back(), *cfg, mutations, 0.0, counts[run], deaths[run], cfg->tau_step);
+                states.back(), *cfg, mutations, 0.0, 0.0, counts[run], deaths[run], cfg->tau_step);
         }
         meter.measure([&](int run) {
             for (int i = 0; i < steps_per_sample; ++i) {
                 CellEvoX::systems::applyCommonPopulationStep<collect_events>(
-                    states[run], *cfg, mutations, 0.0, counts[run], deaths[run],
+                    states[run], *cfg, mutations, 0.0, 0.0, counts[run], deaths[run],
                     (i + 2) * cfg->tau_step);
             }
         });

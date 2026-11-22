@@ -10,21 +10,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-def parse_mutations(mutations_str):
-    if not mutations_str or pd.isna(mutations_str) or mutations_str == '""':
-        return []
-    mutations_str = str(mutations_str).strip('"')
-    if not mutations_str:
-        return []
-    mutations = []
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
-    for match in re.finditer(pattern, mutations_str):
-        mutations.append((int(match.group(1)), int(match.group(2))))
-    return mutations
-
-def get_driver_signature(mutations_list, driver_type_ids):
-    drivers = [mut_id for mut_id, mut_type in mutations_list if mut_type in driver_type_ids]
-    return tuple(sorted(drivers))
+from snapshot_io import (
+    driver_signature_from_mutations as get_driver_signature,
+    parse_mutations,
+)
 
 def get_config_options(config_path):
     driver_ids = set()

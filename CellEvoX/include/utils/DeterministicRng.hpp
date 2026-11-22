@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include <stdexcept>
 
 namespace CellEvoX::deterministic_rng {
 
@@ -11,16 +12,31 @@ constexpr uint64_t kStreamDeath = 0;
 constexpr uint64_t kStreamBirth = 1;
 constexpr uint64_t kStreamMutation = 2;
 constexpr uint64_t kStreamMutationEffect = 3;
+// ADR-0013: Poisson mutation count and Poisson type selection. The legacy
+// gamma-effect stream starts at 3 and walks forward one key per draw, so these
+// purposes live far above that range: a low id such as 4/5 would alias the
+// effect sampler's draw indices (and each other) and correlate the count with
+// the selected type. High, sparse keys keep every purpose disjoint while
+// leaving the legacy 0/1/2/3 sequence bit-identical.
+constexpr uint64_t kStreamMutationCount = 1ULL << 56U;
+constexpr uint64_t kStreamMutationType = 1ULL << 57U;
 
-// Substream convention: a stream id below 2^32 is a top-level purpose, and
+// Substream convention: a top-level purpose owns a base stream id, and
 // `substream(base, slot)` moves to an independent slot of that purpose. The
 // low 32 bits stay free for draw indices inside one substream, so adding a
 // slot (e.g. a second mutation per division) never shifts existing draws.
 constexpr uint64_t kSubstreamStride = 1ULL << 32U;
 
-inline uint64_t substream(uint64_t base_stream, uint32_t slot) {
+constexpr uint64_t substream(uint64_t base_stream, uint32_t slot) {
   return base_stream + static_cast<uint64_t>(slot) * kSubstreamStride;
 }
+
+// A division realizes at most 2^16 mutations because `CellMutation::slot` is a
+// `uint16_t`, so the highest effect substream key is `3 + 65535 * 2^32` (~2^48).
+// That must stay below the Poisson count stream; otherwise a gamma effect draw
+// would alias a PTRS count uniform and correlate the count with the type.
+static_assert(substream(kStreamMutationEffect, 0xFFFFU) < kStreamMutationCount,
+              "effect substreams for every representable slot must stay below the count stream");
 
 inline uint64_t splitMix64(uint64_t value) {
   value += 0x9e3779b97f4a7c15ULL;
@@ -83,6 +99,97 @@ inline double gamma01(uint64_t seed, uint64_t step, uint64_t cell_id, uint64_t s
       return d * v3 * scale;
     }
   }
+}
+
+// Structural upper bound on a Poisson rate. `CellMutation::slot` is a
+// `uint16_t`, so a division can store at most 65 536 mutations; a rate above
+// that would almost always draw a count that cannot fit and abort the run.
+// Capping it here turns such a config into an immediate error and keeps the
+// PTRS arithmetic (and its rejection loop) well inside double precision.
+constexpr double kMaxPoissonLambda = 65536.0;
+
+// A double below 2^64 is representable as uint64_t; a sample at or above it
+// would make the conversion undefined.
+inline uint64_t poissonSampleToUint64(double k) {
+  constexpr double kUint64Range = 18446744073709551616.0;  // 2^64
+  if (!(k >= 0.0) || k >= kUint64Range) {
+    throw std::overflow_error("poisson01: sample is not representable as uint64_t");
+  }
+  return static_cast<uint64_t>(k);
+}
+
+// Poisson(lambda) draw. Counter-based and reproducible across standard
+// libraries: small rates use inversion by sequential search (one uniform),
+// larger rates use the transformed rejection method (Hörmann PTRS), which
+// consumes two uniforms per attempt. `stream` is the first draw index; the
+// PTRS path advances it by two per attempt so each substream owns a
+// contiguous, non-overlapping draw range. `lambda` must be finite and in
+// `[0, kMaxPoissonLambda]`; the caller is responsible for keeping it
+// non-negative, while an over-large rate is rejected here.
+inline uint64_t poisson01(uint64_t seed, uint64_t step, uint64_t cell_id, uint64_t stream,
+                          double lambda) {
+  if (!(lambda > 0.0)) {
+    return 0;
+  }
+  if (lambda > kMaxPoissonLambda) {
+    throw std::overflow_error(
+        "poisson01: lambda exceeds the 16-bit allele slot limit (65536)");
+  }
+  if (lambda < 10.0) {
+    // uniform01 returns a value in (0, 1); clamping an exact 1.0 (from a
+    // caller-supplied draw) keeps the inversion loop well-defined, because the
+    // Poisson CDF is strictly below 1 and an unclamped 1.0 would never satisfy
+    // the loop condition.
+    double u = uniform01(seed, step, cell_id, stream);
+    if (u >= 1.0) {
+      u = std::nextafter(1.0, 0.0);
+    }
+    double term = std::exp(-lambda);
+    double cumulative = term;
+    uint64_t k = 0;
+    while (u > cumulative) {
+      ++k;
+      term *= lambda / static_cast<double>(k);
+      const double next = cumulative + term;
+      if (next == cumulative) {
+        // The remaining tail is below one ulp of the running sum, so no later
+        // term can advance it; stop instead of spinning forever.
+        break;
+      }
+      cumulative = next;
+    }
+    return k;
+  }
+  const double slam = std::sqrt(lambda);
+  const double loglam = std::log(lambda);
+  const double b = 0.931 + 2.53 * slam;
+  const double a = -0.059 + 0.02483 * b;
+  const double invalpha = 1.1239 + 1.1328 / (b - 3.4);
+  const double vr = 0.9277 - 3.6224 / (b - 2.0);
+  uint64_t draw = stream;
+  // Every failed rejection consumes two fresh uniforms, so the counter-based
+  // draws stay independent. The bound only guards against a degenerate stream:
+  // with `lambda <= kMaxPoissonLambda` the acceptance probability is high, so
+  // reaching it is practically impossible.
+  constexpr uint64_t kMaxPtsAttempts = 1024;
+  for (uint64_t attempt = 0; attempt < kMaxPtsAttempts; ++attempt) {
+    const double u = uniform01(seed, step, cell_id, draw) - 0.5;
+    const double v = uniform01(seed, step, cell_id, draw + 1);
+    draw += 2;
+    const double us = 0.5 - std::fabs(u);
+    const double k = std::floor((2.0 * a / us + b) * u + lambda + 0.43);
+    if (us >= 0.07 && v <= vr) {
+      return poissonSampleToUint64(k);
+    }
+    if (k < 0.0 || (us < 0.013 && v > us)) {
+      continue;
+    }
+    if (std::log(v) + std::log(invalpha) - std::log(a / (us * us) + b) <=
+        -lambda + k * loglam - std::lgamma(k + 1.0)) {
+      return poissonSampleToUint64(k);
+    }
+  }
+  throw std::runtime_error("poisson01: PTRS rejected too many consecutive samples");
 }
 
 }  // namespace CellEvoX::deterministic_rng

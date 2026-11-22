@@ -50,6 +50,18 @@ struct SimulationConfig {
   double mutation_effect_neutral_tolerance = std::numeric_limits<float>::epsilon();
 };
 
+// Mutation probabilities are stored as `float`, so rounding the inputs can make
+// a pool that is exactly 1 in decimal sum to slightly more: 0.2f + 0.8f ==
+// 1.0000000149. Each input is off by at most half a float ulp, so the total
+// overshoot of an exact-1 pool is bounded by half an ulp at 1.0 (~5.96e-8).
+// One full ulp (`float` epsilon, 2^-23) accepts that rounding while still
+// rejecting a pool that is genuinely over-full: 1 + 5e-6 is ~42 ulps above 1
+// and would let the first mutation claim the whole nominal draw range. The
+// config validator, the runtime guard in CommonPopulationStep and the HTTP API
+// share this value so every layer accepts and rejects the same configs.
+inline constexpr double kTotalMutationProbabilityTolerance =
+    static_cast<double>(std::numeric_limits<float>::epsilon());
+
 struct StatSnapshot {
   double tau;
   double mean_fitness;
@@ -90,6 +102,7 @@ class SimulationEngine {
   size_t total_deaths;
   double tau;
   double total_mutation_probability;
+  double total_mutation_rate;
   int last_stat_snapshot_tau = 0;
   int last_population_snapshot_tau = 0;
   int last_memory_log_tau = 0;

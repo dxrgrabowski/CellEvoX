@@ -111,6 +111,41 @@ Required keys are `tau_step`, `initial_population`, `env_capacity`, `steps`,
 off, `1` warnings only, `2` (default) info. The legacy boolean `stochastic: true`
 is still accepted with a warning, while `log_level` is ignored.
 
+### Mutation count models
+
+Each entry in `mutations` may set `count_model`; omitting it means `bernoulli`,
+so existing configs are unchanged.
+
+- `bernoulli` uses `probability` in `[0, 1]`. Bernoulli events from all types
+  share one per-division trial against their summed probability, as before.
+- `poisson` replaces `probability` with `lambda`, the mean number of events of
+  that type per division. `lambda` must be finite and in `[0, 65536]`, and the
+  summed `lambda` across all Poisson types must stay in the same range because
+  `slot` is a `uint16`.
+
+A run may mix both models. Each division draws one Bernoulli trial if any
+Bernoulli type is present and one Poisson count at the summed rate if any
+Poisson type is present. The Bernoulli event, if any, is written first (slot 0)
+and Poisson events follow. All new mutations go to daughter A and their effects
+are applied in that order; daughter B is an unmutated copy of the parent. A
+Poisson count that would overflow the remaining slot capacity aborts the run
+instead of wrapping.
+
+For a hybrid run, replace the `mutations` array in `quick_config.json` with:
+
+```json
+"mutations": [
+  {"id": 1, "is_driver": true, "effect": 0.01, "count_model": "bernoulli", "probability": 0.0001},
+  {"id": 2, "is_driver": false, "effect": -0.01, "count_model": "poisson", "lambda": 2.5},
+  {"id": 3, "is_driver": true, "count_model": "poisson", "lambda": 0.01,
+   "effect_mode": "gamma", "effect_mean": 0.05, "effect_std": 0.02,
+   "effect_direction": "positive", "effect_limit": 0.2}
+]
+```
+
+Here id 1 uses Bernoulli and ids 2 and 3 use Poisson. A Bernoulli entry must
+not carry `lambda`, and a Poisson entry must not carry `probability`.
+
 ### Mutation effects
 
 Each entry in `mutations` accepts `effect_mode`. Omitting it means `constant`,

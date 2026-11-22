@@ -84,6 +84,7 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
       total_deaths(0),
       tau(0.0),
       total_mutation_probability(0.0),
+      total_mutation_rate(0.0),
       config(std::move(config)),
       spatial_rng_(this->config->seed ^ 0xA5A5A5A5u),
       spatial_grid_(2.0f * CELL_RADIUS, this->config->spatial_domain_size) {
@@ -121,7 +122,18 @@ SimulationEngine3DCapacity::SimulationEngine3DCapacity(std::shared_ptr<Simulatio
                       available_mutation_types.end(),
                       0.0,
                       [](double sum, const std::pair<const uint8_t, MutationType>& mutation) {
-                        return sum + mutation.second.probability;
+                        return mutation.second.count_model == MutationCountModel::Bernoulli
+                                   ? sum + mutation.second.probability
+                                   : sum;
+                      });
+  total_mutation_rate =
+      std::accumulate(available_mutation_types.begin(),
+                      available_mutation_types.end(),
+                      0.0,
+                      [](double sum, const std::pair<const uint8_t, MutationType>& mutation) {
+                        return mutation.second.count_model == MutationCountModel::Poisson
+                                   ? sum + static_cast<double>(mutation.second.lambda)
+                                   : sum;
                       });
 
   initializePopulationPositions();
@@ -232,6 +244,7 @@ void SimulationEngine3DCapacity::step() {
                                                                *config,
                                                                available_mutation_types,
                                                                total_mutation_probability,
+                                                               total_mutation_rate,
                                                                actual_population,
                                                                total_deaths,
                                                                tau);
@@ -702,12 +715,18 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
       if (config->full_mutation_payload ||
           (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
         mutation_payload.push_back(
-            {mutation.mutation_id, mutation.mutation_type, mutation.effect});
+            {mutation.mutation_id, mutation.mutation_type, mutation.slot, mutation.effect});
       }
     }
+    // Re-check after appending: the offset was checked before the loop, but the
+    // pushes above can still cross the uint32_t payload space, and the cast
+    // below must not wrap.
+    if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
+      spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
+      return;
+    }
     const auto mutation_payload_count =
-        static_cast<uint16_t>(std::min<size_t>(mutation_payload.size() - mutation_payload_offset,
-                                               std::numeric_limits<uint16_t>::max()));
+        static_cast<uint32_t>(mutation_payload.size() - mutation_payload_offset);
 
     snapshot.push_back({id,
                         cell.parent_id,
@@ -715,9 +734,7 @@ void SimulationEngine3DCapacity::takePopulationSnapshot() {
                         spatial_state_.pos_x[i],
                         spatial_state_.pos_y[i],
                         spatial_state_.pos_z[i],
-                        static_cast<uint16_t>(std::min<size_t>(
-                            cell.mutations.size(),
-                            std::numeric_limits<uint16_t>::max())),
+                        static_cast<uint32_t>(cell.mutations.size()),
                         mutation_payload_count,
                         mutation_payload_offset,
                         1,

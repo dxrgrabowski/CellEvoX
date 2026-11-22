@@ -48,6 +48,12 @@ function formatProbability(value: number | null) {
   return `p=${Number(value.toFixed(5))}`;
 }
 
+function formatRate(value: number | null) {
+  if (value === null) return 'λ?';
+  if (value > 0 && value < 0.001) return `λ=${value.toExponential(1)}`;
+  return `λ=${Number(value.toFixed(4))}`;
+}
+
 function formatEffect(value: number | null) {
   if (value === null) return '?';
   const sign = value > 0 ? '+' : '';
@@ -68,6 +74,8 @@ function readMutations(config: Record<string, unknown>): MutationType[] {
     is_driver: Boolean(mutation.is_driver),
     effect: asNumber(mutation.effect) ?? 0,
     probability: asNumber(mutation.probability) ?? 0,
+    count_model: mutation.count_model === 'poisson' ? 'poisson' : 'bernoulli',
+    lambda: asNumber(mutation.lambda) ?? undefined,
     effect_mode: mutation.effect_mode === 'gamma' ? 'gamma' : 'constant',
     effect_mean: asNumber(mutation.effect_mean) ?? undefined,
     effect_std: asNumber(mutation.effect_std) ?? undefined,
@@ -108,7 +116,9 @@ export function describeBatchConfig(config: Record<string, unknown>): BatchConfi
       effect: isGamma
         ? `|μ|=${Number(Math.abs(mutation.effect_mean ?? 0).toFixed(4))} (γ)`
         : formatEffect(mutation.effect),
-      probability: formatProbability(mutation.probability),
+      probability: mutation.count_model === 'poisson'
+        ? formatRate(mutation.lambda ?? null)
+        : formatProbability(mutation.probability ?? null),
       effectDirection: isGamma
         ? mutation.effect_direction ?? 'positive'
         : effectDirection(mutation.effect),

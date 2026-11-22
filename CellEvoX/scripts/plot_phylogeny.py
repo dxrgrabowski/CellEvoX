@@ -16,28 +16,17 @@ import os
 import re
 import sys
 import random
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Set, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import networkx as nx
 
-def parse_mutations(mutations_str: str) -> List[Tuple[int, int]]:
-    if not mutations_str or mutations_str == '""' or pd.isna(mutations_str):
-        return []
-    
-    mutations_str = mutations_str.strip('"')
-    if not mutations_str:
-        return []
-    
-    mutations = []
-    pattern = r'\((\d+),(\d+)(?:,[-+0-9.eE]+)?\)'
-    for match in re.finditer(pattern, mutations_str):
-        mutation_id = int(match.group(1))
-        mutation_type_id = int(match.group(2))
-        mutations.append((mutation_id, mutation_type_id))
-    
-    return mutations
+from snapshot_io import (
+    driver_signature_from_mutations as get_driver_signature,
+    find_parent_signature,
+    parse_mutations,
+)
 
 def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
     with open(config_path, 'r') as f:
@@ -49,35 +38,6 @@ def get_driver_mutation_type_ids(config_path: str) -> Set[int]:
             driver_ids.add(mut.get('id'))
     
     return driver_ids
-
-def get_driver_signature(mutations: List[Tuple[int, int]], driver_type_ids: Set[int]) -> str:
-    driver_mutation_ids = sorted([
-        mut_id for mut_id, mut_type in mutations 
-        if mut_type in driver_type_ids
-    ])
-    
-    if not driver_mutation_ids:
-        return "ancestor"
-    
-    return ",".join(str(m) for m in driver_mutation_ids)
-
-def find_parent_signature(signature: str, all_signatures: Set[str]) -> str:
-    if signature == "ancestor":
-        return ""
-    
-    parts = [int(x) for x in signature.split(",")]
-    
-    for i in range(len(parts)):
-        candidate_parts = parts[:i] + parts[i+1:]
-        if not candidate_parts:
-            candidate = "ancestor"
-        else:
-            candidate = ",".join(str(m) for m in candidate_parts)
-        
-        if candidate in all_signatures:
-            return candidate
-    
-    return "ancestor"
 
 def load_population_files(output_dir: str) -> Dict[int, pd.DataFrame]:
     pop_dir = os.path.join(output_dir, "population_data")

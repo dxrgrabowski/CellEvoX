@@ -143,7 +143,7 @@ export default function RunSummary({ runId }: Props) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
             <thead>
               <tr style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                {['ID', 'Type', 'Effect', 'Probability'].map(h => (
+                {['ID', 'Type', 'Effect', 'Probability / λ'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)' }}>{h}</th>
                 ))}
               </tr>
@@ -160,7 +160,11 @@ export default function RunSummary({ runId }: Props) {
                   <td style={{ padding: '8px 12px', color: m.effect > 0 ? 'var(--positive)' : m.effect < 0 ? 'var(--negative)' : 'var(--neutral)' }}>
                     {m.effect > 0 ? '+' : ''}{m.effect.toFixed(4)}
                   </td>
-                  <td style={{ padding: '8px 12px' }}>{m.probability.toFixed(5)}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    {m.count_model === 'poisson'
+                      ? `λ=${(m.lambda ?? 0).toFixed(4)}`
+                      : `p=${(m.probability ?? 0).toFixed(5)}`}
+                  </td>
                 </tr>
               ))}
             </tbody>

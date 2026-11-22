@@ -74,13 +74,25 @@ SimulationEngine::SimulationEngine(std::shared_ptr<SimulationConfig> config)
                       available_mutation_types.end(),
                       0.0,
                       [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
-                        return sum + pair.second.probability;
+                        return pair.second.count_model == MutationCountModel::Bernoulli
+                                   ? sum + pair.second.probability
+                                   : sum;
+                      });
+  total_mutation_rate =
+      std::accumulate(available_mutation_types.begin(),
+                      available_mutation_types.end(),
+                      0.0,
+                      [](double sum, const std::pair<const uint8_t, MutationType>& pair) {
+                        return pair.second.count_model == MutationCountModel::Poisson
+                                   ? sum + static_cast<double>(pair.second.lambda)
+                                   : sum;
                       });
 
   // These are informational logs; they will be filtered by spdlog's level.
   spdlog::info("=== Simulation Engine Initialized ===");
   spdlog::info("Initial population: {}, Capacity: {}", config->initial_population, config->env_capacity);
-  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}", config->tau_step, total_mutation_probability);
+  spdlog::info("Tau step: {}, Total mutation probability: {:.6f}, Total mutation rate: {:.6f}",
+               config->tau_step, total_mutation_probability, total_mutation_rate);
 
   // Initialize memory logging
   const auto memory_log_path =
@@ -212,6 +224,7 @@ void SimulationEngine::stochasticStep() {
                                                     *config,
                                                     available_mutation_types,
                                                     total_mutation_probability,
+                                                    total_mutation_rate,
                                                     actual_population,
                                                     total_deaths,
                                                     tau);
@@ -361,12 +374,18 @@ void SimulationEngine::takePopulationSnapshot() {
       if (config->full_mutation_payload ||
           (type_it != available_mutation_types.end() && type_it->second.is_driver)) {
         mutation_payload.push_back(
-            {mutation.mutation_id, mutation.mutation_type, mutation.effect});
+            {mutation.mutation_id, mutation.mutation_type, mutation.slot, mutation.effect});
       }
     }
+    // Re-check after appending: the offset was checked before the loop, but the
+    // pushes above can still cross the uint32_t payload space, and the cast
+    // below must not wrap.
+    if (mutation_payload.size() > std::numeric_limits<uint32_t>::max()) {
+      spdlog::error("Population snapshot mutation payload exceeds uint32_t offset space");
+      return;
+    }
     const auto mutation_payload_count =
-        static_cast<uint16_t>(std::min<size_t>(mutation_payload.size() - mutation_payload_offset,
-                                               std::numeric_limits<uint16_t>::max()));
+        static_cast<uint32_t>(mutation_payload.size() - mutation_payload_offset);
 
     snapshot_records.push_back(
         {cell.id,
@@ -375,8 +394,7 @@ void SimulationEngine::takePopulationSnapshot() {
          std::numeric_limits<float>::quiet_NaN(),
          std::numeric_limits<float>::quiet_NaN(),
          std::numeric_limits<float>::quiet_NaN(),
-         static_cast<uint16_t>(
-             std::min<size_t>(cell.mutations.size(), std::numeric_limits<uint16_t>::max())),
+         static_cast<uint32_t>(cell.mutations.size()),
          mutation_payload_count,
          mutation_payload_offset,
          0,

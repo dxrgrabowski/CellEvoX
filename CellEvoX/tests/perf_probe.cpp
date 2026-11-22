@@ -33,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "io/PopulationSnapshotIO.hpp"
@@ -200,12 +201,12 @@ void mixPhylogeneticTree(Checksum& checksum, const TreeTable& tree) {
 //
 // The file is parsed through the shared reader and its logical content is
 // hashed, not its raw bytes: an ABI version bump changes the record layout on
-// purpose (v3 adds the realized effect to each driver-mutation record), so raw
-// files would report SEMANTICS CHANGED for an otherwise identical run. Only
-// fields carried by every supported version are hashed, and the driver-mutation
-// payload is hashed as (id, type), which both v2 and v3 store. The realized
-// effect (v3 only) is deliberately not hashed: it is already reflected in the
-// record's `fitness`, which is hashed above.
+// purpose (v3 adds the realized effect, v4 the allele slot, to each
+// driver-mutation record), so raw files would report SEMANTICS CHANGED for an
+// otherwise identical run. Only fields common to the compared layouts are
+// hashed, and the driver-mutation payload is hashed as (id, type), which every
+// layout stores. The realized effect and slot are deliberately not hashed:
+// both are allele metadata already reflected in the record's `fitness`.
 void mixSnapshotFiles(Checksum& checksum,
                       const std::string& output_path,
                       const std::vector<std::pair<int, CellMap>>& report) {
@@ -307,6 +308,28 @@ uint64_t runStepsWorkload(const std::shared_ptr<SimulationConfig>& config, uint3
   return checksum.value();
 }
 
+// `if constexpr` only discards branches inside a template, so the signature
+// selection lives here; a plain function would compile the base call too. The
+// explicit template argument is routed through a type that depends on the
+// parameter, otherwise the untaken branch would be checked at definition time.
+template <bool takes_mutation_rate>
+void callCommonPopulationStep(
+    CellEvoX::systems::DensePopulation& cells, const SimulationConfig& config,
+    const std::map<uint8_t, MutationType>& available_mutation_types,
+    size_t& actual_population, size_t& total_deaths, double tau_step) {
+  using CollectEventResult =
+      std::integral_constant<bool, takes_mutation_rate || true>;
+  if constexpr (takes_mutation_rate) {
+    CellEvoX::systems::applyCommonPopulationStep<CollectEventResult::value>(
+        cells, config, available_mutation_types, 0.0, 0.0, actual_population,
+        total_deaths, tau_step);
+  } else {
+    CellEvoX::systems::applyCommonPopulationStep<CollectEventResult::value>(
+        cells, config, available_mutation_types, 0.0, actual_population,
+        total_deaths, tau_step);
+  }
+}
+
 // Mirrors runCommonPopulationStepHarness() in tests/bench_simulation.cpp.
 uint64_t runCommonStepWorkload(const std::string& stats_dir, size_t population) {
   auto config = makeConfig(stats_dir, population, population * 100, 42);
@@ -314,13 +337,20 @@ uint64_t runCommonStepWorkload(const std::string& stats_dir, size_t population) 
   std::map<uint8_t, MutationType> available_mutation_types;
   size_t actual_population = population;
   size_t total_deaths = 0;
-  CellEvoX::systems::applyCommonPopulationStep(cells,
-                                               *config,
-                                               available_mutation_types,
-                                               0.0,
-                                               actual_population,
-                                               total_deaths,
-                                               config->tau_step);
+  // The instruction gate injects this probe into the base checkout (ADR-0011),
+  // so the probe must compile against headers that predate the Poisson mutation
+  // rate parameter. Pick the signature this tree provides; both calls pass no
+  // mutation, so the workload is identical on either side.
+  using CommonStepFn = decltype(&CellEvoX::systems::applyCommonPopulationStep<true>);
+  constexpr bool kStepTakesMutationRate =
+      std::is_invocable_v<CommonStepFn, CellEvoX::systems::DensePopulation&,
+                          const SimulationConfig&,
+                          const std::map<uint8_t, MutationType>&, double, double,
+                          size_t&, size_t&, double>;
+  callCommonPopulationStep<kStepTakesMutationRate>(cells, *config,
+                                                   available_mutation_types,
+                                                   actual_population, total_deaths,
+                                                   config->tau_step);
 
   Checksum checksum;
   checksum.u64(actual_population);

@@ -33,6 +33,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plot_muller
 import plot_phylogeny
 
+try:
+    import pyfish  # noqa: F401
+    _HAVE_PYFISH = True
+except ImportError:
+    # pyfish is an optional visualization dependency; the data-building tests
+    # below still run without it, only the actual PNG rendering is skipped.
+    _HAVE_PYFISH = False
+
 
 def _write_no_driver_fixture(root: str, num_generations: int = 3, cells_per_gen: int = 5) -> None:
     """Creates a minimal on-disk run fixture with no driver mutations defined.
@@ -137,6 +145,9 @@ class BuildPyfishDataTrivialClone(unittest.TestCase):
 
         self.assertEqual(list(parent_tree_df.columns), ["ParentId", "ChildId"])
         self.assertEqual(len(parent_tree_df), 1)  # one driver clone parented by "ancestor"
+
+        if not _HAVE_PYFISH:
+            self.skipTest("pyfish is not installed; skipping the PNG rendering step")
 
         output_file = os.path.join(self.tmpdir2, "muller_plot.png")
         plot_muller.plot_muller_diagram(self.tmpdir2, output_file=output_file)
@@ -249,6 +260,20 @@ class BuildCellTreePrefersFinalLivingLeaves(unittest.TestCase):
         # Legacy runs predate run_metadata.json; keep the previous best-effort behaviour.
         self.assertEqual(depths[10], 1.5)
         self.assertEqual(depths[11], 1.5)
+
+
+class HybridParentLookup(unittest.TestCase):
+    def test_drops_every_allele_from_one_division(self):
+        signatures = {"ancestor", "7", "7,12:1,12:2"}
+
+        self.assertEqual(plot_muller.find_parent_signature("7,12:1,12:2", signatures), "7")
+        self.assertEqual(plot_phylogeny.find_parent_signature("7,12:1,12:2", signatures), "7")
+
+    def test_does_not_drop_a_single_allele_from_one_division(self):
+        signatures = {"ancestor", "0", "0:1,0:2"}
+
+        self.assertEqual(plot_muller.find_parent_signature("0:1,0:2", signatures), "ancestor")
+        self.assertEqual(plot_phylogeny.find_parent_signature("0:1,0:2", signatures), "ancestor")
 
 
 if __name__ == "__main__":

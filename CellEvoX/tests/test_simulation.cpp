@@ -53,6 +53,16 @@ MutationType gammaMutation(uint8_t type_id, float probability, bool is_driver,
     return mutation;
 }
 
+MutationType poissonMutation(uint8_t type_id) {
+    MutationType mutation{};
+    mutation.type_id = type_id;
+    mutation.is_driver = true;
+    mutation.effect = 0.01f;
+    mutation.count_model = MutationCountModel::Poisson;
+    mutation.lambda = 2.5f;
+    return mutation;
+}
+
 }  // namespace
 
 inline std::vector<CellEvoX::io::PopulationSnapshotRecord> read_population_snapshot(
@@ -200,6 +210,174 @@ TEST_CASE("SimulationConfig rejects invalid gamma mutation effects",
     invalid = gammaMutationConfig();
     invalid["mutations"][0]["effect_mode"] = "lognormal";
     REQUIRE_THROWS_AS(utils::fromJson(invalid), std::runtime_error);
+}
+
+namespace {
+
+nlohmann::json mutationCountModelConfig() {
+    return {
+        {"simulation_mode", "stochastic"},
+        {"tau_step", 0.005},
+        {"initial_population", 100},
+        {"env_capacity", 1000},
+        {"steps", 20},
+        {"statistics_resolution", 1},
+        {"population_statistics_res", 5},
+        {"output_path", "./output/"},
+        {"mutations", nlohmann::json::array({
+            {{"effect", 0.0}, {"probability", 0.1}, {"id", 1}, {"is_driver", false}}
+        })}
+    };
+}
+
+}  // namespace
+
+TEST_CASE("SimulationConfig parses hybrid mutation count models",
+          "[SimulationConfig][MutationCount]") {
+    auto config = utils::fromJson(mutationCountModelConfig());
+    REQUIRE(config.mutations.size() == 1);
+    // A missing count_model keeps the legacy Bernoulli behaviour.
+    REQUIRE(config.mutations[0].count_model == MutationCountModel::Bernoulli);
+    REQUIRE(config.mutations[0].probability == Catch::Approx(0.1f));
+    REQUIRE(config.mutations[0].lambda == Catch::Approx(0.0f));
+
+    auto hybrid = mutationCountModelConfig();
+    hybrid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.2}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.05}, {"count_model", "poisson"}, {"lambda", 2.5}, {"id", 2},
+         {"is_driver", true}},
+    });
+    config = utils::fromJson(hybrid);
+    REQUIRE(config.mutations.size() == 2);
+    REQUIRE(config.mutations[0].count_model == MutationCountModel::Bernoulli);
+    REQUIRE(config.mutations[1].count_model == MutationCountModel::Poisson);
+    REQUIRE(config.mutations[1].lambda == Catch::Approx(2.5f));
+    REQUIRE(config.mutations[1].probability == Catch::Approx(0.0f));
+
+    // An explicit count_model is accepted for the legacy model too.
+    auto explicit_bernoulli = mutationCountModelConfig();
+    explicit_bernoulli["mutations"][0]["count_model"] = "bernoulli";
+    REQUIRE(utils::fromJson(explicit_bernoulli).mutations[0].count_model ==
+            MutationCountModel::Bernoulli);
+}
+
+TEST_CASE("SimulationConfig rejects invalid mutation count models",
+          "[SimulationConfig][MutationCount][Correctness]") {
+    auto invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    REQUIRE_THROWS(utils::fromJson(invalid));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = 1.0;
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(invalid),
+        Catch::Matchers::ContainsSubstring("poisson") &&
+            Catch::Matchers::ContainsSubstring("probability"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["lambda"] = 1.0;
+    REQUIRE_THROWS_WITH(
+        utils::fromJson(invalid),
+        Catch::Matchers::ContainsSubstring("bernoulli") &&
+            Catch::Matchers::ContainsSubstring("lambda"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = "binomial";
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("count_model"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = -0.5;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // A tiny negative double becomes -0.0f in the float cast, so the sign must
+    // be checked before conversion; otherwise the CLI accepts a rate the API
+    // rejects.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = -1e-50;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // A finite double above the range must be rejected before the float cast
+    // turns it into infinity.
+    invalid["mutations"][0]["lambda"] = 1e39;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // Bernoulli probabilities share one pool and must not exceed one.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.7}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 0.7}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("probability"));
+
+    // slot is a uint16, so a single rate above 65536 cannot be stored.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0].erase("probability");
+    invalid["mutations"][0]["count_model"] = "poisson";
+    invalid["mutations"][0]["lambda"] = 70000.0;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // A division draws one count at the summed rate, so Lambda is capped too.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"count_model", "poisson"}, {"lambda", 40000.0}, {"id", 1},
+         {"is_driver", false}},
+        {{"effect", 0.0}, {"count_model", "poisson"}, {"lambda", 40000.0}, {"id", 2},
+         {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("lambda"));
+
+    // count_model must be a string; a non-string must not surface as a raw
+    // nlohmann type_error.
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["count_model"] = 1;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("count_model"));
+
+    invalid = mutationCountModelConfig();
+    invalid["mutations"][0]["effect_mode"] = 1;
+    REQUIRE_THROWS_WITH(utils::fromJson(invalid),
+                        Catch::Matchers::ContainsSubstring("effect_mode"));
+}
+
+TEST_CASE("SimulationConfig tolerates float32 rounding in the Bernoulli pool",
+          "[SimulationConfig][MutationCount][Correctness]") {
+    // The probabilities are stored as float, so 0.2f + 0.8f sums to
+    // 1.0000000149 in double. A pool that is exactly 1 in decimal must still be
+    // accepted, matching the HTTP validator.
+    auto config = mutationCountModelConfig();
+    config["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 0.2}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 0.8}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_NOTHROW(utils::fromJson(config));
+
+    // A genuinely over-full pool stays rejected.
+    config["mutations"][1]["probability"] = 0.9;
+    REQUIRE_THROWS_WITH(utils::fromJson(config),
+                        Catch::Matchers::ContainsSubstring("probability"));
+
+    // The tolerance covers float rounding only, not a real overshoot: 5e-6 is
+    // ~42 float ulps above 1 and would let the first mutation claim the whole
+    // nominal draw range.
+    config["mutations"] = nlohmann::json::array({
+        {{"effect", 0.0}, {"probability", 1.0}, {"id", 1}, {"is_driver", false}},
+        {{"effect", 0.0}, {"probability", 5e-6}, {"id", 2}, {"is_driver", false}},
+    });
+    REQUIRE_THROWS_WITH(utils::fromJson(config),
+                        Catch::Matchers::ContainsSubstring("probability"));
 }
 
 TEST_CASE("SimulationConfig rejects the removed deterministic RK4 mode",
@@ -364,7 +542,7 @@ TEST_CASE("SpatialHashGrid handles large rebuilds through the parallel sort path
 TEST_CASE("Cell Initialization and Inheritance", "[Cell]") {
     Cell parent(1);
     parent.fitness = 1.0;
-    parent.mutations.push_back({0, 1, 0.0f}); // Parent has a mutation
+    parent.mutations.push_back({0, 1, 0, 0.0f}); // Parent has a mutation
 
     Cell child(parent, 1.25); // Create child from parent with higher fitness
     
@@ -402,6 +580,7 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
                                                                      config,
                                                                      mutations,
                                                                      1.0,
+                                                                     0.0,
                                                                      actual_population,
                                                                      total_deaths,
                                                                      12.5);
@@ -445,7 +624,7 @@ TEST_CASE("CommonPopulationStep preserves deterministic event payloads", "[Commo
         REQUIRE(accessor->second.parent_id == parent_id);
         REQUIRE(accessor->second.fitness == Catch::Approx(1.0e20f));
         if (mutated) {
-            REQUIRE(accessor->second.mutations == std::vector<CellMutation>{{id, 7, 0.0f}});
+            REQUIRE(accessor->second.mutations == std::vector<CellMutation>{{id, 7, 0, 0.0f}});
         } else {
             REQUIRE(accessor->second.mutations.empty());
         }
@@ -463,27 +642,27 @@ TEST_CASE("Run process info classifies mutation counters", "[Run][Correctness]")
     CellMap cells;
 
     Cell first(10);
-    first.mutations = {{100, 1, 0.10f}, {101, 2, -0.20f}};
+    first.mutations = {{100, 1, 0, 0.10f}, {101, 2, 0, -0.20f}};
     REQUIRE(cells.insert({10, std::move(first)}));
 
     Cell second(11);
-    second.mutations = {{102, 3, 0.0f}};
+    second.mutations = {{102, 3, 0, 0.0f}};
     REQUIRE(cells.insert({11, std::move(second)}));
 
     Cell third(12);
-    third.mutations = {{103, 4, 0.05f}};
+    third.mutations = {{103, 4, 0, 0.05f}};
     REQUIRE(cells.insert({12, std::move(third)}));
 
     // A gamma mutation type configured as beneficial that realized a negative
     // draw: classification must follow the realized effect, not the config.
     Cell fourth(13);
-    fourth.mutations = {{104, 5, -0.15f}};
+    fourth.mutations = {{104, 5, 0, -0.15f}};
     REQUIRE(cells.insert({13, std::move(fourth)}));
 
     // A non-zero effect inside the default neutral band (one float epsilon) is
     // rounding noise of `Cell::fitness` and must not count as beneficial.
     Cell fifth(14);
-    fifth.mutations = {{105, 6, 5.0e-8f}};
+    fifth.mutations = {{105, 6, 0, 5.0e-8f}};
     REQUIRE(cells.insert({14, std::move(fifth)}));
 
     std::map<uint8_t, MutationType> mutation_types;
@@ -509,7 +688,7 @@ TEST_CASE("Run neutral band is configurable and overridable", "[Run][Correctness
     auto build_run = [](double tolerance) {
         CellMap cells;
         Cell cell(10);
-        cell.mutations = {{100, 1, 0.0005f}, {101, 2, 0.002f}, {102, 3, -0.0005f}};
+        cell.mutations = {{100, 1, 0, 0.0005f}, {101, 2, 0, 0.002f}, {102, 3, 0, -0.0005f}};
         REQUIRE(cells.insert({10, std::move(cell)}));
 
         std::map<uint8_t, MutationType> mutation_types;
@@ -812,7 +991,9 @@ inline void require_approx(double actual, double expected, double margin = 1e-6)
 
 TEST_CASE("SimulationEngine stochastic population step is deterministic across worker counts",
           "[SimulationEngine][Determinism][Parallel]") {
-    auto make_config = [](const std::string& output_path) {
+    const bool hybrid = GENERATE(false, true);
+    CAPTURE(hybrid);
+    auto make_config = [hybrid](const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
         config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
         config->tau_step = 0.02;
@@ -830,6 +1011,9 @@ TEST_CASE("SimulationEngine stochastic population step is deterministic across w
             gammaMutation(3, 0.02f, false, MutationEffectDirection::Positive));
         config->mutations.push_back(
             gammaMutation(4, 0.01f, true, MutationEffectDirection::Negative));
+        if (hybrid) {
+            config->mutations.push_back(poissonMutation(5));
+        }
         return config;
     };
 
@@ -923,9 +1107,9 @@ TEST_CASE("PopulationSnapshotIO preserves driver-only payload", "[PopulationSnap
         {2, 1, 1.1f, 4.0f, 5.0f, 6.0f, 2, 2, 1, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> driver_mutations = {
-        {101, 1, 0.3f},
-        {202, 1, -0.25f},
-        {303, 2, 0.0f}
+        {101, 1, 0, 0.3f},
+        {202, 1, 0, -0.25f},
+        {303, 2, 0, 0.0f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -964,8 +1148,8 @@ TEST_CASE("PopulationSnapshotIO preserves full mutation payload flag", "[Populat
         {1, 0, 1.0f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1, 0.5f},
-        {202, 3, -0.25f}
+        {101, 1, 0, 0.5f},
+        {202, 3, 0, -0.25f}
     };
 
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -1001,8 +1185,8 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
         {7, 3, 1.25f, 1.0f, 2.0f, 3.0f, 2, 2, 0, 1, {0, 0, 0}}
     };
     const std::vector<CellEvoX::io::PopulationSnapshotDriverMutation> mutations = {
-        {101, 1, 0.5f},
-        {202, 3, -0.25f}
+        {101, 1, 0, 0.5f},
+        {202, 3, 0, -0.25f}
     };
     const auto snapshot_path = population_dir / "population_generation_5.bin";
     REQUIRE(CellEvoX::io::writePopulationSnapshot(
@@ -1026,7 +1210,7 @@ TEST_CASE("RunDataEngine exports full mutation payload from binary snapshots", "
     std::string row_line;
     REQUIRE(std::getline(file, header_line));
     REQUIRE(std::getline(file, row_line));
-    REQUIRE(row_line.find("\"(101,1,0.5) (202,3,-0.25)\"") != std::string::npos);
+    REQUIRE(row_line.find("\"(101,1,0.5,0) (202,3,-0.25,0)\"") != std::string::npos);
 }
 
 TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV snapshots", "[RunDataEngine]") {
@@ -1070,12 +1254,12 @@ TEST_CASE("RunDataEngine honors full mutation payload flag for in-memory CSV sna
 
     const auto driver_only_csv =
         export_csv(make_config(testTempString("test_run_data_engine_driver_only_ram_csv"), false));
-    // Mutation entries are "(id,type,effect)"; the configured effect here is 0.
-    REQUIRE(driver_only_csv.find(",2,0)") == std::string::npos);
+    // Mutation entries are "(id,type,effect,slot)"; the configured effect here is 0.
+    REQUIRE(driver_only_csv.find(",2,0,0)") == std::string::npos);
 
     const auto full_payload_csv =
         export_csv(make_config(testTempString("test_run_data_engine_full_ram_csv"), true));
-    REQUIRE(full_payload_csv.find(",2,0)") != std::string::npos);
+    REQUIRE(full_payload_csv.find(",2,0,0)") != std::string::npos);
 }
 
 TEST_CASE("SimulationEngine writes driver-only mutation payload snapshots in 2D", "[SimulationEngine][PopulationSnapshotIO]") {
@@ -1268,10 +1452,13 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
 }
 
 TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[SimulationEngine3DCapacity][Determinism]") {
+    constexpr uint8_t poisson_type_id = 3;
+    const bool hybrid = GENERATE(false, true);
     const size_t workers = GENERATE(1u, 4u);
+    CAPTURE(hybrid, workers);
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, workers);
 
-    auto make_config = [](SimulationType type, const std::string& output_path) {
+    auto make_config = [hybrid](SimulationType type, const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
         config->sim_type = type;
         config->tau_step = 0.05;
@@ -1291,6 +1478,9 @@ TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[
         config->verbosity = 0;
         config->mutations.push_back({0.1f, 0.05f, 1, true});
         config->mutations.push_back({-0.05f, 0.02f, 2, false});
+        if (hybrid) {
+            config->mutations.push_back(poissonMutation(poisson_type_id));
+        }
         return config;
     };
 
@@ -1322,12 +1512,22 @@ TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[
 
     REQUIRE(run_base.total_deaths == run_3d.total_deaths);
     REQUIRE(run_base.cells.size() == run_3d.cells.size());
+    bool saw_poisson_mutation_after_slot_zero = false;
     for (const auto& [cell_id, cell] : run_base.cells) {
         CellMap::const_accessor accessor;
         REQUIRE(run_3d.cells.find(accessor, cell_id));
         REQUIRE(accessor->second.parent_id == cell.parent_id);
         REQUIRE(accessor->second.fitness == cell.fitness);
         REQUIRE(accessor->second.mutations == cell.mutations);
+        if (hybrid && !saw_poisson_mutation_after_slot_zero) {
+            saw_poisson_mutation_after_slot_zero =
+                std::any_of(cell.mutations.begin(), cell.mutations.end(), [](const auto& mutation) {
+                    return mutation.mutation_type == poisson_type_id && mutation.slot > 0;
+                });
+        }
+    }
+    if (hybrid) {
+        REQUIRE(saw_poisson_mutation_after_slot_zero);
     }
 
     REQUIRE(run_base.cells_graveyard.size() == run_3d.cells_graveyard.size());
