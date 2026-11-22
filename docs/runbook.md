@@ -191,6 +191,26 @@ CSV snapshots, and exports CSV companions from `.bin` files when no CSV exists.
 
 ## Tests
 
+`scripts/verify.sh` is the single local entrypoint; each stage runs the same
+command as the matching CI job, with the same flags, filters, and working
+directory.
+
+```bash
+scripts/verify.sh                    # --quick (default): build CellEvoXTests + ctest
+scripts/verify.sh --full             # every stage
+scripts/verify.sh --stage backend    # one stage, repeatable
+scripts/verify.sh --help             # stages, toolchain, per-stage dependencies
+```
+
+`--full` adds the `quick` benchmark group, the visualization and snapshot Python
+regressions, the frontend lint/build, the backend pytest suite, and the
+review-tooling tests. A stage whose optional dependency is missing fails with the
+install command instead of skipping. `JOBS` and `BUILD_DIR` (default
+`build/verify`) override parallelism and the build tree; `CTEST_JUNIT=<path>`
+also writes a JUnit report, as CI does.
+
+Run a single binary directly only when debugging a filter:
+
 ```bash
 ./build/bin/CellEvoXTests "~[benchmark]"
 ```
