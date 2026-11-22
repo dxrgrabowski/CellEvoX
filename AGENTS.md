@@ -212,6 +212,17 @@ constants, stale Qt/Boost references in CI — belong in issues.
   criterion with no evidence is an unverified claim, not a pass. Opening a draft
   is how a change reaches CI, so the requirement binds when the task is done and
   the PR is ready for review.
+- **Close the review loop with evidence, not with a newer commit.** Answer every
+  finding in its thread: `Fixed in <sha>` names the commit that changes the
+  flagged lines, `Not applicable: <reason>` dismisses a false positive, and
+  `Deferred to #<issue>` hands it off. A thread may be resolved only when the
+  cited commit is reachable from the PR head and touches the thread's path; a
+  fix that lives in another file says so explicitly and leaves the thread for
+  the owner. Never resolve a thread because a later commit merely exists, and
+  never resolve one without a marker. Automation performs the `Fixed in <sha>`
+  closes in `.github/workflows/resolve-review-threads.yml`, which is
+  bookkeeping, not verification: a reviewer who closes a thread by hand, or
+  with a `Not applicable` or `Deferred` marker, must say why in the thread.
 - **A regression is fixed, not absorbed.** Benchmark thresholds are engineering
   defaults, not invariants: correcting one needs paired base/head measurements on
   the same host, recorded in the PR
@@ -237,3 +248,6 @@ Review the change, not the author's summary of it.
   criterion; a missing check must be acknowledged, not implied. An author's risk
   estimate is not a review setting: assess risk independently, and raise the
   evidence bar rather than lower the scope for a higher-risk change.
+- **Close what you raised.** When a reply cites a commit, verify that the commit
+  is part of the PR and touches the flagged path before resolving the thread; if
+  it does not, name what is still missing instead of closing it.
