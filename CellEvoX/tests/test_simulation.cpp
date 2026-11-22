@@ -53,6 +53,16 @@ MutationType gammaMutation(uint8_t type_id, float probability, bool is_driver,
     return mutation;
 }
 
+MutationType poissonMutation(uint8_t type_id) {
+    MutationType mutation{};
+    mutation.type_id = type_id;
+    mutation.is_driver = true;
+    mutation.effect = 0.01f;
+    mutation.count_model = MutationCountModel::Poisson;
+    mutation.lambda = 2.5f;
+    return mutation;
+}
+
 }  // namespace
 
 inline std::vector<CellEvoX::io::PopulationSnapshotRecord> read_population_snapshot(
@@ -934,7 +944,9 @@ inline void require_approx(double actual, double expected, double margin = 1e-6)
 
 TEST_CASE("SimulationEngine stochastic population step is deterministic across worker counts",
           "[SimulationEngine][Determinism][Parallel]") {
-    auto make_config = [](const std::string& output_path) {
+    const bool hybrid = GENERATE(false, true);
+    CAPTURE(hybrid);
+    auto make_config = [hybrid](const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
         config->sim_type = SimulationType::STOCHASTIC_TAU_LEAP;
         config->tau_step = 0.02;
@@ -952,6 +964,9 @@ TEST_CASE("SimulationEngine stochastic population step is deterministic across w
             gammaMutation(3, 0.02f, false, MutationEffectDirection::Positive));
         config->mutations.push_back(
             gammaMutation(4, 0.01f, true, MutationEffectDirection::Negative));
+        if (hybrid) {
+            config->mutations.push_back(poissonMutation(5));
+        }
         return config;
     };
 
@@ -1390,10 +1405,13 @@ TEST_CASE("Algorithmic Correctness Baseline", "[Correctness]") {
 }
 
 TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[SimulationEngine3DCapacity][Determinism]") {
+    constexpr uint8_t poisson_type_id = 3;
+    const bool hybrid = GENERATE(false, true);
     const size_t workers = GENERATE(1u, 4u);
+    CAPTURE(hybrid, workers);
     tbb::global_control control(tbb::global_control::max_allowed_parallelism, workers);
 
-    auto make_config = [](SimulationType type, const std::string& output_path) {
+    auto make_config = [hybrid](SimulationType type, const std::string& output_path) {
         auto config = std::make_shared<SimulationConfig>();
         config->sim_type = type;
         config->tau_step = 0.05;
@@ -1413,6 +1431,9 @@ TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[
         config->verbosity = 0;
         config->mutations.push_back({0.1f, 0.05f, 1, true});
         config->mutations.push_back({-0.05f, 0.02f, 2, false});
+        if (hybrid) {
+            config->mutations.push_back(poissonMutation(poisson_type_id));
+        }
         return config;
     };
 
@@ -1444,12 +1465,22 @@ TEST_CASE("SimulationEngine3DCapacity matches non-spatial population events", "[
 
     REQUIRE(run_base.total_deaths == run_3d.total_deaths);
     REQUIRE(run_base.cells.size() == run_3d.cells.size());
+    bool saw_poisson_mutation_after_slot_zero = false;
     for (const auto& [cell_id, cell] : run_base.cells) {
         CellMap::const_accessor accessor;
         REQUIRE(run_3d.cells.find(accessor, cell_id));
         REQUIRE(accessor->second.parent_id == cell.parent_id);
         REQUIRE(accessor->second.fitness == cell.fitness);
         REQUIRE(accessor->second.mutations == cell.mutations);
+        if (hybrid && !saw_poisson_mutation_after_slot_zero) {
+            saw_poisson_mutation_after_slot_zero =
+                std::any_of(cell.mutations.begin(), cell.mutations.end(), [](const auto& mutation) {
+                    return mutation.mutation_type == poisson_type_id && mutation.slot > 0;
+                });
+        }
+    }
+    if (hybrid) {
+        REQUIRE(saw_poisson_mutation_after_slot_zero);
     }
 
     REQUIRE(run_base.cells_graveyard.size() == run_3d.cells_graveyard.size());
